@@ -93,7 +93,7 @@ class ArchiveResponse(ArchiveBase):
 class MemberBase(BaseModel):
     """成员基础字段"""
     name: str = Field(..., min_length=1, max_length=100)
-    relationship: str = Field(..., max_length=50)
+    relationship_type: str = Field(..., max_length=50)
     birth_year: int | None = None
     death_year: int | None = None
     bio: str | None = None
@@ -107,7 +107,7 @@ class MemberCreate(MemberBase):
 class MemberUpdate(BaseModel):
     """更新成员"""
     name: str | None = Field(None, min_length=1, max_length=100)
-    relationship: str | None = Field(None, max_length=50)
+    relationship_type: str | None = Field(None, max_length=50)
     birth_year: int | None = None
     death_year: int | None = None
     bio: str | None = None

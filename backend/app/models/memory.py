@@ -6,9 +6,9 @@
 
 from datetime import datetime
 from sqlalchemy import (
-    String, Text, Boolean, Integer, DateTime, ForeignKey, JSON, func, Index
+    Column, String, Text, Boolean, Integer, DateTime, ForeignKey, JSON, func, Index
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 
@@ -28,24 +28,16 @@ class Archive(Base):
 
     __tablename__ = "archives"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    archive_type: Mapped[str] = mapped_column(
-        String(50), default="family", index=True
-    )  # family, lover, friend, relative, celebrity, nation
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    archive_type = Column(String(50), default="family", index=True)
+    owner_id = Column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    owner: Mapped["User"] = relationship("User", back_populates="archives")
-    members: Mapped[list["Member"]] = relationship(
+    owner = relationship("User", back_populates="archives")
+    members = relationship(
         "Member", back_populates="archive", cascade="all, delete-orphan"
     )
 
@@ -63,27 +55,23 @@ class Member(Base):
 
     __tablename__ = "members"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    relationship: Mapped[str] = mapped_column(String(50), nullable=False)
-    archive_id: Mapped[int] = mapped_column(
-        ForeignKey("archives.id", ondelete="CASCADE"), index=True
-    )
-    birth_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    death_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
-    voice_profile_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    emotion_tags: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    relationship_type = Column(String(50), nullable=False)
+    archive_id = Column(ForeignKey("archives.id", ondelete="CASCADE"), index=True)
+    birth_year = Column(Integer, nullable=True)
+    death_year = Column(Integer, nullable=True)
+    bio = Column(Text, nullable=True)
+    is_alive = Column(Boolean, default=True)
+    voice_profile_id = Column(String(255), nullable=True)
+    emotion_tags = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    archive: Mapped["Archive"] = relationship("Archive", back_populates="members")
-    memories: Mapped[list["Memory"]] = relationship(
+    archive = relationship("Archive", back_populates="members")
+    memories = relationship(
         "Memory", back_populates="member", cascade="all, delete-orphan"
     )
-    capsules: Mapped[list["MemoryCapsule"]] = relationship(
+    capsules = relationship(
         "MemoryCapsule", back_populates="member", cascade="all, delete-orphan"
     )
 
@@ -97,31 +85,21 @@ class Memory(Base):
 
     __tablename__ = "memories"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    content_text: Mapped[str] = mapped_column(Text, nullable=False)
-    member_id: Mapped[int] = mapped_column(
-        ForeignKey("members.id", ondelete="CASCADE"), index=True
-    )
-    timestamp: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    emotion_label: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
-    vector_embedding_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    media_refs: Mapped[list] = mapped_column(JSON, default=list)
-    is_capsule: Mapped[bool] = mapped_column(Boolean, default=False)
-    unlock_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    content_text = Column(Text, nullable=False)
+    member_id = Column(ForeignKey("members.id", ondelete="CASCADE"), index=True)
+    timestamp = Column(DateTime(timezone=True), nullable=True)
+    location = Column(String(255), nullable=True)
+    emotion_label = Column(String(50), nullable=True, index=True)
+    vector_embedding_id = Column(String(255), nullable=True)
+    media_refs = Column(JSON, default=list)
+    is_capsule = Column(Boolean, default=False)
+    unlock_date = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    member: Mapped["Member"] = relationship("Member", back_populates="memories")
+    member = relationship("Member", back_populates="memories")
 
     __table_args__ = (
         Index("ix_memory_member_timestamp", "member_id", "timestamp"),
@@ -137,25 +115,17 @@ class MemoryCapsule(Base):
 
     __tablename__ = "memory_capsules"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    member_id: Mapped[int] = mapped_column(
-        ForeignKey("members.id", ondelete="CASCADE"), index=True
-    )
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    unlock_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    recipients: Mapped[list] = mapped_column(JSON, default=list)
-    status: Mapped[str] = mapped_column(
-        String(20), default="locked"
-    )  # locked, unlocked, delivered
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    delivered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    member_id = Column(ForeignKey("members.id", ondelete="CASCADE"), index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    unlock_date = Column(DateTime(timezone=True), nullable=False)
+    recipients = Column(JSON, default=list)
+    status = Column(String(20), default="locked")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
 
-    member: Mapped["Member"] = relationship("Member", back_populates="capsules")
+    member = relationship("Member", back_populates="capsules")
 
     __table_args__ = (
         Index("ix_capsule_unlock_status", "unlock_date", "status"),
