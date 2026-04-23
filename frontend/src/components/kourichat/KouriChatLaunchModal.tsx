@@ -191,7 +191,7 @@ export default function KouriChatLaunchModal({ onClose }: { onClose: () => void 
                     <span className="text-xs font-medium text-gray-500">Web 界面</span>
                     <div className="flex items-center gap-2">
                       <a
-                        href={status.url}
+                        href="http://localhost:8502"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
@@ -211,10 +211,10 @@ export default function KouriChatLaunchModal({ onClose }: { onClose: () => void 
                   <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50" style={{ height: '400px' }}>
                     <iframe
                       key={iframeKey}
-                      src={status.url}
+                      src={`/kourichat-proxy/`}
                       className="w-full h-full"
                       title="KouriChat Web"
-                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"
                     />
                   </div>
                   <button

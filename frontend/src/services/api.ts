@@ -1,9 +1,7 @@
 /**
  * API 服务层
- * 封装所有后端 API 调用
  */
 import axios from 'axios'
-import { useAuthStore } from '@/stores/authStore'
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -13,24 +11,31 @@ const api = axios.create({
   },
 })
 
-// 请求拦截器：自动附加 Token
+// 请求拦截器：从 localStorage 直接读取 token
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
+  const token = localStorage.getItem('mtc-token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// 响应拦截器：统一错误处理
+// 响应拦截器：401 时清除本地登录状态
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+      localStorage.removeItem('mtc-token')
+      localStorage.removeItem('mtc-user')
+      // 只有当前页面不是登录/注册页时才跳转
+      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+        window.location.href = '/login'
+      }
     }
-    return Promise.reject(error.response?.data || error)
+    if (error.response?.data?.detail) {
+      error.detail = error.response.data.detail
+    }
+    return Promise.reject(error)
   }
 )
 
@@ -64,7 +69,6 @@ export const archiveApi = {
 
   delete: (id: number) => api.delete(`/archives/${id}`),
 
-  // 成员管理
   createMember: (archiveId: number, data: {
     name: string; relationship_type: string; birth_year?: number; death_year?: number; bio?: string
   }) => api.post(`/archives/${archiveId}/members`, data),
