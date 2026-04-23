@@ -15,12 +15,6 @@ export default function TimelinePage() {
     enabled: !!archiveId,
   })
 
-  const { data: members = [] } = useQuery({
-    queryKey: ['members', archiveId],
-    queryFn: () => archiveApi.listMembers(Number(archiveId)) as any,
-    enabled: !!archiveId,
-  })
-
   const { data: allMemories = [] } = useQuery({
     queryKey: ['memories', 'archive', archiveId],
     queryFn: () => memoryApi.list({ archive_id: Number(archiveId), limit: 200 }) as any,

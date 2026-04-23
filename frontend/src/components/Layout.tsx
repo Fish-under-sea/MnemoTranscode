@@ -4,7 +4,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import {
-  Home, FolderOpen, MessageCircle, Clock, BookOpen, Settings, LogOut, Menu, X
+  Home, FolderOpen, MessageCircle, Settings, LogOut, Menu, X
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'

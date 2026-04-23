@@ -1,10 +1,10 @@
 /**
  * 档案详情页
  */
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, MessageCircle, Clock, BookOpen, Users, FileText, Edit2, Trash2 } from 'lucide-react'
+import { Plus, MessageCircle, Clock, BookOpen, Users, FileText } from 'lucide-react'
 import { archiveApi, memoryApi } from '@/services/api'
 import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import MemoryCard from '@/components/memory/MemoryCard'
@@ -13,7 +13,6 @@ import { useState } from 'react'
 
 export default function ArchiveDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   const [createMemberModal, setCreateMemberModal] = useState(false)
@@ -44,7 +43,10 @@ export default function ArchiveDetailPage() {
   })
 
   const createMemberMutation = useMutation({
-    mutationFn: (data: typeof newMember) => archiveApi.createMember(Number(id), data) as any,
+    mutationFn: (data: typeof newMember) => archiveApi.createMember(Number(id), {
+      ...data,
+      relationship_type: data.relationship,
+    }) as any,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', id] })
       setCreateMemberModal(false)

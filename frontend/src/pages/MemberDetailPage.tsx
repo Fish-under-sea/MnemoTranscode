@@ -9,7 +9,6 @@ import { archiveApi, memoryApi } from '@/services/api'
 import MemoryCard from '@/components/memory/MemoryCard'
 import Modal from '@/components/ui/Modal'
 import { useState } from 'react'
-import { formatDate } from '@/lib/utils'
 
 export default function MemberDetailPage() {
   const { archiveId, memberId } = useParams<{ archiveId: string; memberId: string }>()

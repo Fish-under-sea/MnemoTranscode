@@ -66,7 +66,7 @@ export const archiveApi = {
 
   // 成员管理
   createMember: (archiveId: number, data: {
-    name: string; relationship: string; birth_year?: number; death_year?: number; bio?: string
+    name: string; relationship_type: string; birth_year?: number; death_year?: number; bio?: string
   }) => api.post(`/archives/${archiveId}/members`, data),
 
   listMembers: (archiveId: number) =>
@@ -118,6 +118,16 @@ export const dialogueApi = {
 
   clearHistory: (sessionId: string) =>
     api.delete(`/dialogue/history/${sessionId}`),
+}
+
+// ========== KouriChat 相关 ==========
+
+export const kourichatApi = {
+  start: () => api.post('/kourichat/start'),
+
+  stop: () => api.post('/kourichat/stop'),
+
+  getStatus: () => api.get('/kourichat/status'),
 }
 
 export default api
