@@ -1,0 +1,164 @@
+# MTC 全栈架构 - Docker Compose 编排
+
+services:
+  # ========== 应用层 ==========
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mtc-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - mtc-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mtc-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - mtc-network
+
+  # ========== 数据库层 ==========
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtc-postgres
+    environment:
+      POSTGRES_USER: mtc
+      POSTGRES_PASSWORD: mtc_password
+      POSTGRES_DB: mtc_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - mtc-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtc -d mtc_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mtc-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mtc-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== 向量数据库 ==========
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: mtc-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - mtc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== 对象存储 ==========
+
+  minio:
+    image: minio/minio:latest
+    container_name: mtc-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: mtc_access_key
+      MINIO_ROOT_PASSWORD: mtc_secret_key
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - mtc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== Celery Worker（异步任务）==========#
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mtc-celery-worker
+    command: celery -A app.tasks worker --loglevel=info
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+    networks:
+      - mtc-network
+
+  # ========== 开发工具 ==========#
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mtc-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mtc.local
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - mtc-network
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  minio_data:
+
+networks:
+  mtc-network:
+    driver: bridge

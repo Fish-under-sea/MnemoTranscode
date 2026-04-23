@@ -1,0 +1,79 @@
+# IDE 配置
+.cursor/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Media
+data/avatars/*/memory/
+data/avatars/*/emojis/
+data/avatars/*/voices/
+data/database/*.db
+data/images/
+data/voices/
+data/config/config.json
+
+# Environment
+.env
+.env.*
+*.env
+
+# Node
+node_modules/
+frontend/node_modules/
+*.tsbuildinfo
+
+# Build
+frontend/dist/
+backend/dist/
+
+# Coverage
+.coverage
+htmlcov/
+*.cover
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Docker
+*.pid
+
+# Temp
+tmp/
+temp/
+*.tmp
