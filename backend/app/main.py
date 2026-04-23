@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import init_db
-from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook
+from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook, kourichat
 
 settings = get_settings()
 
@@ -73,6 +73,7 @@ app.include_router(dialogue.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
 app.include_router(capsule.router, prefix="/api/v1")
 app.include_router(storybook.router, prefix="/api/v1")
+app.include_router(kourichat.router, prefix="/api/v1")
 
 
 @app.get("/")

@@ -189,8 +189,8 @@ async def _build_member_context(member, archive_id, db: AsyncSession) -> str:
     if member.bio:
         context_parts.append(f"人物简介：{member.bio}")
 
-    if member.relationship:
-        context_parts.append(f"与你的关系：{member.relationship}")
+    if member.relationship_type:
+        context_parts.append(f"与你的关系：{member.relationship_type}")
 
     if member.birth_year:
         birth_info = f"出生于 {member.birth_year} 年"

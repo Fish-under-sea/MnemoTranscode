@@ -140,7 +140,7 @@ async def create_member(
 
     member = Member(
         name=member_data.name,
-        relationship=member_data.relationship,
+        relationship_type=member_data.relationship_type,
         archive_id=archive_id,
         birth_year=member_data.birth_year,
         death_year=member_data.death_year,

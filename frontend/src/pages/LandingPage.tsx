@@ -3,16 +3,17 @@
  *
  * 三个入口：
  * 1. 网页版应用 — 直接进入项目 Web 应用
- * 2. KouriChat 下载 — 下载部署到本地的微信 AI 助手
+ * 2. KouriChat 启动 — 在浏览器中运行微信 AI 助手
  * 3. 客户端下载 — APK / Windows 应用下载
  */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Monitor, Download, Smartphone, MessageCircle, Brain, Clock,
-  Shield, Sparkles, Heart, ChevronRight, Star, Users, Layers
+  Shield, Sparkles, Heart, ChevronRight, Users, Layers
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import KouriChatLaunchModal from '@/components/kourichat/KouriChatLaunchModal'
 
 // ========== 静态数据 ==========
 
@@ -181,6 +182,7 @@ function DownloadCard({
 export default function LandingPage() {
   const [activeTestimonial, setActiveTestimonial] = useState(0)
   const [showNotifyModal, setShowNotifyModal] = useState(false)
+  const [showKouriChatModal, setShowKouriChatModal] = useState(false)
   const [notifyEmail, setNotifyEmail] = useState('')
 
   const nextTestimonial = () => {
@@ -375,7 +377,7 @@ export default function LandingPage() {
               title="KouriChat — 微信 AI 助手"
               description="将 MTC 的 AI 能力接入微信。在微信里直接和逝去的亲人对话，像以前一样聊天。支持私聊和群聊，自动记忆上下文。"
               badge="开源免费"
-              href="https://github.com/KouriChat/KouriChat"
+              onClick={() => setShowKouriChatModal(true)}
             />
 
             {/* 入口三：客户端下载 */}
@@ -548,6 +550,11 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* KouriChat 启动弹窗 */}
+      {showKouriChatModal && (
+        <KouriChatLaunchModal onClose={() => setShowKouriChatModal(false)} />
       )}
     </div>
   )

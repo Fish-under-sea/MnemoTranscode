@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { BookOpen, Loader2, Download } from 'lucide-react'
+import { BookOpen, Loader2 } from 'lucide-react'
 import { archiveApi, memoryApi } from '@/services/api'
 
 const STORY_STYLES = [

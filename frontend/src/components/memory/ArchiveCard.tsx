@@ -2,8 +2,8 @@
  * 档案卡片组件
  */
 import { Link } from 'react-router-dom'
-import { Plus, Users, FileText } from 'lucide-react'
-import { cn, ARCHIVE_TYPE_OPTIONS } from '@/lib/utils'
+import { Users, FileText } from 'lucide-react'
+import { ARCHIVE_TYPE_OPTIONS } from '@/lib/utils'
 
 interface ArchiveCardProps {
   id: number

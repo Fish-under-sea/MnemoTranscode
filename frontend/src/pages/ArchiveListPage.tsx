@@ -2,7 +2,6 @@
  * 档案列表页
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, Search } from 'lucide-react'
@@ -12,7 +11,6 @@ import ArchiveCard from '@/components/memory/ArchiveCard'
 import Modal from '@/components/ui/Modal'
 
 export default function ArchiveListPage() {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<string>('')
