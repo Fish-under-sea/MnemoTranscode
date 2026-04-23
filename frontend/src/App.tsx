@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import Layout from './components/Layout'
+import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
@@ -23,10 +24,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      {/* 公开路由 */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/app" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+
+      {/* 受保护的应用路由 */}
       <Route
-        path="/*"
+        path="/dashboard"
         element={
           <ProtectedRoute>
             <Layout>
@@ -45,6 +51,9 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
+      {/* 未匹配路由重定向到落地页 */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
