@@ -101,7 +101,11 @@ class BehaviorSettings:
 
 @dataclass
 class AuthSettings:
-    admin_password: str
+    admin_password: str = ""
+
+    def __post_init__(self):
+        if self.admin_password is None:
+            self.admin_password = ""
 
 @dataclass
 class NetworkSearchSettings:
@@ -485,10 +489,10 @@ class Config:
                     )
                 )
 
-                # 认证设置
-                auth_data = categories.get('auth_settings', {}).get('settings', {})
+                # 认证设置（支持 auth_settings 和 auth 两种路径）
+                auth_data = categories.get('auth_settings', categories.get('auth', {})).get('settings', {})
                 self.auth = AuthSettings(
-                    admin_password=auth_data.get('admin_password', {}).get('value', '')
+                    admin_password=auth_data.get('admin_password', {}).get('value', '') if auth_data else ''
                 )
 
                 # 网络搜索设置

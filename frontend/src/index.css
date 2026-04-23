@@ -1,12 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: 'Noto Sans SC', system-ui, sans-serif;
-  line-height: 1.6;
-  color: #1a1a2e;
-  background-color: #fafafa;
+  font-family: 'Work Sans', 'Noto Sans SC', system-ui, sans-serif;
+  line-height: 1.7;
+  color: #1a2e1a;
+  background-color: #FEFEF9;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -15,15 +18,20 @@
   padding: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* 滚动条美化 */
+/* ========== 滚动条美化 ========== */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -32,14 +40,134 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c7c7fe;
+  background: #A7F3D0;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #8b87f5;
+  background: #34D399;
 }
 
-/* 过渡动画 */
+/* ========== 文本选择 ========== */
+::selection {
+  background: #D1FAE5;
+  color: #047857;
+}
+
+/* ========== 焦点状态 ========== */
+:focus-visible {
+  outline: 2px solid #10B981;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ========== 过渡动画基础类 ========== */
 .transition-base {
-  transition: all 0.2s ease-in-out;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.transition-slow {
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ========== 玻璃态组件 ========== */
+@layer components {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(167, 243, 208, 0.3);
+  }
+
+  .glass-nav {
+    background: rgba(254, 254, 249, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(167, 243, 208, 0.2);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-7 py-3.5
+           bg-jade-500 text-white rounded-2xl font-semibold
+           hover:bg-jade-600 active:bg-jade-700
+           shadow-jade hover:shadow-jade-lg
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-7 py-3.5
+           bg-white text-jade-700 rounded-2xl font-semibold
+           border border-jade-200
+           hover:bg-jade-50 hover:border-jade-300
+           shadow-sm hover:shadow-glass
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-jade-600 rounded-xl font-medium
+           hover:bg-jade-50 active:bg-jade-100
+           transition-all duration-200 cursor-pointer;
+  }
+
+  /* 渐变文字 */
+  .gradient-text-jade {
+    background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-warm {
+    background: linear-gradient(135deg, #D97706 0%, #F59E0B 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* 浮动装饰元素 */
+  .floating-orb {
+    @apply absolute rounded-full blur-3xl opacity-40 animate-float;
+    pointer-events: none;
+  }
+
+  /* 网格点阵背景 */
+  .dot-grid-bg {
+    background-image: radial-gradient(circle, #D1FAE5 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+}
+
+/* ========== 页面入场动画 ========== */
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-on-scroll.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 交错动画延迟 */
+.delay-100 { transition-delay: 100ms; }
+.delay-200 { transition-delay: 200ms; }
+.delay-300 { transition-delay: 300ms; }
+.delay-400 { transition-delay: 400ms; }
+.delay-500 { transition-delay: 500ms; }
+
+/* ========== 响应式无障碍 ========== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
 }

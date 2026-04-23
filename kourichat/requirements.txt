@@ -1,27 +1,58 @@
-colorama
-Flask
-fish-audio-sdk
-openai
-pandas
-psutil
-PyAutoGUI
-Requests
-urllib3
-certifi
-snownlp
-SQLAlchemy
-tenacity
-Werkzeug
-wxautox4
-apscheduler==3.10.4
-python-dateutil==2.9.0.post0
-dateparser==1.2.0
-pygame
-pytz==2024.1
-python-dotenv==1.0.1
-schedule
-uiautomation
-emoji==2.10.1
-cryptography>=3.0.0
-zhdate
-httpx-ws==0.7.2
+# KouriChat 微信机器人依赖
+
+# === 核心框架 ===
+Flask>=3.0.0
+Werkzeug>=3.0.0
+
+# === Windows GUI 自动化 ===
+wxautox4>=4.0.0
+win32gui; platform_system=="Windows"
+win32con; platform_system=="Windows"
+win32api; platform_system=="Windows"
+win32job; platform_system=="Windows"
+win32process; platform_system=="Windows"
+pyautogui>=0.9.54
+uiautomation>=2.0.0
+PyAutoGUI>=0.9.54
+
+# === AI / LLM ===
+openai>=1.12.0
+tenacity>=8.2.3
+fish-audio-sdk>=0.5.0
+
+# === 数据库 ===
+SQLAlchemy>=2.0.0
+
+# === 任务调度 ===
+apscheduler>=3.10.0
+schedule>=1.2.0
+
+# === 时间 / 日期处理 ===
+python-dateutil>=2.8.0
+dateparser>=1.2.0
+pytz>=2024.1
+zhdate>=0.1.0
+
+# === 网络请求 ===
+requests>=2.31.0
+urllib3>=2.0.0
+httpx-ws>=0.7.0
+
+# === 文本处理 ===
+emoji>=2.10.0
+snownlp>=0.12.0
+colorama>=0.4.6
+
+# === 数据处理 ===
+pandas>=2.0.0
+
+# === 系统工具 ===
+psutil>=5.9.0
+certifi>=2024.0.0
+cryptography>=42.0.0
+
+# === 游戏引擎（可选，语音播放用）===
+pygame>=2.5.0
+
+# === Web 配置界面 ===
+psutil>=5.9.0

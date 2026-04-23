@@ -22,18 +22,18 @@ export default function ArchiveCard({
   const icon = typeInfo?.icon || '📁'
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-base group">
+    <div className="bg-white rounded-xl border border-warm-200 p-5 hover:shadow-glass hover:border-jade-200 transition-all">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl">{icon}</span>
           <div>
             <Link
               to={`/archives/${id}`}
-              className="font-medium text-gray-900 hover:text-primary-600 transition-base"
+              className="font-semibold text-slate-900 hover:text-jade-600 transition-colors"
             >
               {name}
             </Link>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5">
               {typeInfo?.label || archive_type}
             </p>
           </div>
@@ -41,10 +41,10 @@ export default function ArchiveCard({
       </div>
 
       {description && (
-        <p className="mt-3 text-sm text-gray-600 line-clamp-2">{description}</p>
+        <p className="mt-3 text-sm text-slate-500 line-clamp-2">{description}</p>
       )}
 
-      <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
+      <div className="mt-4 flex items-center gap-4 text-xs text-slate-400">
         <span className="flex items-center gap-1">
           <Users size={14} />
           {member_count} 位成员
@@ -55,10 +55,10 @@ export default function ArchiveCard({
         </span>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-100">
+      <div className="mt-4 pt-4 border-t border-warm-100">
         <Link
           to={`/archives/${id}`}
-          className="block w-full text-center py-2 text-sm text-primary-600 hover:bg-primary-50 rounded-lg transition-base"
+          className="block w-full text-center py-2 text-sm text-jade-600 hover:bg-jade-50 rounded-xl transition-colors font-medium cursor-pointer"
         >
           查看详情
         </Link>

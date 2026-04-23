@@ -2,12 +2,12 @@
  * 设置页面
  */
 import { useState } from 'react'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuth } from '@/hooks/useAuth'
 import toast from 'react-hot-toast'
 import { User, Key, Bell, Palette } from 'lucide-react'
 
 export default function SettingsPage() {
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('profile')
 
   const tabs = [
