@@ -21,12 +21,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function AppRoute() {
+  const { isAuthenticated } = useAuthStore()
+  return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
+}
+
 export default function App() {
   return (
     <Routes>
       {/* 公开路由 */}
       <Route path="/" element={<LandingPage />} />
-      <Route path="/app" element={<LandingPage />} />
+      <Route path="/app" element={<AppRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -35,22 +40,20 @@ export default function App() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/archives" element={<ArchiveListPage />} />
-                <Route path="/archives/:id" element={<ArchiveDetailPage />} />
-                <Route path="/archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
-                <Route path="/dialogue" element={<DialoguePage />} />
-                <Route path="/dialogue/:archiveId/:memberId" element={<DialoguePage />} />
-                <Route path="/timeline/:archiveId" element={<TimelinePage />} />
-                <Route path="/storybook/:archiveId" element={<StoryBookPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-              </Routes>
-            </Layout>
+            <Layout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/archives" element={<ArchiveListPage />} />
+        <Route path="/archives/:id" element={<ArchiveDetailPage />} />
+        <Route path="/archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
+        <Route path="/dialogue" element={<DialoguePage />} />
+        <Route path="/dialogue/:archiveId/:memberId" element={<DialoguePage />} />
+        <Route path="/timeline/:archiveId" element={<TimelinePage />} />
+        <Route path="/storybook/:archiveId" element={<StoryBookPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Route>
 
       {/* 未匹配路由重定向到落地页 */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,18 +2,15 @@
  * AI 对话页面
  */
 import { useState, useRef, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Send, Loader2, Trash2, Volume2 } from 'lucide-react'
+import { Send, Loader2, Trash2 } from 'lucide-react'
 import { dialogueApi, archiveApi } from '@/services/api'
-import { useAuthStore } from '@/stores/authStore'
 import ChatBubble from '@/components/voice/ChatBubble'
 
 export default function DialoguePage() {
   const { archiveId, memberId } = useParams<{ archiveId?: string; memberId?: string }>()
-  const { user } = useAuthStore()
-  const navigate = useNavigate()
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const [loading, setLoading] = useState(false)

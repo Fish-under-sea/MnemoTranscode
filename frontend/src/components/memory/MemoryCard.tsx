@@ -1,7 +1,6 @@
 /**
  * 记忆条目卡片组件
  */
-import { Link } from 'react-router-dom'
 import { Calendar, MapPin, Tag } from 'lucide-react'
 import { formatDate, EMOTION_LABELS } from '@/lib/utils'
 
@@ -17,7 +16,7 @@ interface MemoryCardProps {
 }
 
 export default function MemoryCard({
-  id, title, content_text, timestamp, location, emotion_label,
+  title, content_text, timestamp, location, emotion_label,
 }: MemoryCardProps) {
   const emotionInfo = EMOTION_LABELS.find((e) => e.value === emotion_label)
 
