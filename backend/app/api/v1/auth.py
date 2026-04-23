@@ -33,7 +33,10 @@ async def get_current_user(
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
-    user_id: int = payload.get("sub")
+    try:
+        user_id: int = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise credentials_exception
     if user_id is None:
         raise credentials_exception
     result = await db.execute(select(User).where(User.id == user_id))
@@ -59,7 +62,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": str(user.id)})
     return TokenResponse(
         access_token=token,
         user=UserResponse.model_validate(user),
@@ -74,7 +77,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": str(user.id)})
     return TokenResponse(
         access_token=token,
         user=UserResponse.model_validate(user),
