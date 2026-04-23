@@ -1,5 +1,6 @@
 # IDE 配置
 .cursor/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -47,6 +48,15 @@ data/database/*.db
 data/images/
 data/voices/
 data/config/config.json
+
+# KouriChat 数据文件（自动生成）
+kourichat/data/avatars/
+kourichat/data/database/
+kourichat/data/.running_port
+kourichat/data/config/backups/
+kourichat/data/config/config.json
+kourichat/src/autoupdate/cloud/version.json
+kourichat/src/autoupdate/cloud/dismissed_announcements.json
 
 # Environment
 .env
