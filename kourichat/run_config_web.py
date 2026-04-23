@@ -117,6 +117,49 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # 生成密钥用于session加密
 app.secret_key = secrets.token_hex(16)
 
+# 添加 CORS 和安全响应头（支持 iframe 嵌入）
+@app.after_request
+def add_security_headers(response):
+    origin = request.headers.get('Origin', '')
+    # 允许来自 MTC 前端开发服务器的跨域请求
+    allowed_origins = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ]
+    if any(origin.startswith(o) for o in allowed_origins):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+        response.headers['Access-Control-Max-Age'] = '3600'
+    # 允许 iframe 嵌入
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    # 使用 credentialless 模式，允许跨域 iframe 嵌入
+    response.headers['Cross-Origin-Embedder-Policy'] = 'credentialless'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+    return response
+
+
+@app.route('/cors-preflight', methods=['OPTIONS'])
+def cors_preflight():
+    """处理 CORS 预检请求"""
+    origin = request.headers.get('Origin', '')
+    allowed_origins = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ]
+    if any(origin.startswith(o) for o in allowed_origins):
+        from flask import make_response
+        resp = make_response('', 204)
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+        resp.headers['Access-Control-Max-Age'] = '3600'
+        return resp
+    from flask import make_response
+    return make_response('', 204)
+
 # 在 app 初始化后添加
 try:
     app.register_blueprint(avatar_manager)
@@ -1831,6 +1874,16 @@ def main():
                 print(f"  Network: http://{ip}:{port}")
     except Exception as e:
         logger.error(f"获取IP地址失败: {str(e)}")
+
+    # 写入实际端口供后端读取
+    try:
+        running_port_file = os.path.join(ROOT_DIR, 'data', '.running_port')
+        os.makedirs(os.path.dirname(running_port_file), exist_ok=True)
+        with open(running_port_file, 'w') as f:
+            f.write(str(port))
+        logger.info(f"已写入运行端口到: {running_port_file}")
+    except Exception as e:
+        logger.warning(f"写入端口文件失败: {e}")
 
     print("="*50 + "\n")
 
