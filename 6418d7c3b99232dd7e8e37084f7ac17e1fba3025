@@ -1,0 +1,5 @@
+执行模型: Claude 4.7 Opus (A 轨)
+子项目主导: GPT-5.3 Codex (E 轨,后续接手 writing-plans 与全部 milestone)
+交棒原因: 规格定调阶段由 A 轨把 spec 锁到执行级,再移交 Codex 执行
+分支: Codex-coding
+锚点 tag: mtc-E/spec-opus
