@@ -14,6 +14,7 @@ import StoryBookPage from './pages/StoryBookPage'
 import SettingsPage from './pages/SettingsPage'
 import PersonalCenterPage from './pages/PersonalCenterPage'
 import ThemeProvider from './components/ThemeProvider'
+import MotionProvider from './providers/MotionProvider'
 import { useAuthStore } from './hooks/useAuthStore'
 
 export default function App() {
@@ -32,32 +33,34 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider>
-      <Routes>
-        {/* 公开页面 */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+    <MotionProvider>
+      <ThemeProvider>
+        <Routes>
+          {/* 公开页面 */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
-        {/* 受保护的应用页面 */}
-        {isAuthenticated ? (
-          <Route element={<Layout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="archives" element={<ArchiveListPage />} />
-            <Route path="archives/:id" element={<ArchiveDetailPage />} />
-            <Route path="archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
-            <Route path="dialogue" element={<DialoguePage />} />
-            <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
-            <Route path="timeline/:archiveId" element={<TimelinePage />} />
-            <Route path="storybook/:archiveId" element={<StoryBookPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="personal-center" element={<PersonalCenterPage />} />
-          </Route>
-        ) : (
-          <Route path="*" element={<Navigate to="/" replace />} />
-        )}
-      </Routes>
-    </ThemeProvider>
+          {/* 受保护的应用页面 */}
+          {isAuthenticated ? (
+            <Route element={<Layout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="archives" element={<ArchiveListPage />} />
+              <Route path="archives/:id" element={<ArchiveDetailPage />} />
+              <Route path="archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
+              <Route path="dialogue" element={<DialoguePage />} />
+              <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
+              <Route path="timeline/:archiveId" element={<TimelinePage />} />
+              <Route path="storybook/:archiveId" element={<StoryBookPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="personal-center" element={<PersonalCenterPage />} />
+            </Route>
+          ) : (
+            <Route path="*" element={<Navigate to="/" replace />} />
+          )}
+        </Routes>
+      </ThemeProvider>
+    </MotionProvider>
   )
 }
