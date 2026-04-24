@@ -155,14 +155,6 @@ export default function Layout() {
                         <LayoutDashboard size={16} />
                         个人中心
                       </Link>
-                      <Link
-                        to="/model-settings"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-jade-50 hover:text-jade-700 transition-colors cursor-pointer"
-                      >
-                        <Bot size={16} />
-                        模型设置
-                      </Link>
                     </div>
 
                     {/* 分割线 */}
@@ -211,7 +203,7 @@ export default function Layout() {
                 </Link>
               )
             })}
-            <div className="border-t border-warm-200 pt-1 mt-1 space-y-1">
+            <div className="border-t border-warm-200 pt-1 mt-1">
               <Link
                 to="/personal-center"
                 onClick={() => setMobileOpen(false)}
@@ -219,14 +211,6 @@ export default function Layout() {
               >
                 <LayoutDashboard size={18} />
                 个人中心
-              </Link>
-              <Link
-                to="/model-settings"
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-slate-600 hover:bg-jade-50 transition-colors"
-              >
-                <Bot size={18} />
-                模型设置
               </Link>
             </div>
           </nav>
