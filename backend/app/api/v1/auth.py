@@ -232,38 +232,6 @@ async def upload_avatar(
         # 构建公开访问 URL
         file_url = f"http://{settings.minio_endpoint}/{bucket_name}/{object_name}"
 
-        # #region agent log
-        import json
-        import time
-        from pathlib import Path
-
-        try:
-            with open(Path(__file__).resolve().parents[4] / "debug-1f334f.log", "a", encoding="utf-8") as _df:
-                _df.write(
-                    json.dumps(
-                        {
-                            "sessionId": "1f334f",
-                            "timestamp": int(time.time() * 1000),
-                            "location": "auth.py:upload_avatar",
-                            "message": "avatar_upload_put_ok",
-                            "data": {
-                                "minio_endpoint": settings.minio_endpoint,
-                                "bucket": bucket_name,
-                                "object_prefix": object_name[:64],
-                                "bytes": len(content),
-                                "content_type": content_type,
-                            },
-                            "hypothesisId": "H-A1",
-                            "runId": "post-fix",
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
-
         # 更新用户头像 URL
         current_user.avatar_url = file_url
         await db.commit()

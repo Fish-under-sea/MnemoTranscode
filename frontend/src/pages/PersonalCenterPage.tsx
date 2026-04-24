@@ -2,6 +2,7 @@
  * 个人中心页面 — 整合订阅、账号与安全、DIY UI、云端存储
  */
 import { useState, useEffect, useRef } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { authApi, usageApi, preferencesApi, subscriptionApi } from '@/services/api'
 import { useAIContext } from '@/hooks/useAIContext'
@@ -13,8 +14,14 @@ import {
   Check, RefreshCw, Download, Trash2, Moon, Sun, Monitor,
   AlertTriangle, Eye, EyeOff
 } from 'lucide-react'
-
 type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
+
+const VALID_TAB_IDS: TabId[] = ['overview', 'subscription', 'account', 'appearance', 'cloud']
+
+function parseTabParam(params: URLSearchParams): TabId {
+  const t = params.get('tab')
+  return t && VALID_TAB_IDS.includes(t as TabId) ? (t as TabId) : 'overview'
+}
 
 const tabs = [
   { id: 'overview', label: '概览', icon: BarChart3 },
@@ -146,11 +153,14 @@ function OverviewPanel() {
 
       {/* 快速操作 */}
       <div className="grid grid-cols-2 gap-4">
-        <button className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer">
+        <Link
+          to="/personal-center?tab=subscription"
+          className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer no-underline text-inherit block"
+        >
           <CreditCard size={20} className="text-jade-500 mb-2" />
           <div className="font-semibold text-slate-900 text-sm">升级方案</div>
           <div className="text-xs text-slate-500 mt-0.5">解锁更多用量</div>
-        </button>
+        </Link>
         <button className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer">
           <Download size={20} className="text-jade-500 mb-2" />
           <div className="font-semibold text-slate-900 text-sm">导出数据</div>
@@ -960,7 +970,17 @@ function CloudPanel() {
 // ========== 主组件 ==========
 
 export default function PersonalCenterPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<TabId>(() => parseTabParam(searchParams))
+
+  useEffect(() => {
+    setActiveTab(parseTabParam(searchParams))
+  }, [searchParams])
+
+  const selectTab = (id: TabId) => {
+    setActiveTab(id)
+    setSearchParams(id === 'overview' ? {} : { tab: id }, { replace: true })
+  }
 
   const panels: Record<TabId, React.ReactNode> = {
     overview: <OverviewPanel />,
@@ -981,7 +1001,8 @@ export default function PersonalCenterPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as TabId)}
+                  type="button"
+                  onClick={() => selectTab(tab.id as TabId)}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap cursor-pointer',
                     activeTab === tab.id
