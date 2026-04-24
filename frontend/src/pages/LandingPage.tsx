@@ -10,7 +10,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Monitor, Download, Smartphone, MessageCircle, Brain, Clock,
   Shield, Sparkles, Heart, ChevronRight, Users, Layers,
-  ArrowRight, Quote, Star, Menu, X, Home
+  ArrowRight, Quote, Star, Menu, X
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/hooks/useAuthStore'

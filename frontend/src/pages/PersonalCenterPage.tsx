@@ -3,15 +3,15 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { authApi, usageApi, preferencesApi, subscriptionApi, aiMemoryApi, default as api } from '@/services/api'
+import { authApi, usageApi, preferencesApi, subscriptionApi } from '@/services/api'
 import { useAIContext } from '@/hooks/useAIContext'
 import { applyTheme, COLOR_OPTIONS, type PrimaryColor, type ThemeMode, type CardStyle, type FontSize } from '@/lib/theme'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import {
-  User, CreditCard, Palette, Cloud, BarChart3, Shield, Key, Bell,
-  Check, ChevronRight, RefreshCw, Download, Trash2, Moon, Sun, Monitor,
-  Crown, Zap, AlertTriangle, X, Eye, EyeOff
+  User, CreditCard, Palette, Cloud, BarChart3,
+  Check, RefreshCw, Download, Trash2, Moon, Sun, Monitor,
+  AlertTriangle, Eye, EyeOff
 } from 'lucide-react'
 
 type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
@@ -361,7 +361,7 @@ function AccountPanel() {
   // 删除头像
   const handleDeleteAvatar = async () => {
     try {
-      const res = await authApi.deleteAvatar() as any
+      await authApi.deleteAvatar() as any
       updateUser({ avatar_url: undefined })
       toast.success('头像已删除')
     } catch {
@@ -585,8 +585,8 @@ function AccountPanel() {
 
 /** DIY UI 面板 */
 function AppearancePanel() {
-  const [prefs, setPrefs] = useState<any>(null)
-  const [saving, setSaving] = useState(false)
+  const [, setPrefs] = useState<any>(null)
+  const [, setSaving] = useState(false)
   const [localPrefs, setLocalPrefs] = useState({
     theme: 'light',
     primary_color: 'jade',

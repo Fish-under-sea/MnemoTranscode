@@ -130,6 +130,10 @@ export default {
           active: 'var(--brand-primary-active)',
           accent: 'var(--brand-accent)',
         },
+        'border-default': 'var(--border-default)',
+      },
+      spacing: {
+        13: '3.25rem',
       },
 
       fontFamily: {

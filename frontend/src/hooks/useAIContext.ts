@@ -37,10 +37,15 @@ export function useAIContext() {
   // 加载初始上下文
   const loadContext = useCallback(async () => {
     try {
-      const [memoryRes, prefsRes] = await Promise.all([
-        aiMemoryApi.get() as Promise<{ summaries: DialogueSummary[]; last_updated: string | null }>,
-        preferencesApi.get() as Promise<{ ai_memory_sync: string }>,
+      const [memoryAxios, prefsAxios] = await Promise.all([
+        aiMemoryApi.get(),
+        preferencesApi.get(),
       ])
+      const memoryRes = memoryAxios.data as {
+        summaries: DialogueSummary[]
+        last_updated: string | null
+      }
+      const prefsRes = prefsAxios.data as { ai_memory_sync: string }
 
       setContext({
         summaries: memoryRes.summaries || [],
