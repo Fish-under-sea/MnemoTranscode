@@ -64,6 +64,8 @@ export interface ThemeConfig {
   primaryColor: PrimaryColor
   cardStyle: CardStyle
   fontSize: FontSize
+  /** 全屏铺底背景图，http(s) 或站内需带鉴权的相对路径可写绝对站外 URL */
+  appBackgroundUrl?: string | null
 }
 
 export function applyTheme(config: ThemeConfig) {
@@ -92,6 +94,13 @@ export function applyTheme(config: ThemeConfig) {
   } else {
     root.classList.remove('dark')
   }
+
+  const bg = (config.appBackgroundUrl ?? '').trim()
+  if (bg) {
+    root.style.setProperty('--app-background-image', `url(${JSON.stringify(bg)})`)
+  } else {
+    root.style.setProperty('--app-background-image', 'none')
+  }
 }
 
 export function hexToRgb(hex: string): string {
@@ -107,6 +116,7 @@ export function getDefaultTheme(): ThemeConfig {
     primaryColor: 'jade',
     cardStyle: 'glass',
     fontSize: 'medium',
+    appBackgroundUrl: null,
   }
 }
 

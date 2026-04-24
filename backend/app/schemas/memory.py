@@ -38,6 +38,8 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     """更新用户"""
     username: str | None = Field(None, min_length=2, max_length=50)
+    # 与独立订阅接口等效，供环境对 /auth/subscription 仅放行 GET 时经 PATCH /me 切换档
+    subscription_tier: Literal["free", "pro", "enterprise"] | None = None
 
 
 class UserResponse(UserBase):
@@ -105,6 +107,12 @@ def _normalize_member_payload(raw: Any, mode: Literal["create", "update"]) -> An
         return raw
 
     data = dict(raw)
+    # 前端旧枚举 alive/deceased/unknown → API MemberStatus（body 可不传 archive_id，由路径注入）
+    _legacy_status = {"alive": "active", "deceased": "passed", "unknown": "other"}
+    if isinstance(data.get("status"), str):
+        _s = data["status"].strip().lower()
+        if _s in _legacy_status:
+            data["status"] = _legacy_status[_s]
     state_fields = ("status", "end_year", "is_alive", "death_year")
 
     # PATCH 场景：状态相关字段全未提供时直接放行
@@ -163,8 +171,7 @@ class MemberBase(BaseModel):
 
 
 class MemberCreate(MemberBase):
-    """创建成员"""
-    archive_id: int
+    """创建成员（archive_id 仅来自 URL 路径 /archives/{archive_id}/members，勿需在 body 重复）。"""
 
     @model_validator(mode="before")
     @classmethod

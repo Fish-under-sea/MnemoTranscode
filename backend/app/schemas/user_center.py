@@ -92,6 +92,7 @@ class UserPreferencesBase(BaseModel):
     font_size: FontSize = FontSize.medium
     dashboard_layout: str = "grid"
     custom_css: str | None = None
+    app_background_url: str | None = None
     ai_memory_sync: str = "on"
 
 
@@ -112,6 +113,7 @@ class UserPreferencesUpdate(BaseModel):
     font_size: FontSize | None = None
     dashboard_layout: str | None = None
     custom_css: str | None = None
+    app_background_url: str | None = None
     ai_memory_sync: str | None = None
 
 

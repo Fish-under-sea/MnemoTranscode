@@ -13,7 +13,10 @@ RUN npm run build
 FROM nginx:alpine AS runner
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 使用 /etc/nginx/templates/*.template 由官方 entrypoint 做 envsubst 生成 conf.d
+COPY default.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx-snippets/ /etc/nginx/snippets/
+ENV API_UPSTREAM=backend:8000
 
 EXPOSE 80
 

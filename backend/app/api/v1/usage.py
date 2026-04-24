@@ -13,11 +13,35 @@ from app.api.v1.auth import get_current_user
 from app.models.user import User
 from app.models.usage import UsageRecord
 from app.schemas.user_center import (
-    UsageStatsResponse, UsageHistoryResponse, QuotaResponse,
-    UsageRecordResponse
+    UsageStatsResponse,
+    UsageHistoryResponse,
+    QuotaResponse,
+    UsageRecordResponse,
+    SubscriptionResponse,
+    SubscriptionTierUpdate,
 )
+from app.services.subscription import apply_tier_to_user, build_subscription_response
 
 router = APIRouter(prefix="/usage", tags=["用量统计"])
+
+
+@router.post("/subscription-tier", response_model=SubscriptionResponse)
+async def set_subscription_tier_alias(
+    body: SubscriptionTierUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    切换订阅档位（与 POST /api/v1/auth/subscription 等价）。
+
+    当 /auth/subscription 在代理或 ASGI 层对 POST/PATCH/PUT 出现 405 时，可改用本路径（独立 URL 段，避免与 GET 同一路由冲突）。
+    """
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
+    apply_tier_to_user(user, body.tier)
+    await db.commit()
+    await db.refresh(user)
+    return build_subscription_response(user)
 
 
 @router.get("/stats", response_model=UsageStatsResponse)

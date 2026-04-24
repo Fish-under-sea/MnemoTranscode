@@ -3,7 +3,7 @@
  */
 import axios, { type AxiosError } from 'axios'
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { inferFromStatus, type ApiError } from './errors'
+import { inferFromStatus, isApiError, type ApiError } from './errors'
 
 // ========== 认证响应类型（供 useAuthForm / 页面使用）==========
 
@@ -31,11 +31,14 @@ const api = axios.create({
   },
 })
 
-// 请求拦截器：从 localStorage 直接读取 token
+// 请求拦截器：从 localStorage 直接读取 token；FormData 必须去掉默认 JSON Content-Type 以便带上 multipart boundary
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('mtc-token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (config.data instanceof FormData) {
+    config.headers.delete('Content-Type')
   }
   return config
 })
@@ -47,9 +50,30 @@ api.interceptors.response.use(
     const status = error.response?.status ?? 0
     const body = (error.response?.data ?? {}) as Record<string, unknown>
 
+    // FastAPI 默认 422 为 { detail: [ { loc, msg, type }, ... ] }，无 message/fields
+    let fromDetail: { fields: string[]; firstMsg: string } | null = null
+    if (status === 422 && Array.isArray(body.detail)) {
+      const fields = new Set<string>()
+      const lines: string[] = []
+      for (const part of body.detail) {
+        if (part && typeof part === 'object' && 'loc' in (part as object)) {
+          const loc = (part as { loc: unknown; msg?: string }).loc
+          const msg = (part as { msg?: string }).msg
+          if (Array.isArray(loc) && loc.length > 0) {
+            fields.add(String(loc[loc.length - 1]))
+          }
+          if (typeof msg === 'string' && msg) lines.push(msg)
+        }
+      }
+      if (fields.size > 0 || lines.length > 0) {
+        fromDetail = { fields: [...fields].sort(), firstMsg: lines[0] ?? '请求参数校验失败' }
+      }
+    }
+
     const message =
       (typeof body.message === 'string' && body.message) ||
       (typeof body.detail === 'string' && body.detail) ||
+      (fromDetail?.firstMsg && `请求参数校验失败：${fromDetail.firstMsg}`) ||
       error.message ||
       '网络异常'
 
@@ -63,7 +87,11 @@ api.interceptors.response.use(
     const apiError: ApiError = {
       error_code: baseCode,
       message,
-      fields: Array.isArray(body.fields) ? (body.fields as string[]) : undefined,
+      fields: Array.isArray(body.fields)
+        ? (body.fields as string[])
+        : fromDetail?.fields
+          ? fromDetail.fields
+          : undefined,
       request_id: reqId,
       http_status: status,
       detail: (typeof body.detail === 'string' && body.detail) || message,
@@ -96,14 +124,15 @@ export const authApi = {
 
   getMe: () => api.get('/auth/me'),
 
-  updateMe: (data: { username?: string }) => api.patch('/auth/me', data),
+  updateMe: (data: {
+    username?: string
+    subscription_tier?: 'free' | 'pro' | 'enterprise'
+  }) => api.patch('/auth/me', data),
 
   uploadAvatar: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return api.post('/auth/avatar', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    return api.post('/auth/avatar', form)
   },
 
   deleteAvatar: () => api.delete('/auth/avatar'),
@@ -131,13 +160,23 @@ export const archiveApi = {
       name: string
       relationship_type: string
       birth_year?: number
-      /** 关系状态：alive=健在 / deceased=已离开 / unknown=未明示。 */
-      status?: 'alive' | 'deceased' | 'unknown'
-      /** 结束年份（status=deceased 时为辞世年；status=alive 时可空；对组织/关系可表示终止年） */
+      /**
+       * 关系状态。优先传后端原语 active / passed / other…；
+       * 旧枚举 alive / deceased / unknown 由后端也支持归一化。
+       */
+      status?: 'active' | 'passed' | 'distant' | 'pet' | 'other' | 'alive' | 'deceased' | 'unknown'
       end_year?: number
       bio?: string
     },
-  ) => api.post(`/archives/${archiveId}/members`, data),
+  ) => {
+    const n = Math.trunc(Number(archiveId))
+    if (!Number.isInteger(n) || n < 1) {
+      return Promise.reject(
+        new Error('INVALID_ARCHIVE_ID_IN_PATH: 请从档案库重新进入当前档案页面'),
+      )
+    }
+    return api.post(`/archives/${n}/members`, data)
+  },
 
   listMembers: (archiveId: number) => api.get(`/archives/${archiveId}/members`),
 
@@ -230,6 +269,22 @@ export const usageApi = {
   getQuota: () => api.get('/usage/quota'),
 }
 
+// ========== LLM 端点探测（连通性 + 模型列表，需登录）==========
+
+export const llmProbeApi = {
+  check: (body: {
+    mode: 'openai' | 'ollama' | 'google' | 'anthropic' | 'zhipu'
+    base_url: string
+    api_key?: string | null
+  }) =>
+    api.post('/llm-probe/check', body) as Promise<{
+      ok: boolean
+      latency_ms: number | null
+      error: string | null
+      models: string[]
+    }>,
+}
+
 // ========== 用户偏好 ==========
 
 export const preferencesApi = {
@@ -242,6 +297,7 @@ export const preferencesApi = {
     font_size?: string
     dashboard_layout?: string
     custom_css?: string
+    app_background_url?: string | null
     ai_memory_sync?: string
   }) => api.put('/preferences', data),
 }
@@ -261,8 +317,37 @@ export const aiMemoryApi = {
 export const subscriptionApi = {
   get: () => api.get('/auth/subscription'),
 
-  updateTier: (tier: 'free' | 'pro' | 'enterprise') =>
-    api.patch('/auth/subscription', { tier }),
+  /**
+   * 切换方案。部分环境对 /api/v1/auth/subscription 的 POST/PATCH/PUT 整段 405，但 GET 仍可用。
+   * 故优先：PATCH /auth/me 写 subscription_tier → 再 GET /auth/subscription 拉齐用量；
+   * 回退：POST /auth/billing/apply-tier（路径不含 subscription）；再旧链路与 /usage/…。
+   */
+  updateTier: async (tier: 'free' | 'pro' | 'enterprise') => {
+    const body = { tier }
+    const afterPatchMe = async () => {
+      await api.patch('/auth/me', { subscription_tier: tier })
+      return api.get('/auth/subscription') as Promise<Record<string, unknown>>
+    }
+    const attempts = [
+      afterPatchMe,
+      () => api.post('/auth/billing/apply-tier', body),
+      () => api.post('/auth/subscription', body),
+      () => api.post('/usage/subscription-tier', body),
+      () => api.patch('/auth/subscription', body),
+      () => api.put('/auth/subscription', body),
+    ]
+    let last: unknown
+    for (const run of attempts) {
+      try {
+        return await run()
+      } catch (e: unknown) {
+        last = e
+        if (isApiError(e) && (e.http_status === 404 || e.http_status === 405)) continue
+        throw e
+      }
+    }
+    throw last
+  },
 }
 
 // ========== 媒体两阶段上传（C · M3）==========

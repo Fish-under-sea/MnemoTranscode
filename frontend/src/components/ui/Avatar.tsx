@@ -5,6 +5,7 @@
  * - AvatarGroup 叠加
  */
 import * as RadixAvatar from '@radix-ui/react-avatar'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { HTMLAttributes, ReactNode } from 'react'
 
@@ -23,10 +24,14 @@ function initials(name: string) {
 }
 
 export default function Avatar({ src, name, size = 40, shape = 'circle', className, ...rest }: AvatarProps) {
+  const [imgOk, setImgOk] = useState(true)
+  useEffect(() => {
+    setImgOk(true)
+  }, [src])
   return (
     <RadixAvatar.Root
       className={cn(
-        'inline-flex items-center justify-center overflow-hidden bg-jade-100 text-jade-700 font-semibold select-none',
+        'inline-flex shrink-0 items-center justify-center overflow-hidden bg-jade-100 text-jade-700 font-semibold select-none',
         shape === 'circle' ? 'rounded-full' : 'rounded-lg',
         'dark:bg-amber-400/20 dark:text-amber-200',
         className,
@@ -34,7 +39,14 @@ export default function Avatar({ src, name, size = 40, shape = 'circle', classNa
       style={{ width: size, height: size, fontSize: size * 0.38 }}
       {...rest}
     >
-      {src && <RadixAvatar.Image src={src} alt={name} className="w-full h-full object-cover" />}
+      {src && imgOk && (
+        <RadixAvatar.Image
+          src={src}
+          alt={name}
+          className="w-full h-full object-cover"
+          onError={() => setImgOk(false)}
+        />
+      )}
       <RadixAvatar.Fallback delayMs={300} className="leading-none">
         {initials(name)}
       </RadixAvatar.Fallback>

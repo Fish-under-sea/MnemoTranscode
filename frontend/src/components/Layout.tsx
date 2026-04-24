@@ -5,7 +5,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import {
   Home, FolderOpen, MessageCircle, LogOut, Menu, X,
-  ChevronDown, LayoutDashboard, Package, Bot,
+  ChevronDown, LayoutDashboard, Package, Bot, ExternalLink,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,8 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // 个人资料与订阅由 App 在登录后统一 GET /auth/me 拉取，避免与 Layout 重复请求
 
   // 点击外部关闭用户菜单
   useEffect(() => {
@@ -52,11 +54,16 @@ export default function Layout() {
   const displayName = user?.username?.trim() || '用户'
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      {/* 全站背景图（由 ThemeProvider + applyTheme 设置 --app-background-image） */}
+      <div
+        className="pointer-events-none fixed inset-0 -z-10 bg-warm-50 bg-cover bg-center bg-fixed bg-no-repeat [background-image:var(--app-background-image,none)]"
+        aria-hidden
+      />
       {/* 顶部导航 */}
       <header className="bg-warm-50/80 border-b border-warm-200 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
+        <div className="max-w-7xl mx-auto pl-3 pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-4 sm:pr-[max(1rem,env(safe-area-inset-right,0px))] lg:px-8">
+          <div className="flex items-center justify-between h-14 gap-2 min-w-0">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-jade-400 to-jade-600 rounded-lg flex items-center justify-center shadow-jade">
@@ -69,6 +76,14 @@ export default function Layout() {
 
             {/* 桌面导航 */}
             <nav className="hidden md:flex items-center gap-1">
+              <Link
+                to="/welcome"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-slate-500 hover:text-jade-700 hover:bg-jade-50 transition-all duration-200"
+                title="返回官网落地页，无需退出登录"
+              >
+                <ExternalLink size={16} />
+                官网
+              </Link>
               {navItems.map((item) => {
                 const Icon = item.icon
                 const active = getActive(item.path)
@@ -91,7 +106,7 @@ export default function Layout() {
             </nav>
 
             {/* 用户信息 */}
-            <div className="flex items-center gap-3" ref={menuRef}>
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0" ref={menuRef}>
               {/* 用户下拉菜单 */}
               <div className="relative">
                 <button
@@ -148,6 +163,14 @@ export default function Layout() {
                     {/* 菜单项 */}
                     <div className="py-1">
                       <Link
+                        to="/welcome"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-jade-50 hover:text-jade-700 transition-colors cursor-pointer"
+                      >
+                        <ExternalLink size={16} />
+                        官网落地页
+                      </Link>
+                      <Link
                         to="/personal-center"
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-jade-50 hover:text-jade-700 transition-colors cursor-pointer"
@@ -203,7 +226,15 @@ export default function Layout() {
                 </Link>
               )
             })}
-            <div className="border-t border-warm-200 pt-1 mt-1">
+            <div className="border-t border-warm-200 pt-1 mt-1 space-y-1">
+              <Link
+                to="/welcome"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-slate-600 hover:bg-jade-50 transition-colors"
+              >
+                <ExternalLink size={18} />
+                官网落地页
+              </Link>
               <Link
                 to="/personal-center"
                 onClick={() => setMobileOpen(false)}

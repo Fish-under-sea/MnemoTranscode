@@ -5,18 +5,33 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { authApi, usageApi, preferencesApi, subscriptionApi } from '@/services/api'
+import { isApiError, mapErrorToMessage } from '@/services/errors'
+import Avatar from '@/components/ui/Avatar'
 import { useAIContext } from '@/hooks/useAIContext'
 import { applyTheme, COLOR_OPTIONS, type PrimaryColor, type ThemeMode, type CardStyle, type FontSize } from '@/lib/theme'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
+import { compressImageFileForAvatar } from '@/lib/compressImage'
+import { bumpSubscriptionSyncGen, getSubscriptionSyncGen } from '@/lib/subscriptionSyncGen'
 import {
   User, CreditCard, Palette, Cloud, BarChart3,
-  Check, RefreshCw, Download, Trash2, Moon, Sun, Monitor,
-  AlertTriangle, Eye, EyeOff
+  Check, RefreshCw, Download, Upload, Trash2, Moon, Sun, Monitor,
+  AlertTriangle, Eye, EyeOff, Image,
 } from 'lucide-react'
 type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
 
 const VALID_TAB_IDS: TabId[] = ['overview', 'subscription', 'account', 'appearance', 'cloud']
+
+type SubscriptionTierId = 'free' | 'pro' | 'enterprise'
+
+function normalizeSubTier(
+  sub: { tier?: string } | null | undefined,
+  user: { subscription_tier?: string } | null | undefined
+): SubscriptionTierId {
+  const raw = (sub?.tier ?? user?.subscription_tier ?? 'free').toString().trim().toLowerCase()
+  if (raw === 'pro' || raw === 'enterprise' || raw === 'free') return raw
+  return 'free'
+}
 
 function parseTabParam(params: URLSearchParams): TabId {
   const t = params.get('tab')
@@ -85,10 +100,15 @@ function OverviewPanel() {
       {/* 用户卡片 */}
       <div className="bg-gradient-to-br from-jade-50 to-jade-100 rounded-2xl p-6 border border-jade-200">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-jade-400 to-jade-600 flex items-center justify-center shadow-jade">
-            <span className="text-white font-bold text-xl">{user?.username?.charAt(0)?.toUpperCase() || 'U'}</span>
+          <div className="shrink-0 self-center flex h-16 w-16 items-center justify-center overflow-hidden rounded-full ring-2 ring-jade-200/80 ring-offset-0 shadow-jade">
+            <Avatar
+              size={64}
+              name={user?.username || 'U'}
+              src={user?.avatar_url || undefined}
+              className="align-middle"
+            />
           </div>
-          <div>
+          <div className="min-w-0 flex-1 self-center">
             <h2 className="text-xl font-bold text-slate-900">{user?.username}</h2>
             <p className="text-slate-500 text-sm">{user?.email}</p>
             <span className={cn(
@@ -178,8 +198,10 @@ function SubscriptionPanel() {
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
 
-  const refreshSubscription = () =>
-    subscriptionApi.get().then((res: any) => {
+  const refreshSubscription = () => {
+    const at = getSubscriptionSyncGen()
+    return subscriptionApi.get().then((res: any) => {
+      if (at !== getSubscriptionSyncGen()) return
       setSub(res)
       updateUser({
         subscription_tier: res.tier,
@@ -187,6 +209,7 @@ function SubscriptionPanel() {
         monthly_token_used: res.monthly_used,
       })
     })
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -196,20 +219,64 @@ function SubscriptionPanel() {
   }, [])
 
   const handleSelectPlan = async (planId: 'free' | 'pro' | 'enterprise') => {
-    if (planId === (user?.subscription_tier || 'free') || switching) return
+    if (planId === normalizeSubTier(sub, user) || switching) return
+    bumpSubscriptionSyncGen()
     setSwitching(true)
     try {
       const res = (await subscriptionApi.updateTier(planId)) as any
-      setSub(res)
+      const tier = ((res?.tier as string) || planId).toString().trim().toLowerCase() as
+        'free' | 'pro' | 'enterprise'
+      setSub(
+        res && typeof res === 'object'
+          ? { ...res, tier: tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId }
+          : res,
+      )
       updateUser({
-        subscription_tier: res.tier,
-        monthly_token_limit: res.monthly_limit,
-        monthly_token_used: res.monthly_used,
+        subscription_tier: tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId,
+        monthly_token_limit: res?.monthly_limit,
+        monthly_token_used: res?.monthly_used,
       })
+      // 把服务器可能晚到、gen 仍为 0 的 in-flight getMe 全部作废，再对账
+      bumpSubscriptionSyncGen()
+      try {
+        // 对账用 GET /me 拉齐头像等；订阅档位以「本请求已成功」的 res / planId 为准，勿用 getMe
+        //（部分环境下 getMe 会短暂滞后为 free，且 "free" 为真会错误覆盖 planId||）
+        const me = (await authApi.getMe()) as {
+          email?: string
+          username?: string
+          is_active?: boolean
+          created_at?: string
+          avatar_url?: string | null
+          monthly_token_limit?: number
+          monthly_token_used?: number
+        }
+        const resolvedTier: 'free' | 'pro' | 'enterprise' =
+          tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId
+        updateUser({
+          email: me.email,
+          username: me.username,
+          is_active: me.is_active,
+          created_at: me.created_at,
+          avatar_url: me.avatar_url ?? undefined,
+          subscription_tier: resolvedTier,
+          monthly_token_limit: me.monthly_token_limit ?? res?.monthly_limit,
+          monthly_token_used: me.monthly_token_used ?? res?.monthly_used,
+        })
+        setSub((prev: any) =>
+          prev && typeof prev === 'object' ? { ...prev, tier: resolvedTier } : prev,
+        )
+      } catch {
+        // 以 subscription 与 planId 为准
+        updateUser({ subscription_tier: planId })
+        setSub((prev: any) =>
+          prev && typeof prev === 'object' ? { ...prev, tier: planId } : prev,
+        )
+      }
       const label = planId === 'free' ? 'Free' : planId === 'pro' ? 'Pro' : 'Enterprise'
       toast.success(`已切换至 ${label} 方案（演示环境无需支付）`)
-    } catch {
-      toast.error('切换方案失败，请稍后重试')
+    } catch (e) {
+      const msg = isApiError(e) ? mapErrorToMessage(e) : '切换方案失败，请稍后重试'
+      toast.error(msg, { id: 'subscription-tier-switch' })
     } finally {
       setSwitching(false)
     }
@@ -246,7 +313,7 @@ function SubscriptionPanel() {
     },
   ]
 
-  const currentTier = user?.subscription_tier || 'free'
+  const currentTier = normalizeSubTier(sub, user)
 
   if (loading) {
     return (
@@ -360,24 +427,30 @@ function AccountPanel() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarImgError, setAvatarImgError] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (user?.username) setUsername(user.username)
   }, [user])
 
-  // 头像预览处理
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) {
+  useEffect(() => {
+    setAvatarImgError(false)
+  }, [user?.avatar_url])
+
+  // 头像预览处理（选图后先压缩，减少上传时间）
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files?.[0]
+    if (!raw) return
+    if (raw.size > 5 * 1024 * 1024) {
       toast.error('头像文件不能超过 5MB')
       return
     }
-    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(raw.type)) {
       toast.error('仅支持 JPG、PNG、GIF、WebP 格式')
       return
     }
+    const file = await compressImageFileForAvatar(raw)
     setAvatarFile(file)
     const reader = new FileReader()
     reader.onload = (ev) => setAvatarPreview(ev.target?.result as string)
@@ -389,8 +462,32 @@ function AccountPanel() {
     if (!avatarFile) return
     setAvatarUploading(true)
     try {
-      const res = await authApi.uploadAvatar(avatarFile) as any
-      updateUser({ avatar_url: res.url })
+      const res = (await authApi.uploadAvatar(avatarFile)) as {
+        url?: string
+        user?: {
+          avatar_url?: string | null
+          email?: string
+          username?: string
+          is_active?: boolean
+          created_at?: string
+        }
+      }
+      // 先 bump，丢弃 App 中在途的 getMe，避免用旧 /auth/me 覆盖刚写入的头像
+      bumpSubscriptionSyncGen()
+      const u = res.user
+      if (u && typeof u === 'object') {
+        updateUser({
+          email: u.email,
+          username: u.username,
+          is_active: u.is_active,
+          created_at: u.created_at,
+          avatar_url: (u.avatar_url ?? res.url) ?? undefined,
+        })
+      } else {
+        const nextUrl = res.url
+        if (nextUrl) updateUser({ avatar_url: nextUrl })
+      }
+      setAvatarImgError(false)
       toast.success('头像已更新')
       setAvatarFile(null)
       setAvatarPreview(null)
@@ -406,7 +503,9 @@ function AccountPanel() {
   const handleDeleteAvatar = async () => {
     try {
       await authApi.deleteAvatar() as any
+      bumpSubscriptionSyncGen()
       updateUser({ avatar_url: undefined })
+      setAvatarImgError(false)
       toast.success('头像已删除')
     } catch {
       toast.error('删除失败')
@@ -466,35 +565,41 @@ function AccountPanel() {
       <div className="bg-white rounded-2xl border border-warm-200 p-6">
         <h3 className="font-semibold text-slate-900 mb-4">基本信息</h3>
         <div className="space-y-4">
-          {/* 头像上传 */}
+          {/* 头像上传：渐变外环 + 内嵌图（同域 /api 代理，避免直连 MinIO 裂图）*/}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">头像</label>
-            <div className="flex items-center gap-4">
-              {/* 当前头像 */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <div className="relative flex-shrink-0">
-                <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-jade-400 to-jade-600 flex items-center justify-center shadow-md">
-                  {avatarPreview || user?.avatar_url ? (
-                    <img
-                      src={avatarPreview || user?.avatar_url || ''}
-                      alt="头像"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-white font-bold text-2xl">
-                      {user?.username?.charAt(0)?.toUpperCase() || 'U'}
-                    </span>
-                  )}
+                <div className="relative h-[5.5rem] w-[5.5rem] sm:h-24 sm:w-24">
+                  <div
+                    className="absolute inset-0 rounded-full bg-gradient-to-br from-jade-400 via-jade-500 to-jade-700 shadow-jade-lg ring-1 ring-jade-300/25"
+                    aria-hidden
+                  />
+                  <div className="absolute inset-[3px] overflow-hidden rounded-full bg-warm-50 ring-1 ring-white/60 shadow-inner">
+                    {avatarPreview || (user?.avatar_url && !avatarImgError) ? (
+                      <img
+                        src={(avatarPreview || user?.avatar_url) as string}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        onError={() => setAvatarImgError(true)}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-jade-500 to-jade-700 text-2xl font-bold tracking-tight text-white">
+                        {user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {/* 上传中遮罩 */}
                 {avatarUploading && (
-                  <div className="absolute inset-0 bg-slate-900/50 rounded-full flex items-center justify-center">
-                    <RefreshCw size={16} className="text-white animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/50 ring-1 ring-inset ring-white/20">
+                    <RefreshCw size={20} className="text-white animate-spin" />
                   </div>
                 )}
               </div>
 
-              {/* 上传操作 */}
-              <div className="flex flex-col gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -636,6 +741,7 @@ function AppearancePanel() {
     primary_color: 'jade',
     card_style: 'glass',
     font_size: 'medium',
+    app_background_url: '' as string,
   })
 
   useEffect(() => {
@@ -646,6 +752,7 @@ function AppearancePanel() {
         primary_color: res.primary_color || 'jade',
         card_style: res.card_style || 'glass',
         font_size: res.font_size || 'medium',
+        app_background_url: typeof res.app_background_url === 'string' ? res.app_background_url : '',
       })
     })
   }, [])
@@ -660,11 +767,16 @@ function AppearancePanel() {
       primaryColor: newPrefs.primary_color as PrimaryColor,
       cardStyle: newPrefs.card_style as CardStyle,
       fontSize: newPrefs.font_size as FontSize,
+      appBackgroundUrl: newPrefs.app_background_url || null,
     })
 
     setSaving(true)
     try {
-      await preferencesApi.update({ [key]: value })
+      if (key === 'app_background_url') {
+        await preferencesApi.update({ app_background_url: value.trim() || null })
+      } else {
+        await preferencesApi.update({ [key]: value })
+      }
     } catch {
       toast.error('保存失败')
     } finally {
@@ -789,6 +901,41 @@ function AppearancePanel() {
         </div>
       </div>
 
+      {/* 全站背景图 */}
+      <div className="bg-white rounded-2xl border border-warm-200 p-6">
+        <h3 className="font-semibold text-slate-900 mb-1 flex items-center gap-2">
+          <Image size={18} className="text-jade-600" />
+          网页应用背景图
+        </h3>
+        <p className="text-sm text-slate-500 mb-4">
+          登录后主导航与主内容区背后的全屏背景。请使用可公网访问的 <code className="text-xs bg-warm-100 px-1 rounded">https://</code>{' '}
+          图片地址；留空则恢复默认浅色底。
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="url"
+            value={localPrefs.app_background_url}
+            onChange={(e) => setLocalPrefs((p) => ({ ...p, app_background_url: e.target.value }))}
+            placeholder="https://example.com/bg.jpg"
+            className="flex-1 px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 outline-none bg-warm-50 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => updatePref('app_background_url', localPrefs.app_background_url)}
+            className="px-4 py-2.5 bg-jade-500 text-white rounded-xl text-sm font-medium hover:bg-jade-600 shadow-jade transition-colors cursor-pointer whitespace-nowrap"
+          >
+            应用
+          </button>
+          <button
+            type="button"
+            onClick={() => updatePref('app_background_url', '')}
+            className="px-4 py-2.5 border border-warm-200 rounded-xl text-sm text-slate-600 hover:bg-warm-50 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            清除
+          </button>
+        </div>
+      </div>
+
       {/* 预览 */}
       <div className="bg-white rounded-2xl border border-warm-200 p-6">
         <h3 className="font-semibold text-slate-900 mb-4">预览</h3>
@@ -817,9 +964,12 @@ function AppearancePanel() {
 function CloudPanel() {
   const {
     summaries, lastUpdated, syncEnabled, syncing,
-    toggleSync, forceSync, clearMemory, getContextForPrompt
+    toggleSync, forceSync, clearMemory, getContextForPrompt,
+    importMemoryFromJsonFile,
   } = useAIContext()
   const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleExport = async () => {
     setExporting(true)
@@ -844,6 +994,22 @@ function CloudPanel() {
       toast.error('导出失败')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImporting(true)
+    try {
+      await importMemoryFromJsonFile(file)
+      toast.success('导入成功，记忆已更新')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '导入失败'
+      toast.error(msg)
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -921,20 +1087,39 @@ function CloudPanel() {
         )}
       </div>
 
-      {/* 数据导出 */}
+      {/* 数据导入与导出 */}
       <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-2">数据导出</h3>
+        <h3 className="font-semibold text-slate-900 mb-2">数据导入与导出</h3>
         <p className="text-sm text-slate-500 mb-4">
-          将你的 AI 记忆数据导出为 JSON 文件，方便备份或迁移。
+          从本页曾导出的 JSON 恢复记忆，或导出为 JSON 便于备份、迁移。导入会覆盖当前云端记忆（最多保留 10 条摘要）。
         </p>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="px-5 py-2.5 bg-jade-500 text-white rounded-xl font-medium hover:bg-jade-600 disabled:opacity-50 transition-all shadow-jade text-sm flex items-center gap-2 cursor-pointer"
-        >
-          <Download size={15} />
-          {exporting ? '导出中...' : '导出数据'}
-        </button>
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            onChange={handleImportFile}
+          />
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="px-5 py-2.5 border-2 border-jade-500 text-jade-700 bg-jade-50 rounded-xl font-medium hover:bg-jade-100 disabled:opacity-50 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Upload size={15} />
+            {importing ? '导入中...' : '导入数据'}
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="px-5 py-2.5 bg-jade-500 text-white rounded-xl font-medium hover:bg-jade-600 disabled:opacity-50 transition-all shadow-jade text-sm flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Download size={15} />
+            {exporting ? '导出中...' : '导出数据'}
+          </button>
+        </div>
       </div>
 
       {/* 同步说明 */}

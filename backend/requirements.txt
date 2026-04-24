@@ -13,6 +13,8 @@ alembic>=1.13.0
 # Auth
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+bcrypt==3.2.2
+email-validator>=2.1.0
 
 # Config
 pydantic-settings>=2.1.0
@@ -25,6 +27,7 @@ requests>=2.31.0
 # LLM & AI
 openai>=1.12.0
 tenacity>=8.2.3
+numpy>=1.26.0
 
 # Celery & Task Queue
 celery>=5.3.0

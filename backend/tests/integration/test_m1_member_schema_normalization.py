@@ -13,7 +13,6 @@ from app.schemas.memory import MemberCreate, MemberUpdate
 
 def test_member_create_accepts_new_status_fields():
     payload = MemberCreate(
-        archive_id=1,
         name="阿青",
         relationship_type="friend",
         status="active",
@@ -21,9 +20,20 @@ def test_member_create_accepts_new_status_fields():
     assert payload.status == "active"
 
 
+def test_member_create_maps_legacy_frontend_status():
+    payload = MemberCreate(
+        name="小雅",
+        relationship_type="friend",
+        status="deceased",
+        end_year=2025,
+    )
+    assert payload.status == "passed"
+    assert payload.end_year == 2025
+
+
 def test_member_create_requires_status_or_legacy_source():
     with pytest.raises(ValidationError) as exc:
-        MemberCreate(archive_id=1, name="阿青", relationship_type="friend")
+        MemberCreate(name="阿青", relationship_type="friend")
     assert "VALIDATION_REQUIRED_STATUS" in str(exc.value)
 
 
@@ -35,7 +45,6 @@ def test_member_update_name_only_is_allowed():
 def test_member_create_rejects_status_death_year_conflict():
     with pytest.raises(ValidationError) as exc:
         MemberCreate(
-            archive_id=1,
             name="阿青",
             relationship_type="friend",
             status="distant",

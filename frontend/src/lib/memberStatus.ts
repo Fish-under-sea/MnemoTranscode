@@ -2,7 +2,15 @@ import type { LucideIcon } from 'lucide-react'
 import { Sun, Sunset, HelpCircle } from 'lucide-react'
 
 export type MemberStatus = 'alive' | 'deceased' | 'unknown'
+/** 与后端 `MemberStatus` 字面量一致，创建/更新成员时直传，避免经代理后校验顺序异常。 */
+export type MemberStatusApi = 'active' | 'passed' | 'distant' | 'pet' | 'other'
 export type BadgeTone = 'jade' | 'amber' | 'neutral'
+
+export function memberStatusToApi(s: MemberStatus): MemberStatusApi {
+  if (s === 'alive') return 'active'
+  if (s === 'deceased') return 'passed'
+  return 'other'
+}
 
 interface StatusMeta {
   label: string

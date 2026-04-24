@@ -70,6 +70,11 @@ export function mapErrorToMessage(err: ApiError): string {
   }
 
   if (FORCE_FALLBACK_CODES.has(err.error_code)) {
+    const m = err.message?.trim()
+    // 500/503/断网等仍可能带后端或网关的中文说明，优先展示便于排障
+    if (m && /[\u4e00-\u9fff]/.test(m) && !isLowQualityMessage(m)) {
+      return m
+    }
     return WHITELIST_FALLBACK[err.error_code] ?? '操作失败'
   }
 

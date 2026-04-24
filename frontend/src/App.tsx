@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Layout from './components/Layout'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
@@ -19,13 +19,82 @@ import ThemeProvider from './components/ThemeProvider'
 import { ToastHost } from './components/ui/Toast'
 import MotionProvider from './providers/MotionProvider'
 import { useAuthStore } from './hooks/useAuthStore'
+import { authApi, subscriptionApi } from './services/api'
+import { getSubscriptionSyncGen } from './lib/subscriptionSyncGen'
 
 export default function App() {
   const { isAuthenticated, authChecked, checkAuth } = useAuthStore()
+  const subscriptionSyncedRef = useRef(false)
 
   useEffect(() => {
     checkAuth()
   }, [])
+
+  useEffect(() => {
+    if (!authChecked) return
+    if (!isAuthenticated) {
+      subscriptionSyncedRef.current = false
+      return
+    }
+    if (!useAuthStore.getState().user) return
+    if (subscriptionSyncedRef.current) return
+    subscriptionSyncedRef.current = true
+    const at = getSubscriptionSyncGen()
+    void authApi
+      .getMe()
+      .then((u: unknown) => {
+        if (at !== getSubscriptionSyncGen()) return
+        if (!u || typeof u !== 'object' || u === null) return
+        const me = u as Record<string, unknown>
+        // 只同步资料/头像，订阅单独 GET /auth/subscription，避免用滞后的 getMe 写 free
+        useAuthStore.getState().updateUser({
+          email: me.email as string,
+          username: me.username as string,
+          is_active: me.is_active as boolean,
+          created_at: me.created_at as string,
+          avatar_url: (me.avatar_url as string | null | undefined) ?? undefined,
+        })
+      })
+      .catch(() => {})
+    void subscriptionApi
+      .get()
+      .then((res: unknown) => {
+        if (at !== getSubscriptionSyncGen()) return
+        const r = res as { tier: string; monthly_limit: number; monthly_used: number }
+        useAuthStore.getState().updateUser({
+          subscription_tier: r.tier as 'free' | 'pro' | 'enterprise',
+          monthly_token_limit: r.monthly_limit,
+          monthly_token_used: r.monthly_used,
+        })
+      })
+      .catch(() => {})
+  }, [authChecked, isAuthenticated])
+
+  // 切回页签时刷新 /auth/me，更新头像等预签名 URL，避免长期放置后链接过期
+  useEffect(() => {
+    if (!authChecked || !isAuthenticated) return
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      const at = getSubscriptionSyncGen()
+      void authApi
+        .getMe()
+        .then((u: unknown) => {
+          if (at !== getSubscriptionSyncGen()) return
+          if (!u || typeof u !== 'object' || u === null) return
+          const me = u as Record<string, unknown>
+          useAuthStore.getState().updateUser({
+            email: me.email as string,
+            username: me.username as string,
+            is_active: me.is_active as boolean,
+            created_at: me.created_at as string,
+            avatar_url: (me.avatar_url as string | null | undefined) ?? undefined,
+          })
+        })
+        .catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [authChecked, isAuthenticated])
 
   if (!authChecked) {
     return (
@@ -40,8 +109,9 @@ export default function App() {
       <ThemeProvider>
         <ToastHost />
         <Routes>
-          {/* 公开页面 */}
+          {/* 公开页面（含落地页；/welcome 与 / 同页，方便已登录用户收藏「回退官网」） */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/welcome" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 

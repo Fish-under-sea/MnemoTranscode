@@ -7,6 +7,7 @@ KouriChat 启动管理 API
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -17,59 +18,86 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/kourichat", tags=["KouriChat"])
 
-# 动态计算项目根目录（MTC 仓库根目录）
-def _find_project_root() -> Path:
-    """从当前文件向上查找包含 kourichat 目录的项目根目录（MTC 仓库根）"""
-    import sys
+def _kourichat_dir_mtc_repo_layout() -> Path | None:
+    """标准 MTC 单仓布局：项目根下与 backend/ 同级的 kourichat/（<MTC>/kourichat/run_config_web.py）。
 
-    # 策略1：从 __file__ 向上搜索（标准方式）
-    module_file = getattr(sys.modules.get('app.api.v1.kourichat', None), '__file__', None)
-    if module_file:
-        current = Path(module_file).resolve().parent
-        for _ in range(15):
-            if (current / "kourichat").is_dir():
-                return current
-            parent = current.parent
-            if parent == current:
-                break
-            current = parent
+    自本文件所在目录沿父链向上，找到同时含有 backend/ 与 kourichat/run_config_web.py 的目录，返回 kourichat/ 绝对路径。
+    """
+    script = "run_config_web.py"
+    start = Path(__file__).resolve().parent
+    for d in (start, *start.parents):
+        if not d.is_dir():
+            continue
+        if not (d / "backend").is_dir():
+            continue
+        kc = d / "kourichat"
+        if (kc / script).is_file():
+            return kc.resolve()
+    return None
 
-    # 策略2：尝试从 cwd 向上搜索
-    cwd = Path.cwd()
-    for _ in range(15):
-        if (cwd / "kourichat").is_dir():
-            return cwd
-        parent = cwd.parent
-        if parent == cwd:
-            break
-        cwd = parent
 
-    # 策略3：尝试直接检测可能的固定路径
-    possible_roots = [
-        Path(__file__).resolve().parent,  # 从当前文件位置
-        Path.cwd(),                       # 从工作目录
-    ]
-    for base in possible_roots:
-        for _ in range(20):
-            if (base / "kourichat").is_dir() and (base / "backend").is_dir():
-                return base
-            parent = base.parent
-            if parent == base:
-                break
-            base = parent
+def _find_kourichat_from_file_parents() -> Path | None:
+    """自 kourichat.py 包路径向上遍历，若任一层下存在子目录 kourichat/run_config_web.py 则采用（兼容非标准落盘）。"""
+    script = "run_config_web.py"
+    start = Path(__file__).resolve().parent
+    for d in (start, *start.parents):
+        kc = d / "kourichat"
+        if (kc / script).is_file():
+            return kc.resolve()
+    return None
 
-    raise RuntimeError(
-        f"无法找到 MTC 项目根目录（kourichat 目录未找到），"
-        f"当前文件：{__file__}，当前目录：{Path.cwd()}"
-    )
 
-PROJECT_ROOT = _find_project_root()
-KOURICHAT_DIR = PROJECT_ROOT / "kourichat"
-WEB_SCRIPT = KOURICHAT_DIR / "run_config_web.py"
+def _resolve_kourichat_dir() -> Path:
+    """每次请求时重新解析。勿在 KOURICHAT_DIR 仅存在目录但无脚本时早退。
+
+    顺序：KOURICHAT_DIR（仅当 run_config_web.py 存在）→ 标准 MTC 仓 → 自源码上溯 kourichat/ →
+    /kourichat 挂载 → 其它。最终占位**固定为 /kourichat**，不再使用 cwd/…/kourichat（在容器里 cwd 多为 /app，会误报 /app/kourichat）。
+    """
+    script = "run_config_web.py"
+    raw = (os.environ.get("KOURICHAT_DIR") or "").strip()
+    if raw:
+        p = Path(raw).resolve()
+        if (p / script).is_file():
+            return p
+        # 有变量但无脚本：不返回空目录，继续走后续候选（含 /kourichat 挂载）
+    mtc_kc = _kourichat_dir_mtc_repo_layout()
+    if mtc_kc is not None:
+        return mtc_kc
+    from_parents = _find_kourichat_from_file_parents()
+    if from_parents is not None:
+        return from_parents
+    docker_mnt = Path("/kourichat").resolve()
+    if (docker_mnt / script).is_file():
+        return docker_mnt
+    for extra in (Path("/mtc-kourichat"),):
+        e = extra.resolve()
+        if (e / script).is_file():
+            return e
+    p_app_parent = Path.cwd().parent
+    if p_app_parent != Path.cwd():
+        sibling = (p_app_parent / "kourichat").resolve()
+        # 不采用 /app/kourichat：与 /k 挂载重复且易与 WORKDIR 混淆，统一走下方 /kourichat
+        if sibling == Path("/app/kourichat").resolve():
+            pass
+        elif (sibling / script).is_file():
+            return sibling
+    # 与 compose 中 ../kourichat:/kourichat 对齐；无脚本时 404 文案也引导至此路径而非 /app/…
+    return Path("/kourichat").resolve()
+
+
+def get_kourichat_dir() -> Path:
+    return _resolve_kourichat_dir()
+
+
+def get_web_script_path() -> Path:
+    return get_kourichat_dir() / "run_config_web.py"
+
+
+def get_dynamic_port_file_path() -> Path:
+    return get_kourichat_dir() / "data" / ".running_port"
+
+
 DEFAULT_PORT = 8502
-
-# 动态端口存储（由 run_config_web.py 启动后写入）
-_dynamic_port_file = KOURICHAT_DIR / "data" / ".running_port"
 
 # 进程状态存储
 _process: subprocess.Popen | None = None
@@ -104,8 +132,9 @@ def _check_port_in_use(port: int) -> bool:
 def _get_actual_port() -> int:
     """获取实际运行的端口（优先从动态文件读取，否则用默认端口）"""
     try:
-        if _dynamic_port_file.exists():
-            return int(_dynamic_port_file.read_text().strip())
+        fp = get_dynamic_port_file_path()
+        if fp.exists():
+            return int(fp.read_text().strip())
     except Exception:
         pass
     return DEFAULT_PORT
@@ -169,10 +198,16 @@ async def start_web():
             message="KouriChat Web 界面已在运行中",
         )
 
-    if not WEB_SCRIPT.exists():
+    web_script = get_web_script_path()
+    kc_dir = get_kourichat_dir()
+    if not web_script.is_file():
         raise HTTPException(
             status_code=404,
-            detail=f"KouriChat Web 脚本未找到：{WEB_SCRIPT}",
+            detail=(
+                f"KouriChat Web 脚本未找到：{web_script}。"
+                f" 请在 compose 中挂载宿主 kourichat 到 /kourichat，或设置 KOURICHAT_DIR；"
+                f" 当前探测目录为 {kc_dir}。"
+            ),
         )
 
     env = os.environ.copy()
@@ -183,8 +218,8 @@ async def start_web():
         global _process
         try:
             proc = subprocess.Popen(
-                ["python", str(WEB_SCRIPT)],
-                cwd=str(KOURICHAT_DIR),
+                [sys.executable, str(web_script)],
+                cwd=str(kc_dir),
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

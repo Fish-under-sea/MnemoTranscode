@@ -37,15 +37,13 @@ export function useAIContext() {
   // 加载初始上下文
   const loadContext = useCallback(async () => {
     try {
-      const [memoryAxios, prefsAxios] = await Promise.all([
+      const [memoryRes, prefsRes] = (await Promise.all([
         aiMemoryApi.get(),
         preferencesApi.get(),
-      ])
-      const memoryRes = memoryAxios.data as {
-        summaries: DialogueSummary[]
-        last_updated: string | null
-      }
-      const prefsRes = prefsAxios.data as { ai_memory_sync: string }
+      ])) as unknown as [
+        { summaries: DialogueSummary[]; last_updated: string | null },
+        { ai_memory_sync: string },
+      ]
 
       setContext({
         summaries: memoryRes.summaries || [],
@@ -125,6 +123,74 @@ export function useAIContext() {
     await loadContext()
   }, [loadContext])
 
+  /** 从导出的 JSON 恢复（与「数据导出」格式一致） */
+  const importMemoryFromJsonFile = useCallback(
+    async (file: File) => {
+      let raw: unknown
+      try {
+        raw = JSON.parse(await file.text())
+      } catch {
+        throw new Error('不是有效的 JSON 文件')
+      }
+      if (!raw || typeof raw !== 'object') {
+        throw new Error('文件内容无效')
+      }
+      const root = raw as Record<string, unknown>
+      const inner = root.ai_memory as Record<string, unknown> | undefined
+      const summariesRaw = (inner?.summaries ?? root.summaries) as unknown
+      if (!Array.isArray(summariesRaw)) {
+        throw new Error('缺少 ai_memory.summaries 或 summaries 数组')
+      }
+      const lastRaw = (inner?.last_updated ?? root.last_updated) as string | null | undefined
+
+      const normalized: DialogueSummary[] = []
+      for (let i = 0; i < summariesRaw.length; i++) {
+        const s = summariesRaw[i]
+        if (!s || typeof s !== 'object') continue
+        const o = s as Record<string, unknown>
+        const summary = String(o.summary ?? '').trim()
+        if (!summary) continue
+        normalized.push({
+          id:
+            typeof o.id === 'string' && o.id
+              ? o.id
+              : `imp-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+          date: typeof o.date === 'string' ? o.date : new Date().toISOString(),
+          memberName: typeof o.memberName === 'string' ? o.memberName : undefined,
+          summary,
+          emotionTags: Array.isArray(o.emotionTags)
+            ? (o.emotionTags as unknown[]).filter((x): x is string => typeof x === 'string')
+            : [],
+          tokenCount: typeof o.tokenCount === 'number' ? o.tokenCount : 0,
+        })
+      }
+
+      if (normalized.length === 0) {
+        throw new Error('未解析到任何有效摘要，请使用本页导出的 JSON 或含 ai_memory.summaries 的备份')
+      }
+
+      const trimmed = normalized.slice(-MAX_SUMMARIES)
+      setContext(prev => ({ ...prev, syncing: true }))
+      try {
+        await aiMemoryApi.update({
+          summaries: trimmed,
+          last_updated: typeof lastRaw === 'string' && lastRaw ? lastRaw : new Date().toISOString(),
+        })
+        setContext(prev => ({
+          ...prev,
+          summaries: trimmed,
+          lastUpdated:
+            typeof lastRaw === 'string' && lastRaw ? lastRaw : new Date().toISOString(),
+          syncing: false,
+        }))
+      } catch {
+        setContext(prev => ({ ...prev, syncing: false }))
+        throw new Error('上传到服务器失败')
+      }
+    },
+    [],
+  )
+
   // 清除记忆
   const clearMemory = useCallback(async () => {
     setContext(prev => ({ ...prev, syncing: true }))
@@ -166,5 +232,6 @@ export function useAIContext() {
     forceSync,
     clearMemory,
     getContextForPrompt,
+    importMemoryFromJsonFile,
   }
 }

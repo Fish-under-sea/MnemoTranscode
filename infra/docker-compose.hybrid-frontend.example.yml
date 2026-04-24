@@ -1,0 +1,18 @@
+# 场景：Nginx 前端用 Docker 跑、API 用本机 uvicorn 在 8000，不想起 backend 容器时。
+# 1. 复制为 docker-compose.hybrid-frontend.yml
+# 2. 在 infra 目录（或项目根，按你放 compose 的位置）执行：
+#    docker compose -f docker-compose.yml -f docker-compose.hybrid-frontend.yml up -d --build frontend
+# 3. 本机需先起：uvicorn（8000）+ 你需要的 postgres 等
+#
+# 若用上述命令仍会拉起 backend 容器，可只构建镜像后单独运行（自行映射端口 5173:80）：
+#    docker build -t mtc-frontend ../frontend
+#    docker run -d -p 5173:80 -e API_UPSTREAM=host.docker.internal:8000 --add-host=host.docker.internal:host-gateway mtc-frontend
+#
+# Windows / Docker Desktop 一般可省略 extra_hosts；Linux 建议保留。
+
+services:
+  frontend:
+    environment:
+      - API_UPSTREAM=host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

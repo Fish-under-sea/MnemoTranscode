@@ -54,6 +54,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
           primaryColor: prefs.primary_color || 'jade',
           cardStyle: prefs.card_style || 'glass',
           fontSize: prefs.font_size || 'medium',
+          appBackgroundUrl: (prefs.app_background_url as string | null | undefined) ?? null,
         }
         applyTheme(config)
         if (config.mode) localStorage.setItem(STORAGE_KEY, config.mode)
