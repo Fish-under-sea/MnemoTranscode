@@ -1,18 +1,15 @@
 ---
 alwaysApply: true
 ---
-# MTC 全量重构路线图 v1.5
+# MTC 全量重构路线图 v1.7
 
 > 本规则记录本次重构工作的完整拆解和执行顺序，防止会话记忆压缩后遗忘。
 > 用户在 2026-04-24 发起 "全部重构（含网页动效设计 + 网页逻辑 + 补全未开发功能）" 的需求。
 > **不包含 Windows/安卓原生应用。**
 >
-> **当前所在节点（2026-04-24）**：子项目 **A** 与 **E** 均已收尾。
-> - A：见 §十一 + `docs/superpowers/completed/2026-04-24-A-design-system.md`
-> - E：见 §十二 + `docs/superpowers/completed/2026-04-24-E-backend.md`；分支 `Codex-coding` 已推送并通过 PR 冲突解析
-> **下一步**：进入 **子项目 B — 落地页 / 登录注册 / 仪表盘重做**。
-> - B 首日前置：§五.1 落地页文案重写（"让每一份重要的声音穿越时空"等，见 §五.1 表格）
-> - 按 §七，B 的**设计定调（A 轨）默认 Claude 4.7 Opus**，批量落地（B 轨）交 Composer 2
+> **当前所在节点（2026-04-24）**：子项目 **A、E、B 已收尾**；**C 核心记忆流**已在分支 `Composer-coding` 由 **Composer 2** 全量实现并推送（待 Opus PR 合入 `main`）。
+> - C：见 **§十三** 与 `docs/superpowers/completed/2026-04-24-C-core-memory-flow.md`
+> - **下一步**：**子项目 D** —— AI 对话 / 故事书 / 记忆胶囊
 > **接手模型入口**：直接读本文件第 **十** 节「会话交接清单」。
 
 ---
@@ -125,9 +122,9 @@ D (AI 对话/故事书/胶囊)
 - [x] **前置：现状评估 + 子项目拆分获批**（已完成，2026-04-24）
 - [x] **A — 设计系统 + 动效基座**（已完成，2026-04-24；见 §十一 / `docs/superpowers/completed/2026-04-24-A-design-system.md`）
 - [x] **E — 后端工程化 + 媒体服务**（已完成，2026-04-24；见 §十二 / `docs/superpowers/completed/2026-04-24-E-backend.md`；分支 `Codex-coding`，8 个 milestone，14 条集成测试通过）
-- [ ] **B — 落地页 / 登录 / 仪表盘** ← **下一步**（首日执行 §五.1 文案重写；A 轨定调 = Opus，B 轨落地 = Composer 2）
-- [ ] **C — 核心记忆流**（首日执行 §五.1 字段消费方与表单文案重写）
-- [ ] **D — AI 对话 / 故事书 / 胶囊**
+- [x] **B — 落地页 / 登录 / 仪表盘**（已完成，2026-04-24；见 §十三 B 引用 + PR 合入 `main`）
+- [x] **C — 核心记忆流**（已完成在 `Composer-coding` 实现，2026-04-24；见 **§十三** + 收尾文档；合入等 Opus PR）
+- [ ] **D — AI 对话 / 故事书 / 胶囊** ← **下一步**
 
 ---
 
@@ -588,5 +585,17 @@ B 可直接消费的 E 产出：
 
 ---
 
+---
+
+## 十三、子项目 C · 完成总结（2026-04-24）
+
+**一句话**：在 **Composer 2** 分支 `Composer-coding` 上按 `docs/.../C-core-memory-flow-plan.md` 落地 28+ task：成员状态单一真源 + 三页 A 基座、MemoryCard/Drawer/情感 Select、媒体两阶段上传 + 成员相册、时间线三筛选 + Drawer 联动；`npm run type-check` / `npm run build` 通过；E 补 **GET /api/v1/media/** 列表供 Gallery 使用。
+
+**关键产出**（实现侧）：`lib/memberStatus.ts`，`components/member/*`，`components/memory/MemoryCard` / `MemoryDetailDrawer`，`components/media/*`，`lib/timelineUtils.ts`，`components/timeline/Timeline.tsx` 重写，`TimelinePage` 重写，以及 `app/api/v1/media.py` 的媒体列表端点（与前端 `mediaApi.list` 对齐）。**不代打** Opus 的 `mtc-C/*` tag 与合入 `main` 的 PR（计划项保留给 Opus）。
+
+**与 D 的接口**：成员/记忆/媒体只读与 CRUD 路由已可支撑对话与故事书消费；D 以当前 `main`+`Composer-coding` 合入后的契约为准。
+
+**遗留 backlog**（与 spec 一致）：记忆 ↔ 媒体强绑定、Uploader 高级能力、时间线 limit=100 分页、status 五值扩展、MinIO 全链路 E2E 在独立环境再验。
+
 *本规则会随着子项目完成持续更新进度部分。每个子项目完成后追加一节「总结」。*
-*版本变更：v1.0 初版 → v1.1 新增模型切换与 A/B 轨分流 → v1.2 新增 react-bits 白名单与会话交接清单 → v1.3 子项目 A 收尾 + §五.1 产品语言决议（选 B） → v1.4 分支命名规则 `<Model>-coding` + 每阶段必须 push 硬约束 + AI-coding 同步重命名为 Opus-coding + §六「跨模型归属追溯」要求 git notes + tag 双层留痕 + 子项目 A 的 M3-M5 已补 Composer 2 归属 notes 与 4 个锚点 tags → v1.5 子项目 E 收尾 + §十二 E 完成总结 + §十 交接清单更新至 B 入口。*
+*版本变更：… → v1.5 子项目 E 收尾 + §十二 E 完成总结 + §十 交接清单更新至 B 入口 **→ v1.7 子项目 C 收尾 + §十三 C 完成总结**（`Composer-coding` 全量实现；Tag/PR/合入主分支由 Opus 执行）*
