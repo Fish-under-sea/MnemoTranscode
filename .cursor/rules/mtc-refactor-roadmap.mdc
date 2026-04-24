@@ -1,0 +1,484 @@
+---
+alwaysApply: true
+---
+# MTC 全量重构路线图 v1.3
+
+> 本规则记录本次重构工作的完整拆解和执行顺序，防止会话记忆压缩后遗忘。
+> 用户在 2026-04-24 发起 "全部重构（含网页动效设计 + 网页逻辑 + 补全未开发功能）" 的需求。
+> **不包含 Windows/安卓原生应用。**
+>
+> **当前所在节点（2026-04-24）**：子项目 **A — 设计系统 + 动效基座** 已收尾（见 §十一 完成总结 + `docs/superpowers/completed/2026-04-24-A-design-system.md`）。
+> **下一步**：进入 **子项目 E — 后端工程化 + 媒体服务**。**E 首日前置工单**：执行 §五.1「产品语言决议（选 B）」中的字段重命名与 Alembic migration。
+> **接手模型入口**：直接读本文件第 **十** 节「会话交接清单」。
+
+---
+
+## 一、项目现状快照（重构启动时）
+
+### 前端（13 个页面）
+- **基本成型**：LandingPage (793)、PersonalCenter (910)、ArchiveDetail (282)、ArchiveList (200)、MemberDetail (187)、Dialogue (154)、Register (148)、LoginModal (148)
+- **薄壳（90–130 行）**：Dashboard、StoryBook、Login、Settings
+- **几乎空白**：TimelinePage (47 行)
+- **组件都很薄**：MemoryCard (53)、ChatBubble (41)、Modal (57)、ArchiveCard (62)、Timeline (79)
+- **缺失入口**：语音录入 / 照片视频上传 / 记忆胶囊创建 / 语音克隆
+
+### 后端（11 个 API 模块）
+- **较完整**：auth (216)、archive (217)、kourichat (249)、dialogue (175)、memory (160)
+- **单薄（大概率桩）**：capsule (110)、usage (104)、media (83)、storybook (81)、ai_memory (58)、preferences (50)
+
+### 工程化问题
+- 没有动效库（Framer Motion / motion / GSAP），只有 Tailwind `animate-pulse`
+- 没有 `stores/` 目录，Zustand 散落在 `hooks/`
+- 只有 2 个 Pydantic schemas 文件，大部分 API 无 schema 校验
+- 没有 Alembic 迁移，启动硬建表（`SQLAlchemy.create_all`）
+- `infra/docker-compose.yml` 里 backend/frontend 的 build context 路径错误（已修复 postgres init.sql，其余待修）
+- LandingPage / PersonalCenter 两个超大页面需要拆分成组件
+
+---
+
+## 二、5 个子项目拆分
+
+| 代号 | 主题 | 工作量 | 依赖 |
+|------|------|-------|------|
+| **A** | 设计系统 + 动效基座 | 2–3 天 | 无，是地基 |
+| **B** | 落地页 / 登录注册 / 仪表盘重做 | 3–4 天 | A |
+| **C** | 核心记忆流（档案→成员→记忆 CRUD + 上传 + 时间线） | 4–5 天 | A、E |
+| **D** | AI 对话 + 故事书 + 记忆胶囊 | 5–6 天 | A、C、E |
+| **E** | 后端工程化 + 媒体服务 | 2–3 天 | 无 |
+
+### 子项目 A — 设计系统 + 动效基座
+- 建立 design tokens（色彩 / 圆角 / 间距 / 字阶 / 阴影 / 动效曲线）
+- 接入动效库（待定：framer-motion / motion / gsap）
+- 基础组件：Button / Card / Modal / Drawer / Toast / Tabs / Tooltip / PageTransition / Skeleton
+- 全局动效规范：页面切换、滚动入场、悬停反馈、loading
+
+### 子项目 B — 落地页 / 登录注册 / 仪表盘重做
+- LandingPage 拆成 Hero / Features / Showcase / Testimonials / CTA 多 section
+- 滚动视差 + 入场动画
+- Login / Register 统一卡片 + 动效
+- Dashboard 做真实数据聚合（档案数 / 记忆数 / 最近活动 / 用量）
+
+### 子项目 C — 核心记忆流
+- 档案列表 / 详情 / 成员详情 / 记忆条目 全链路打磨
+- 媒体上传（照片 / 视频 / 音频）前端 + 后端（E 子项目支撑）
+- 记忆卡片动效
+- TimelinePage 从 47 行重写为可交互可视化时间线
+
+### 子项目 D — AI 对话 + 故事书 + 记忆胶囊
+- 对话页流式响应 + 打字机动效
+- 故事书完整生成流程（风格选择 → 进度 → 预览 → PDF 导出）
+- 记忆胶囊创建 / 解封 / 定时推送
+
+### 子项目 E — 后端工程化 + 媒体服务
+- 统一 Pydantic schemas（请求 + 响应）
+- 全局异常处理、错误响应规范、结构化日志
+- Alembic 迁移
+- MinIO 预签名上传
+- 声音采集 / 克隆对接 CosyVoice
+- 修复 docker-compose backend / frontend / celery-worker 的 build context 路径
+
+---
+
+## 三、执行顺序（已获用户批准）
+
+```
+A (设计系统动效基座)
+  ↓
+E (后端工程化)
+  ↓
+B (落地页/登录/仪表盘)
+  ↓
+C (核心记忆流)
+  ↓
+D (AI 对话/故事书/胶囊)
+```
+
+**A 先于 E**：虽然 E 不依赖 A，但 A 地基更急（所有前端重构都依赖 A）。
+**E 先于 B/C/D**：前端改造时后端 API 必须稳定，否则反复返工。
+
+---
+
+## 四、每个子项目的工作流（硬约束）
+
+每个子项目都必须走完下面完整流程，**不许跳步**：
+
+1. **brainstorming 技能**（头脑风暴）— 探索当前现状 + 澄清问题 + 提 2–3 方案 + 分节展示设计 + 获用户批准
+2. **写设计文档** — 保存到 `docs/superpowers/specs/YYYY-MM-DD-<主题>-design.md`，git commit
+3. **规格自检** — 占位符扫描 / 内部一致性 / 范围检查 / 模糊性检查
+4. **用户审查规格** — 请用户确认后才进入下一步
+5. **writing-plans 技能** — 编写详细实现计划
+6. **executing-plans 技能** — 按计划实现，完成后请求代码审查
+
+**在当前子项目未完成前，不得跨到下一子项目。**
+
+---
+
+## 五、进度追踪
+
+使用 TodoWrite 维护实时进度。子项目状态：
+
+- [x] **前置：启动服务 + 修 docker-compose**（已完成）
+- [x] **前置：现状评估 + 子项目拆分获批**（已完成，2026-04-24）
+- [x] **A — 设计系统 + 动效基座**（已完成，2026-04-24；见 §十一 / `docs/superpowers/completed/2026-04-24-A-design-system.md`）
+- [ ] **E — 后端工程化 + 媒体服务** ← **下一步**（首日执行 §五.1 产品语言决议）
+- [ ] **B — 落地页 / 登录 / 仪表盘**（首日执行 §五.1 文案重写）
+- [ ] **C — 核心记忆流**（首日执行 §五.1 字段消费方与表单文案重写）
+- [ ] **D — AI 对话 / 故事书 / 胶囊**
+
+---
+
+## 五.1 · 产品语言决议（选 B · 用户确认 · 2026-04-24）
+
+**背景**：子项目 A 的 M6 Playground 里一条"与逝者关系"的示例 label 暴露出一个系统性预设——**MTC 被默认锁死在"纪念逝者"的单一场景**。用户明确指出这很危险：使用者可能在保存在世挚爱、久别亲友、甚至宠物的声音与记忆。
+
+**用户决议**：选 **B — 扩展为"关系档案 / 生命故事档案"**，做字段重命名 + 文案重写；**不是**只改显示字符串。
+
+### 对现有资产的具体改造
+
+| 层 | 当前 | 目标 | 归属 | 时机 |
+|---|---|---|---|---|
+| 后端字段 | `members.is_alive: bool` | `members.status: enum('active','passed','distant','pet','other')` | **E** | E 首日首个 Alembic migration |
+| 后端字段 | `members.death_year: int?` | `members.end_year: int?`（可选，语义=这段关系/人生章节的节点） | **E** | 同上 |
+| 后端 schema | 相关 Pydantic Request/Response | 随字段重命名 | **E** | 同上 |
+| 前端类型 | `Member` 接口 | 随后端同步 | **E** 收尾时给出前端适配 PR | E 末 |
+| 落地页文案 | LandingPage.tsx:56 "让**逝者**的声音穿越时空再次响起" | "让每一份重要的声音穿越时空" 或类似（B 子项目 brainstorm 里确定） | **B** | B 首日 brainstorm 输入条目 |
+| 状态文案 | ArchiveDetailPage.tsx:168 / MemberDetailPage.tsx:89 `"已故"` | 根据 `status` 枚举映射（已离开 / 久未联络 / 纪念宠物 / …） | **C** | C 首日 |
+| 表单 placeholder | ArchiveDetailPage.tsx:265 "如已故" | 按 status 枚举改提示（或直接做成下拉而非 placeholder） | **C** | 同上 |
+
+### 迁移安全约束（E 必须执行）
+
+1. **Alembic 向前可迁移**：migration 脚本里 `is_alive=true → status='active'`；`is_alive=false AND death_year IS NULL → status='passed'`；`is_alive=false AND death_year IS NOT NULL → status='passed', end_year=death_year`。
+2. **保留旧字段一个 release 周期**（只读影子字段），等前端全部适配完再彻底删除——不在同一 migration 既改名又删除。
+3. **枚举扩展不破坏既存数据**：现有用户数据都会归入 `'active'` 或 `'passed'`，不丢失语义；`'distant' / 'pet' / 'other'` 是对未来的扩展。
+
+### 文案基调（B/C 参考）
+
+- **不假设关系是否健在**：默认用"Ta"、"这个人"、"这段关系"；状态相关信息不出现在门面层
+- **不假设用户情绪**：不用"缅怀"、"遗照"、"墓志铭"这类单向词；用"纪念"、"记忆"、"故事"、"珍藏"等**双向可用**的词
+- **保留庄重**：不为了扩展场景就让基调变得轻飘；MTC 仍是"值得慎重对待每一段关系"的调性
+
+### A 子项目内已做的修正
+
+- `pages/DSPlayground.tsx` 的 Select 示例：label "与逝者关系" → **"Ta 和你的关系"**；选项新增 "配偶 / 伴侣"、"宠物"（commit `41e8e68`）
+- 这是 A 范围内能做的全部——业务页面与后端字段严格留给 E/B/C
+
+---
+
+## 六、全局约束（贯穿所有子项目）
+
+### 技术选型已定
+- 前端：React 18 + TS + Vite + Tailwind + Zustand + TanStack Query
+- 后端：FastAPI + Python 3.11 + SQLAlchemy 2.0 + asyncpg
+- 数据库：PostgreSQL 16 + Qdrant + Redis + MinIO
+- 不上 Next.js、不切换框架
+
+### 风格约束
+- 所有新代码：**中文注释**，保留英文技术术语（FastAPI、Python 等）
+- 不加废注释（`// 导入模块`、`// 定义函数` 这类）
+- 提交信息：Conventional Commits（`feat:` / `fix:` / `refactor:` 等），**中文描述**
+- 默认分支：`AI-coding`，不直接推 `main`
+
+### 设计文档约束
+- 所有子项目的设计文档放 `docs/superpowers/specs/`
+- 所有子项目的实现计划放 `docs/superpowers/plans/`
+- 每个子项目完成后写一份简短的 `docs/superpowers/completed/` 收尾记录（做了什么、有什么坑）
+
+### 不可跨越的红线
+- **不许一口气做完所有子项目**（分批 commit、分批获用户验证）
+- **不许在子项目内新增子项目范围之外的变更**（看到 bug 记录进 backlog，别当场修）
+- **不许绕过 brainstorming 直接写代码**（用户明确说"跳过"才可）
+- **不许丢失这份路线图**（会话压缩前先提醒用户重新加载本规则）
+
+---
+
+## 七、Cursor 会话模型切换（计费优化 + 前端动效分流）
+
+**对 AI 的硬性提醒**：用户打开本仓库、新开与本项目相关的会话、或从其他项目切回 MTC 时，**在第一条实质性回复前**用一两句话提醒用户检查 Cursor 模型；若当前任务属于 **A 轨（动效 / 设计理念 / 关键页定调）**，必须明确提示切换到 **Claude 4.7 Opus**，不要默认用 Sonnet 或 Composer 凑合。
+
+**核心原则**：**动效与视觉叙事交给「设计感 + 前端审美」更强的模型；把已拍板的 spec 批量落成代码交给便宜模型。** 二者不要混在同一认知档位里凑合。
+
+**用户目标（已确认）**：网页前端要 **引领新潮、完整度高、质感顶格** —— A 轨默认用系列内最强的 **Opus**，不因省费牺牲定调质量；省费压在 B 轨与后端。
+
+---
+
+### 7.1 前端工作分流（必读）
+
+#### A 轨 — 动效设计 · 视觉理念 · 交互叙事（旗舰模型）
+
+**建议模型**：**Claude 4.7 Opus**（**默认**，定气质、定节奏、定「新潮且克制」的边界）。
+
+**备选 / 降级**：**Claude 4.6 Sonnet** —— 仅当同一动效已用 Opus 定稿、只需小幅改文案级 class，或用户明确要压缩当期账单时使用；**不承担**「从零定义整页动效语言」的默认档。
+
+**为何 Opus 而非 Sonnet（设计理念谁更强）**：同系列里 **Opus 在细微审美取舍、非常规但可落地的动效方案、多约束下的权衡**（可读性 × 品牌 × reduced-motion × 性能）通常更稳；Sonnet 性价比极高，但在「要让人眼前一亮、又不像模板站」的定调上，Opus 更容易一次打到位。**单价**上 Opus 高于 Sonnet（以 Cursor 标价为准，常见为输入/输出各贵一截），但 A 轨工作量应是 **有边界的定稿会话**（产出 spec + 关键片段），不是全仓库逐行生成，**总支出往往仍远低于**用便宜模型反复返工或全程 Opus 写 B 轨。
+
+**适合交给本轨的具体工作**（出现任一条即优先强模型）：
+
+- **动效设计**：页面/区块的入场与退场节奏、stagger、scroll-reveal 策略、`layoutId` 共享元素过渡、路由级 `PageTransition` 的「情绪」定调（不是只填 `duration`）。
+- **设计理念**：与 `docs/design-system.md` 一致的东方温润基调下的微决策——留白、层级、玻璃/实底选用、暗色 amber 下的对比与可读性。
+- **关键页面创意**：Landing 长页分段动效、Dashboard 空状态/数据呈现的动效语言、记忆卡片「庄重感」与 Timeline 可视化的动效草图（可先文字 + 伪代码变体再落代码）。
+- **动效规范迭代**：`motionPresets`、variants 命名、何时禁用动画（`prefers-reduced-motion`）与业务场景的组合规则。
+- **验收审美**：用户说「不对味 / 太跳 / 太土 / 不像纪念册」时的重做与收敛——需要模型能理解产品气质，而非只改数值。
+
+**交付物约定（省费关键）**：强模型阶段应产出**可执行的简短说明**（例如：各区块用哪套 preset、delay/stagger 范围、禁止项），便于后续 B 轨按文施工，避免反复用强模型改同一文件。
+
+#### B 轨 — 前端工程落地（省模型）
+
+**建议模型**：**Composer 2**。
+
+**适合交给本轨的工作**：
+
+- 按已定 API / 已定布局**接线**：表单、列表、路由、TanStack Query、Zustand。
+- **组件骨架与类型**：Button/Input/Modal 等结构、`className` 合并、无障碍属性补全。
+- **Tailwind 批量还原**：把设计稿或强模型写好的 JSX 结构铺满 class，重复 section 复制粘贴。
+- **动效「实现」**：在强模型已给定 `variants` / `transition` 参数的前提下，把 `motion` 组件接到真实 DOM、修 hydration/布局抖动等工程问题。
+
+**边界**：若 B 轨实现时发现需要**重新定调**动效（例如整段 Hero 要换叙事），应暂停并提醒用户切回 **A 轨（Opus）**再改，而不是在 Composer 里「凭感觉」大改曲线。
+
+---
+
+### 7.2 其他场景（非前端动效）
+
+| 场景 | 建议模型 | 说明 |
+|------|----------|------|
+| **E 后端**（FastAPI、SQLAlchemy、Alembic、脚本） | **GPT-5.3 Codex** | 代码向、后端生成稳 |
+| **纯架构 / 疑难排障**（与动效无关） | **Claude 4.6 Sonnet** | 复杂推理、日志与边界条件 |
+| **D 子项目 AI 业务逻辑**（prompt、流式、错误处理） | **Sonnet** 或 **Codex**（偏代码时） | 按任务拆，动效仍归 A 轨 |
+
+---
+
+### 7.3 与子项目 A/B/C/D 的对应关系（提醒用户时可用）
+
+| 子项目 | A 轨（默认 **Opus**） | B 轨（**Composer 2**） |
+|--------|------------------------|---------------------------|
+| **A** | design tokens 定稿、`ScrollReveal`/`PageTransition` 节奏、`/ds-playground` 的动效示范 | 16 个基础组件的 props/类型/无障碍与重复样式 |
+| **B** | Landing 分段动效、登录/仪表盘**关键**转场与空状态叙事 | 表单校验、数据请求、组件拼装 |
+| **C** | 记忆卡片、时间线**主路径**的动效语言（含 reduced-motion） | CRUD 页面、上传流程工程、列表性能 |
+| **D** | 对话气泡流、故事书进度、胶囊解封等**情感型**动效定调 | SSE/接口接线、状态机、PDF 等偏逻辑部分 |
+
+---
+
+### 7.4 不建议（在本项目语境下）
+
+- **全程用 Composer 2 做 A 轨**：易得到「能跑但气质不对」的动效，与「引领新潮、完美完善」目标冲突。
+- **全程用 Opus 做 B 轨**：浪费；B 轨坚持 **Composer 2**，除非单次 PR 内出现非动效类的极难 bug 再临时升级。
+- **A 轨默认降级成 Sonnet**：仅用户明确要求省费或任务已 Opus 定稿后的微调；**新开定调会话默认 Opus**。
+- **Grok 4.20**：中文前端栈与产品气质一致性未验证，动效与排版风险高。
+- **GPT-5.4**：**动效与设计理念类不归此档**；若需非 Opus 的 second opinion，优先 **Sonnet**，不用 GPT-5.4 顶替 A 轨。
+
+---
+
+### 7.5 一句话给用户
+
+> **定气质 / 动效 / 新潮与完善度 → 默认 Claude 4.7 Opus（A 轨）；按 spec 搬砖 → Composer 2（B 轨）；后端 E → Codex。** 进 MTC 先看是在「定调」还是「落地」。
+
+（定价以 Cursor 内展示为准；模型名随产品更新可替换，**A/B 轨分流原则**不变。）
+
+---
+
+## 八、环境开发小贴士
+
+- 本项目 Docker 运行在 WSL2 (Ubuntu-22.04) 里。Windows PowerShell 每次调用 `docker` 完 WSL 会休眠杀容器。
+- **方案**：用长驻前台命令（如 `docker compose up` 不加 `-d`）把 WSL 保持在活跃态；或 `~/.wslconfig` 设 `vmIdleTimeout=-1` 后 `wsl --shutdown` 重启。
+- 当前 `infra/docker-compose.yml` 只有 postgres/redis/qdrant/minio 四个服务能用；backend/frontend/celery-worker 三个服务的 build context 路径 `./backend` 实际应为 `../backend`，E 阶段一起修。
+- backend 的 `.env` 里的 `LLM_API_KEY` 仍是占位符 `your-api-key-here`，D 阶段前必须补上真实 key 才能验证 AI 能力。
+- 基础设施启动命令（已验证）：`docker compose -f infra/docker-compose.yml up postgres redis qdrant minio`（**不加 `-d`**，前台占用 shell 让 WSL 保活）。后端 `make backend`，前端 `make frontend`。
+
+---
+
+## 九、react-bits 框架使用约束（前端动效素材库）
+
+**定位**：react-bits 是**素材库**而非项目基座。`docs/design-system.md` 里定义的 16 个自家 MVP 组件才是本项目的 UI 标准。react-bits 只在以下两种情况下出现：
+1. 自家组件内部**借用**其动效原子（抄思路或封装一层）；
+2. 某个关键场景（Landing Hero / 空状态 / 记忆封面等）用它的组件做**一次性装饰**，且经过气质对齐改造。
+
+### 9.1 气质对齐硬约束
+
+react-bits 默认基因是**暗色 SaaS / 科技站 / 赛博朋克**，与 MTC「东方温润·翠暖 · 纪念册」气质**天然错位**。使用前必须完成以下三项改造，否则一律拒绝：
+
+1. **配色改造**：原组件示例里的 `#3A29FF / #FF94B4 / #FF3232` 等高饱和霓虹色 **全部替换**为 `warm-50/100` 底色 + `jade-500/600` 主色 + `amber-500` 强调色；暗色模式改为深木 `#1A120B` + `amber-400`。**禁止**保留深紫、霓虹粉、电光蓝等原色。
+2. **时长与缓动改造**：原组件常见 `duration 0.3~1.5s` 的快或炫动效，**必须套用** `docs/design-system.md §5.2` 的 `motionPresets.confident`（250–400ms spring）或 `cinematic`（600ms expo-out）；不许原样使用 `ease: 'linear'` / 无穷动画。
+3. **幅度与频次改造**：**同屏最多 1 处** react-bits 重装饰组件；背景类（Aurora/Particles/Silk 等）**整站最多 1 个页面**（通常是 Landing Hero）使用；其余页面的"动感"由自家 `ScrollReveal` / `PageTransition` + motionPresets 承担。
+
+### 9.2 白名单（可用）
+
+**文字动画（做宋体标题入场、数据强调）**
+
+| 组件 | 用途 | 改造要点 |
+|------|------|----------|
+| `BlurText` | Hero / 章节标题入场 | delay 改 150→200, easing 改 expo-out |
+| `SplitText` | 成员名、年份等关键词逐字 | stagger 限 ≤ 60ms |
+| `ShinyText` | CTA 按钮文案 | 渐变色改 jade→amber |
+| `ScrollReveal` | 长页滚动显字 | 直接改色 / 改 offset |
+| `ScrollFloat` | 章节副标题 | 克制使用，移动端降级 |
+| `GradientText` | 品牌标题 | jade→amber 渐变，不用紫蓝 |
+| `CountUp` | 档案数 / 记忆数统计 | 加 tabular-nums；serif 字体 |
+
+**卡片 / 容器**
+
+| 组件 | 用途 | 改造要点 |
+|------|------|----------|
+| `SpotlightCard` | 记忆卡 hover 聚光 | 光晕色改 `jade-300/40`，极淡 |
+| `TiltedCard` | 纪念册封面 / 胶囊封存页 | 倾斜幅度 ≤ 8°，非重要位置不用 |
+| `GlassSurface` / `FluidGlass` | 毛玻璃容器 | 本项目已有 `.glass-card`，优先用自家类 |
+| `MagicBento` | Dashboard 功能网格（**可选**） | 收敛动效幅度；若与自家布局冲突则不用 |
+
+**动效杂项 / 内容入场**
+
+| 组件 | 用途 | 改造要点 |
+|------|------|----------|
+| `AnimatedContent` | 通用内容进场包装 | 直接套 motionPresets.confident |
+| `FadeContent` | 淡入兜底 | 用 motionPresets.gentle |
+| `GradualBlur` | 内容渐显 | 移动端关 |
+| `AnimatedList` | 最近活动 / 时间线项 | stagger 限 60ms |
+| `Magnet` | 次要按钮的轻微磁吸 | 吸力系数 ≤ 0.25，**主按钮禁用** |
+| `ClickSpark` | 收藏 / 发布等正向反馈 | 颜色 amber-400，减少粒子数 |
+
+**背景（整站最多 1 个页面使用）**
+
+| 组件 | 用途 | 改造要点 |
+|------|------|----------|
+| `DotGrid` | 落地页或空状态底纹 | 点色 `jade-200`，已有 `.dot-grid-bg` 同款，**优先自家** |
+| `Squares` | 页脚或装饰区块 | 低对比度、动幅压到 30% |
+| `FloatingLines` | 暗色模式章节分隔 | 线色 `amber-400/20` |
+| `Silk` | **仅暗色模式** 特殊页面（如胶囊解封） | 色盘改 amber→deep-wood，其他页面禁用 |
+
+### 9.3 禁用清单（直接 Ban）
+
+以下组件出现在 MTC 里就是「翻车信号」——**即使用户或 AI 建议使用，也应先反问一次**：
+
+- **高饱和霓虹 / 科技渐变类**：`Aurora`、`Iridescence`、`LiquidChrome`、`Plasma`、`PrismaticBurst`、`LaserFlow`、`ElectricBorder`
+- **太空 / 能量类**：`Particles`、`Galaxy`、`Hyperspeed`、`Lightning`、`LightPillar`、`LightRays`
+- **故障 / 赛博朋克类**：`FaultyTerminal`、`LetterGlitch`、`GlitchText`、`ScrambledText`、`GridScan`、`Beams`
+- **浮夸交互类**：`Ballpit`、`SplashCursor`、`PixelBlast`、`Balatro`、`MetaBalls`、`Antigravity`
+- **像素 / 复古类**（对中文尤其不友好）：`ASCIIText`、`PixelCard`、`PixelTrail`、`PixelTransition`、`Dither`、`FuzzyText`
+- **拖尾 / 跟随光标类**（降低阅读专注度）：`ImageTrail`、`BlobCursor`、`GhostCursor`、`TargetCursor`、`Crosshair`、`TextCursor`
+- **抽象 / 趣味类**（偏离庄重气质）：`FallingText`、`DecayCard`、`Cubes`、`Ribbons`、`MetallicPaint`、`ShapeBlur`、`StickerPeel`、`BounceCards`
+
+### 9.4 决策流程（AI 执行时必走）
+
+```
+用户 / 任务要求某动效
+  │
+  ├─ 自家 design-system §6 的 16 个 MVP 组件能满足？
+  │   └─ 是 → 用自家组件，结束
+  │
+  ├─ 需要 react-bits？
+  │   ├─ 组件在 §9.3 禁用清单？  → 拒绝并给 §9.2 白名单替代
+  │   ├─ 组件在 §9.2 白名单？    → 按「改造要点」列 3 项检查再用
+  │   └─ 组件不在任一清单？      → 暂停，问用户（或 A 轨 Opus）定性后再决定
+  │
+  └─ 触发了 react-bits 技能？
+      必须与 `.cursor/rules/skill-dispatch.mdc` + 本节 §9.2/§9.3 组合激活，不得裸用。
+```
+
+### 9.5 与 skill-dispatch 的关系
+
+`.cursor/rules/skill-dispatch.mdc` 描述"何时调用 react-bits 技能 vs ui-ux-pro-max 技能"，**仅解决"要不要用这个技能"**；**本节 §9 解决"在 MTC 里能用哪些组件、怎么改"**。两者**必须同时满足**，缺一不可。
+
+---
+
+## 十、会话交接清单（Handoff · 给下一个模型）
+
+> 下一位模型接手时请**先读这一节**，再按需跳到对应章节深读。本节要答的问题是：「我现在在哪？该做什么？有哪些红线？」
+
+### 10.1 目前所在节点
+
+- **已完成**：子项目 **A — 设计系统 + 动效基座**（见 §十一 + `docs/superpowers/completed/2026-04-24-A-design-system.md`）。
+- **当前阶段**：准备进入 **子项目 E — 后端工程化 + 媒体服务**（执行顺序见 §三）。
+- **E 首日前置工单（硬约束）**：执行 §五.1「产品语言决议（选 B）」——`members.is_alive → status` enum 重命名 + `death_year → end_year` + Alembic migration（含数据回迁规则）。不做这一步直接改其它后端模块，会让 B/C 子项目的文案重写卡死在字段假设上。
+- **接手第一步**：按 §四 的六步流程走 E 的 brainstorming（不要跳过），重点关注：①统一 Pydantic schemas ②Alembic 骨架 ③media 服务 + MinIO 预签名 ④docker-compose build context 路径修复 ⑤§五.1 产品语言字段重命名。
+- **不许跳过**直接写代码。
+
+### 10.2 必读文件（按顺序）
+
+1. `.cursor/rules/mtc-refactor-roadmap.mdc`（本文件）—— 路线图 + 约束
+2. `docs/design-system.md` —— A 子项目已确定的全部设计决策
+3. `.cursor/rules/skill-dispatch.mdc` —— UI/UX 技能分流规则
+4. `.cursor/skills/react-bits/SKILL.md` —— 只在明确需要用 react-bits 时读；用前对照本文件 §9.2 / §9.3
+5. `docs/SPEC.md` / `docs/ARCHITECTURE.md` / `docs/API.md` —— 仅在进入 E / B / C / D 子项目时读相关章节
+
+### 10.3 接手前 30 秒自检（必答 4 问）
+
+1. **模型档位**：我现在是不是符合 §七 的档位？
+   - 动效 / 设计定调 → 必须 **Claude 4.7 Opus**；若不是，**第一句**就提醒用户换。
+   - 实现搬砖 → **Composer 2** 即可。
+   - 后端 E → **GPT-5.3 Codex**。
+2. **阶段是否对齐**：用户这条消息是要 plan / impl / 修 bug / 换方向？若要换方向，先回到 §四 的 brainstorming，**不要直接改代码**。
+3. **红线是否踩到**：要改的东西是不是跨了当前子项目范围（§六 红线第 2 条）？是不是会一次动多个子项目（§六 红线第 1 条）？
+4. **是否会用 react-bits**：若会，先对照 §9.2 / §9.3；若组件在禁用清单上，**立刻拒绝**并给出白名单替代。
+
+### 10.4 关键信息一页纸
+
+- **设计基调**：东方温润·翠暖，奶白 `#FEFEF9` + 翠绿 `jade-500` + 琥珀 `amber-500`；暗色 dark-amber（深木 + 琥珀）。
+- **字体**：思源黑体（正文） + 思源宋体（标题 / 引文 / 数字）。
+- **动效库**：`motion` v12（Framer Motion 新包名）。
+- **动效节奏**：Confident Spring 250–400ms 为主；详见 `docs/design-system.md §5.2` 的 6 个 preset。
+- **组件 MVP**：16 个，分 4 组（输入 5 / 容器 5 / 反馈 4 / 动效 2），详见 `docs/design-system.md §6`。
+- **禁止**：鲜艳原色、硬投影、< 150ms 快节奏弹跳、同屏 > 3 个同时动画、无限旋转 / 脉动（加载指示器除外）。
+- **改造策略**：**新增不破坏** —— 建 `components/ui/*` 与旧组件并存，`/ds-playground` 目视验证；旧页面由 B/C/D 子项目逐页替换。
+- **基础设施启动**：`docker compose -f infra/docker-compose.yml up postgres redis qdrant minio`（前台）。
+- **进度**：§五 的 checkbox。
+
+### 10.5 常见接手场景 · 快速路径
+
+| 用户说 | 你应该 |
+|--------|--------|
+| "继续" / "接着干" | 直接进入 A-plan（见 §10.1 下一步）；先提醒模型档位。 |
+| "跳过 A，先做 E / B" | 拒绝 —— §三执行顺序已固化，除非用户**明确**要改顺序。 |
+| "react-bits 里这个组件好不好看" | 对照 §9.2 / §9.3 回答；禁用清单的组件不要违心夸。 |
+| "这个动效换成 XXX 风格" | 若属于定调级改动，切回 A 轨模型（Opus）再改；Composer 不得凭感觉改曲线（§7.1 B 轨边界）。 |
+| "换个模型" / "省点费" | 指引到 §七；动效类仍默认 Opus，不要全线降级。 |
+| "会话要压缩了" | §六 红线第 4 条：**先提醒用户重新加载本规则**，再继续。 |
+
+### 10.6 交接后的第一个动作（建议）
+
+1. 先用一句话复述当前状态（让用户确认你没跑偏）。
+2. 提醒模型档位（必要时请用户切换）。
+3. 给出**接下来 1–3 步**的具体动作提案，请用户确认后再动。
+4. 动手后，按 §四 流程走，绝不跳步。
+
+---
+
+---
+
+## 十一、子项目 A · 完成总结（2026-04-24）
+
+**一句话**：东方温润 · 翠暖设计系统 + 动效基座一次性落地，16 个自家组件上线，prod 包体增量 58.5 KB raw / 19.75 KB gzip，全部低于阈值。
+
+### 做了什么
+
+- **双层令牌**：`tokens.css` 亮/暗 CSS 变量 + `tailwind.config.js` 语义色族 / 字阶 / 圆角 / e1-e5 阴影；**保留**旧色族避免破坏既存页面
+- **动效基座**：`lib/motion.ts` 6 preset + 8 variants；`MotionProvider` 全局 reduced-motion；`ThemeProvider` 兼容匿名 localStorage + prefers-color-scheme
+- **16 个 MVP 组件**：全部走 Radix primitive + motion preset，严禁硬编码色值/时长/缓动
+- **Modal API 向后兼容升级**：ArchiveListPage / MemberDetailPage / ArchiveDetailPage 旧调用无需改动
+- **DSPlayground 仅 DEV 挂载**：prod dist 零残留字符串（Rollup DCE 生效）
+
+### 用了哪些模型（A/B 轨分流实践）
+
+| 阶段 | 模型 | 内容 |
+|---|---|---|
+| 设计文档 + brainstorming | Claude 4.7 Opus | `docs/design-system.md` 定稿 |
+| 实现计划 | Opus | `docs/superpowers/plans/2026-04-24-A-design-system-plan.md` |
+| M1 地基 + M2 动效基座 | Opus | tokens / fonts / tailwind 扩展 / motion.ts / MotionProvider / ThemeProvider |
+| M3-M5 组件批量落地 | Composer 2 | 16 个 UI 组件 + Toast 根挂载 + TS 基线修复 |
+| M6 验收 + Playground + 路由 | Opus | barrel / DSPlayground / `/ds-playground` 路由 / 用户目视验证 |
+
+**结论**：A/B 轨分流实际可行。Opus 负责"定调"（约占 40% 工作量，但决定了所有 tokens 与动效语言），Composer 2 负责"按 spec 搬砖"（约占 50% 工作量，16 个组件一次过），Opus 回归做验收与发现 Composer 2 未处理的细节 bug（Toaster 重复挂载、一任务一 commit 未执行 → 分组合并提交、产品语言假设需修正）。
+
+### 发现的非功能性问题
+
+1. **Composer 2 不自觉遵守"一任务一 commit"**：未来 Composer 会话启动前，必须在首条消息明确要求"每完成一任务即 `git add ... && git commit`"，不要求的话就会一次性堆 20 个文件
+2. **产品语言假设风险暴露**：M6 示例文案一条"与逝者关系"就被用户抓住——凸显 MTC 的语言层面需要一次系统性复盘；已固化为 §五.1 决议，分派到 E/B/C 各自首日
+
+### 关键产出（供下游引用）
+
+- `docs/design-system.md` —— 所有视觉 / 动效决策的源头
+- `frontend/src/components/ui/index.ts` —— 16 组件统一入口，**下游页面必须从这里 import**，不走深路径
+- `frontend/src/lib/motion.ts` —— 所有动效参数的唯一出处，B/C/D 子项目不得在组件内硬编码 duration/ease
+- `frontend/src/pages/DSPlayground.tsx` —— 目视回归基准；任何改动后可本地 `/ds-playground` 对照检查
+- `docs/superpowers/completed/2026-04-24-A-design-system.md` —— 详细交付记录（commit list / bundle 对比 / 坑记录）
+
+---
+
+*本规则会随着子项目完成持续更新进度部分。每个子项目完成后追加一节「总结」。*
+*版本变更：v1.0 初版 → v1.1 新增模型切换与 A/B 轨分流 → v1.2 新增 react-bits 白名单与会话交接清单 → v1.3 子项目 A 收尾 + §五.1 产品语言决议（选 B）。*
