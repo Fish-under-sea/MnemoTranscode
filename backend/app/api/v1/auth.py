@@ -221,10 +221,11 @@ async def upload_avatar(
         if not client.bucket_exists(bucket_name):
             client.make_bucket(bucket_name)
 
+        import io
         client.put_object(
             bucket_name,
             object_name,
-            file,
+            io.BytesIO(content),
             len(content),
             content_type=content_type,
         )

@@ -46,7 +46,7 @@ async def list_archives(
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户的档案列表"""
-    query = select(Archive).where(Archive.owner_id == current_user.id)
+    query = select(Archive).options(selectinload(Archive.members).selectinload(Member.memories)).where(Archive.owner_id == current_user.id)
     if archive_type:
         query = query.where(Archive.archive_type == archive_type)
     query = query.order_by(Archive.updated_at.desc())
@@ -93,17 +93,24 @@ async def update_archive(
 ):
     """更新档案信息"""
     result = await db.execute(
-        select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
+        select(Archive).options(selectinload(Archive.members).selectinload(Member.memories)).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     archive = result.scalar_one_or_none()
     if not archive:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="档案不存在")
 
+    member_count = len(archive.members) if archive.members else 0
+    memory_count = sum(len(m.memories) for m in archive.members) if archive.members else 0
+    
     for field, value in update_data.model_dump(exclude_unset=True).items():
         setattr(archive, field, value)
     await db.commit()
     await db.refresh(archive)
-    return ArchiveResponse.model_validate(archive)
+    
+    resp = ArchiveResponse.model_validate(archive)
+    resp.member_count = member_count
+    resp.memory_count = memory_count
+    return resp
 
 
 @router.delete("/{archive_id}", status_code=status.HTTP_204_NO_CONTENT)
