@@ -1,0 +1,4 @@
+执行模型: Composer 2
+组织 commit: Claude 4.7 Opus (按 milestone 分组整理)
+本 commit 内容: M4 · 容器与导航 5 组件 (Card / Modal 升级 API 兼容 / Drawer / Tabs / Dropdown)
+其他上下文同 e61e9dc (M3) 的 note
