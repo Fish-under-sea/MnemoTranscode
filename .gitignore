@@ -93,3 +93,6 @@ temp/
 
 # Brainstorming visual companion 会话目录
 .superpowers/
+
+# Git worktrees（子代理隔离工作区）
+.worktrees/
