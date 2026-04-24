@@ -13,6 +13,7 @@ import TimelinePage from './pages/TimelinePage'
 import StoryBookPage from './pages/StoryBookPage'
 import SettingsPage from './pages/SettingsPage'
 import PersonalCenterPage from './pages/PersonalCenterPage'
+import CapsulePage from './pages/CapsulePage'
 import DSPlayground from './pages/DSPlayground'
 import ThemeProvider from './components/ThemeProvider'
 import { ToastHost } from './components/ui/Toast'
@@ -64,6 +65,7 @@ export default function App() {
               <Route path="storybook/:archiveId" element={<StoryBookPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="personal-center" element={<PersonalCenterPage />} />
+              <Route path="capsules" element={<CapsulePage />} />
             </Route>
           ) : (
             <Route path="*" element={<Navigate to="/" replace />} />

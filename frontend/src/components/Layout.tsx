@@ -5,7 +5,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import {
   Home, FolderOpen, MessageCircle, Settings, LogOut, Menu, X, User,
-  ChevronDown, LayoutDashboard
+  ChevronDown, LayoutDashboard, Package
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ const navItems = [
   { path: 'dashboard', label: '首页', icon: Home },
   { path: 'archives', label: '档案库', icon: FolderOpen },
   { path: 'dialogue', label: 'AI 对话', icon: MessageCircle },
+  { path: 'capsules', label: '记忆胶囊', icon: Package },
   { path: 'settings', label: '设置', icon: Settings },
 ]
 
