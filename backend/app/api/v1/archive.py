@@ -143,7 +143,8 @@ async def create_member(
         relationship_type=member_data.relationship_type,
         archive_id=archive_id,
         birth_year=member_data.birth_year,
-        death_year=member_data.death_year,
+        status=member_data.status or "active",
+        end_year=member_data.end_year,
         bio=member_data.bio,
     )
     db.add(member)
@@ -217,7 +218,10 @@ async def update_member(
     if not member:
         raise HTTPException(status_code=404, detail="成员不存在")
 
+    ignored_legacy_fields = {"is_alive", "death_year"}
     for field, value in update_data.model_dump(exclude_unset=True).items():
+        if field in ignored_legacy_fields:
+            continue
         setattr(member, field, value)
     await db.commit()
     await db.refresh(member)
