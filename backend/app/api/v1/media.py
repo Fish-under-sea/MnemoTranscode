@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from minio import Minio
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,6 +193,44 @@ async def complete_upload(
     await db.refresh(asset)
 
     return {"media_id": asset.id, "object_key": asset.object_key, "status": "uploaded"}
+
+
+class MediaAssetOut(BaseModel):
+    """媒体资产列表项（与前端 mediaApi 对齐）。"""
+
+    id: int
+    object_key: str
+    bucket: str
+    content_type: str
+    size: int
+    purpose: str
+    archive_id: int | None = None
+    member_id: int | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get("", response_model=list[MediaAssetOut])
+@router.get("/", response_model=list[MediaAssetOut])
+async def list_media_assets(
+    member_id: int | None = None,
+    archive_id: int | None = None,
+    purpose: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """当前用户拥有的媒体列表，可按成员 / 档案 / 用途筛选。"""
+    stmt = select(MediaAsset).where(MediaAsset.owner_id == current_user.id)
+    if member_id is not None:
+        stmt = stmt.where(MediaAsset.member_id == member_id)
+    if archive_id is not None:
+        stmt = stmt.where(MediaAsset.archive_id == archive_id)
+    if purpose is not None:
+        stmt = stmt.where(MediaAsset.purpose == purpose)
+    stmt = stmt.order_by(MediaAsset.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
 
 
 @router.get("/{media_id}/download-url")
