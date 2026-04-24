@@ -11,6 +11,7 @@ export interface AuthUser {
   id: number
   email: string
   username: string
+  is_active?: boolean
   avatar_url?: string | null
   created_at: string
   last_active_at?: string | null
