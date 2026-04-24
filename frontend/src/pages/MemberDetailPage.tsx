@@ -7,14 +7,20 @@ import toast from 'react-hot-toast'
 import { FileText, MessageCircle, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { archiveApi, memoryApi } from '@/services/api'
+import MediaGallery from '@/components/media/MediaGallery'
+import MediaUploader from '@/components/media/MediaUploader'
+import { EMOTION_LABELS } from '@/lib/utils'
 import MemoryCard from '@/components/memory/MemoryCard'
+import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
+import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
 import { useState } from 'react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
-import { LoadingState, ErrorState, EmptyState } from '@/components/ui/state'
+import Select from '@/components/ui/Select'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberProfile from '@/components/member/MemberProfile'
 import { fadeUp, staggerContainer } from '@/lib/motion'
@@ -33,6 +39,12 @@ export default function MemberDetailPage() {
     location: '',
     emotion_label: '',
   })
+  const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
+
+  const EMOTION_OPTIONS = [
+    { value: '', label: '（无）' },
+    ...EMOTION_LABELS.map((e) => ({ value: e.value, label: `● ${e.label}` })),
+  ]
 
   const { data: archive } = useQuery({
     queryKey: ['archive', archiveId],
@@ -56,8 +68,11 @@ export default function MemberDetailPage() {
     mutationFn: (data: typeof newMemory) =>
       memoryApi.create({
         member_id: Number(memberId),
-        ...data,
+        title: data.title,
+        content_text: data.content_text,
         timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : undefined,
+        location: data.location || undefined,
+        emotion_label: data.emotion_label || undefined,
       }) as Promise<unknown>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
@@ -112,6 +127,22 @@ export default function MemberDetailPage() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
+        <Card variant="plain" className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-body-lg font-medium text-ink-primary">相册</h2>
+            <MediaUploader
+              memberId={Number(memberId)}
+              purpose="archive_photo"
+              onComplete={() =>
+                queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+              }
+            />
+          </div>
+          <MediaGallery memberId={Number(memberId)} memberName={member.name} />
+        </Card>
+      </motion.div>
+
+      <motion.div variants={fadeUp}>
         <Card variant="plain">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-medium text-ink-primary text-body-lg flex items-center gap-2">
@@ -134,17 +165,22 @@ export default function MemberDetailPage() {
             <div className="space-y-4">
               {memories.map((memory: Record<string, unknown>) => {
                 const m = memory
+                const rec: Memory = {
+                  id: Number(m.id),
+                  title: String(m.title ?? ''),
+                  content_text: String(m.content_text ?? ''),
+                  timestamp: m.timestamp as string | null | undefined,
+                  location: m.location as string | null | undefined,
+                  emotion_label: m.emotion_label as string | null | undefined,
+                  member_id: Number(m.member_id),
+                  archive_id: Number(archiveId),
+                }
                 return (
                   <MemoryCard
                     key={String(m.id)}
-                    id={Number(m.id)}
-                    title={String(m.title ?? '')}
-                    content_text={String(m.content_text ?? '')}
-                    timestamp={m.timestamp as string | null | undefined}
-                    location={m.location as string | null | undefined}
-                    emotion_label={m.emotion_label as string | null | undefined}
-                    member_id={Number(m.member_id)}
-                    archive_id={Number(archiveId)}
+                    {...rec}
+                    variant="list"
+                    onClick={() => setActiveMemory(rec)}
                   />
                 )
               })}
@@ -152,6 +188,26 @@ export default function MemberDetailPage() {
           )}
         </Card>
       </motion.div>
+
+      <MemoryDetailDrawer
+        memory={activeMemory}
+        memberName={member.name}
+        onClose={() => setActiveMemory(null)}
+        onDelete={
+          activeMemory
+            ? async () => {
+                try {
+                  await memoryApi.delete(activeMemory.id)
+                  queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+                  setActiveMemory(null)
+                  toast.success('记忆已删除')
+                } catch (err) {
+                  show(err)
+                }
+              }
+            : undefined
+        }
+      />
 
       <Modal
         open={createMemoryModal}
@@ -199,6 +255,13 @@ export default function MemberDetailPage() {
               fullWidth
             />
           </div>
+          <Select
+            label="情感基调（可选）"
+            options={EMOTION_OPTIONS}
+            value={newMemory.emotion_label}
+            onValueChange={(v) => setNewMemory({ ...newMemory, emotion_label: v })}
+            fullWidth
+          />
           <div className="flex gap-3 pt-2">
             <Button
               variant="ghost"

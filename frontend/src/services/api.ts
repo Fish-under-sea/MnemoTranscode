@@ -262,4 +262,91 @@ export const subscriptionApi = {
   get: () => api.get('/auth/subscription'),
 }
 
+// ========== 媒体两阶段上传（C · M3）==========
+
+export type MediaPurpose =
+  | 'archive_photo'
+  | 'archive_video'
+  | 'archive_audio'
+  | 'avatar'
+  | 'voice_sample'
+  | 'other'
+
+export interface MediaAsset {
+  id: number
+  object_key: string
+  bucket: string
+  content_type: string
+  size: number
+  purpose: MediaPurpose | string
+  archive_id?: number | null
+  member_id?: number | null
+  created_at: string
+}
+
+export interface UploadInitRequest {
+  filename: string
+  content_type: string
+  size: number
+  purpose: MediaPurpose
+  archive_id?: number
+  member_id?: number
+}
+
+export interface UploadInitResponse {
+  upload_id: string
+  object_key: string
+  put_url: string
+  expires_in: number
+  required_headers: Record<string, string>
+}
+
+export interface UploadCompleteRequest {
+  upload_id: string
+  object_key: string
+  size?: number
+  etag?: string
+}
+
+export interface UploadCompleteResponse {
+  media_id: number | null
+  object_key: string
+  status: string
+}
+
+export const mediaApi = {
+  initUpload: (data: UploadInitRequest): Promise<UploadInitResponse> =>
+    api.post('/media/uploads/init', data),
+
+  completeUpload: (data: UploadCompleteRequest): Promise<UploadCompleteResponse> =>
+    api.post('/media/uploads/complete', data),
+
+  getDownloadUrl: (mediaId: number): Promise<{ get_url: string; expires_in: number }> =>
+    api.get(`/media/${mediaId}/download-url`),
+
+  list: (params: { archive_id?: number; member_id?: number; purpose?: MediaPurpose }): Promise<MediaAsset[]> =>
+    api.get('/media/', { params }),
+}
+
+/**
+ * 向 MinIO 预签 PUT URL 直传，不走 api 的 baseURL / 解包，避免 CORS/拦截器副作用。
+ */
+export async function uploadToPresignedUrl(
+  putUrl: string,
+  file: File,
+  contentType: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  await axios.put(putUrl, file, {
+    headers: { 'Content-Type': contentType },
+    onUploadProgress: (e) => {
+      if (e.total && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    },
+  })
+}
+
+export type { Memory } from './memoryTypes'
+
 export default api

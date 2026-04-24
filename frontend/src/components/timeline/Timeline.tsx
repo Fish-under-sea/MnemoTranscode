@@ -1,83 +1,77 @@
 /**
- * 记忆时间线组件
+ * 时间线：按年份轴 + 情感色节点 + stagger
  */
-import { formatDate } from '@/lib/utils'
-import { Circle } from 'lucide-react'
-import { cn } from '@/lib/utils'
-
-interface TimelineItem {
-  id: number
-  title: string
-  description?: string
-  year?: string | number
-  timestamp?: string | null
-  emotion_label?: string | null
-  memory_count?: number
-}
+import { motion } from 'motion/react'
+import { staggerContainer, fadeUp } from '@/lib/motion'
+import ScrollReveal from '@/components/ui/ScrollReveal'
+import { EMOTION_LABELS } from '@/lib/utils'
+import type { TimelineGroup } from '@/lib/timelineUtils'
+import type { Memory } from '@/services/memoryTypes'
 
 interface TimelineProps {
-  items: TimelineItem[]
-  onItemClick?: (item: TimelineItem) => void
+  groups: TimelineGroup[]
+  onItemClick?: (m: Memory) => void
 }
 
-export default function Timeline({ items, onItemClick }: TimelineProps) {
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-12 text-gray-500">
-        暂无时间线数据
-      </div>
-    )
+export default function Timeline({ groups, onItemClick }: TimelineProps) {
+  if (groups.length === 0) {
+    return null
   }
 
   return (
     <div className="relative">
-      {/* 时间线中轴 */}
-      <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-primary-200" />
+      <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-jade-100 dark:bg-amber-400/20" />
 
-      <div className="space-y-6">
-        {items.map((item, index) => (
-          <div
-            key={item.id}
-            className="relative flex gap-4 pl-12 cursor-pointer group"
-            onClick={() => onItemClick?.(item)}
-          >
-            {/* 时间线节点 */}
-            <div
-              className={cn(
-                'absolute left-0 w-8 h-8 rounded-full flex items-center justify-center z-10 transition-base',
-                'bg-white border-2 border-primary-300 group-hover:border-primary-500 group-hover:scale-110'
-              )}
-            >
-              <Circle
-                size={12}
-                className={cn(
-                  'transition-base',
-                  index === 0 ? 'fill-primary-500 text-primary-500' : 'text-primary-300'
-                )}
-              />
-            </div>
+      <div className="flex flex-col gap-8">
+        {groups.map((group) => (
+          <ScrollReveal key={group.year === null ? 'no-year' : String(group.year)}>
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-4 ml-12">
+                <span className="text-display-sm font-serif text-jade-700 tabular-nums">
+                  {group.year === null ? '未标注时间' : group.year}
+                </span>
+                <span className="text-caption text-ink-muted">{group.items.length} 条记忆</span>
+              </div>
 
-            {/* 内容卡片 */}
-            <div className="flex-1 bg-white rounded-xl border border-gray-200 p-4 group-hover:shadow-md group-hover:border-primary-200 transition-base">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-gray-900">{item.title}</h3>
-                {item.year && (
-                  <span className="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">
-                    {item.year}
-                  </span>
-                )}
-              </div>
-              {item.description && (
-                <p className="mt-2 text-sm text-gray-600">{item.description}</p>
-              )}
-              <div className="mt-3 flex items-center gap-3 text-xs text-gray-500">
-                {item.timestamp && <span>{formatDate(item.timestamp)}</span>}
-                {item.memory_count !== undefined && (
-                  <span>{item.memory_count} 条记忆</span>
-                )}
-              </div>
+              <motion.div
+                variants={staggerContainer()}
+                initial="hidden"
+                animate="visible"
+                className="flex flex-col gap-4"
+              >
+                {group.items.map((m) => {
+                  const emotion = EMOTION_LABELS.find((e) => e.value === m.emotion_label)
+                  const nodeColor = emotion?.color ?? '#059669'
+                  return (
+                    <motion.div
+                      key={m.id}
+                      layout
+                      variants={fadeUp}
+                      className="relative pl-12 cursor-pointer group"
+                      onClick={() => onItemClick?.(m)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onItemClick?.(m)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span
+                        className="absolute left-3 top-4 w-4 h-4 rounded-full border-2 border-white shadow-e1"
+                        style={{ backgroundColor: nodeColor }}
+                      />
+                      <div className="rounded-xl bg-surface border border-border-default p-4 group-hover:shadow-e2 transition-shadow duration-200">
+                        <h3 className="text-body-lg font-medium text-ink-primary">{m.title}</h3>
+                        <p className="text-body-sm text-ink-secondary line-clamp-2 mt-1">{m.content_text}</p>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </motion.div>
             </div>
-          </div>
+          </ScrollReveal>
         ))}
       </div>
     </div>

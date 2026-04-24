@@ -16,7 +16,7 @@ import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import Card from '@/components/ui/Card'
 import Textarea from '@/components/ui/Textarea'
-import { LoadingState, ErrorState, EmptyState } from '@/components/ui/state'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 
 export default function ArchiveListPage() {
