@@ -7,9 +7,12 @@ import toast from 'react-hot-toast'
 import { FileText, MessageCircle, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { archiveApi, memoryApi } from '@/services/api'
+import MediaGallery from '@/components/media/MediaGallery'
+import MediaUploader from '@/components/media/MediaUploader'
 import { EMOTION_LABELS } from '@/lib/utils'
 import MemoryCard from '@/components/memory/MemoryCard'
-import MemoryDetailDrawer, { type MemoryRecord } from '@/components/memory/MemoryDetailDrawer'
+import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
+import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
 import { useState } from 'react'
 import Card from '@/components/ui/Card'
@@ -17,7 +20,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
 import Select from '@/components/ui/Select'
-import { LoadingState, ErrorState, EmptyState } from '@/components/ui/state'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberProfile from '@/components/member/MemberProfile'
 import { fadeUp, staggerContainer } from '@/lib/motion'
@@ -36,7 +39,7 @@ export default function MemberDetailPage() {
     location: '',
     emotion_label: '',
   })
-  const [activeMemory, setActiveMemory] = useState<MemoryRecord | null>(null)
+  const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
 
   const EMOTION_OPTIONS = [
     { value: '', label: '（无）' },
@@ -124,6 +127,22 @@ export default function MemberDetailPage() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
+        <Card variant="plain" className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-body-lg font-medium text-ink-primary">相册</h2>
+            <MediaUploader
+              memberId={Number(memberId)}
+              purpose="archive_photo"
+              onComplete={() =>
+                queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+              }
+            />
+          </div>
+          <MediaGallery memberId={Number(memberId)} memberName={member.name} />
+        </Card>
+      </motion.div>
+
+      <motion.div variants={fadeUp}>
         <Card variant="plain">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-medium text-ink-primary text-body-lg flex items-center gap-2">
@@ -146,7 +165,7 @@ export default function MemberDetailPage() {
             <div className="space-y-4">
               {memories.map((memory: Record<string, unknown>) => {
                 const m = memory
-                const rec: MemoryRecord = {
+                const rec: Memory = {
                   id: Number(m.id),
                   title: String(m.title ?? ''),
                   content_text: String(m.content_text ?? ''),
