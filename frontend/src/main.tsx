@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
+// 先于 index.css 引入，确保 CSS 变量与字体族优先建立
+import './styles/tokens.css'
+import './styles/fonts.css'
 import './index.css'
 
 const queryClient = new QueryClient({
