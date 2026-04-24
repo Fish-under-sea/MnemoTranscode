@@ -1,11 +1,13 @@
-# 子项目 C · 核心记忆流 · 实现计划 v1.0
+# 子项目 C · 核心记忆流 · 实现计划 v1.1
 
 **起草人**：Claude 4.7 Opus（A 轨）
 **主 spec**：[`docs/superpowers/specs/2026-04-24-C-core-memory-flow-design.md`](../specs/2026-04-24-C-core-memory-flow-design.md)
 **执行人（B 轨）**：Composer 2
-**分支**：`Opus-coding`（**严禁独立开分支**）
+**分支**：`Composer-coding`（**从 `main` 切出，所有实现 commit 必须落在这里**）
 **估时**：~4 天（**28** task，5 milestone）
 **合入用 PR**：[docs(C): 子项目 C 设计 + 实现计划 · 核心记忆流 — PR #15](https://github.com/Fish-under-sea/MnemoTranscode/pull/15)
+
+> **v1.1 分支规则反转（2026-04-24，由用户裁决）**：路线图原本要求 Composer 2 在 `Opus-coding` 直接提交、靠 `git notes` 标记归属——本次 C 子项目**起**，改为 **Composer 2 独立分支 `Composer-coding`**。Opus 仍在 `Opus-coding` 提交设计/审阅/收尾 commit。最终由 Opus 负责合入 `main`。
 
 ---
 
@@ -19,15 +21,25 @@
 
 ### 0.2 工作模式（B 阶段教训固化 · 硬约束）
 
-**三条红线（与下述 1–5 细项一一对应，已写入本节）：**
+**三条红线（与下述 5 细项对应）：**
 
-1. **禁止新开分支** — 第一件事 `git branch --show-current` 必须是 `Opus-coding`；不是就切过去。不要创建 `Composer-coding` / `ComposerC-coding`。**归属用 git notes 标记执行模型，不靠分支名。**
+1. **所有实现 commit 必须落在 `Composer-coding` 分支** — 第一件事 `git branch --show-current` 必须是 `Composer-coding`；不是就切过去（若本地没有：`git fetch origin && git checkout -b Composer-coding origin/main`）。**禁止在 `Opus-coding` 或 `main` 直接 commit**。
 2. **一 task 一 commit** — 每完成一个 task 独立 commit，禁止把多个 task 合成一笔。
 3. **每 milestone 完成后暂停** — 跑完 `type-check` + **附录 A** 对应 M 的 grep 自检 + `push` 后，回来报告 **「M? 完成」**，等 Opus 放行再开下一 M。禁止一口气做完 5 个 M 再汇报。
 
 **⚠️ 以下 5 条是硬约束，违反会被要求回退。**
 
-1. **🚫 禁止创建新分支**。你的第一件事：`git branch --show-current`，输出必须是 `Opus-coding`。不是则 `git checkout Opus-coding`；若本地没有，`git fetch origin && git checkout -b Opus-coding origin/Opus-coding`。**不要**创建 `Composer-coding` / `ComposerC-coding` 或任何其他分支。
+1. **🌿 分支强约束：Composer-coding**。你的第一件事：
+   ```bash
+   git fetch origin
+   git branch --show-current            # 如不是 Composer-coding：
+   git checkout Composer-coding 2>/dev/null \
+     || git checkout -b Composer-coding origin/main
+   git pull origin Composer-coding 2>/dev/null || true
+   ```
+   - 基于 `origin/main`（含 C spec + plan v1.x）切出，不要从 `Opus-coding` 切；Opus 的设计/审阅 commit 已合并在 `main` 里。
+   - **禁止**在 `Opus-coding` 或 `main` 上提交 Composer 的实现代码。
+   - 每 milestone 结束 push 到 `origin Composer-coding`，然后等 Opus 审阅——**Opus 负责开 PR 合入 `main`**，你不要自己开 PR。
 
 2. **⚛️ 一 task 一 commit**。每完成一个 task：
    ```bash
@@ -35,7 +47,7 @@
    git commit -m "..."      # 按下方 commit 信息模板
    git log --oneline -3     # 核验 commit 数，应为 task 数
    ```
-   推荐在每一笔实现 commit 后附加归属注记（不替代分支要求）：
+   推荐在每一笔实现 commit 后附加归属注记（冗余兜底，便于日后审计）：
    ```bash
    git notes add -m "actual-model: composer-2" HEAD
    ```
@@ -45,8 +57,8 @@
    - 跑 `npm run type-check` 必须 0 错误
    - 跑 `npm run build`（M1 在 T1.7 已写）
    - 跑 §附录 A 的 M? 自检 grep 清单
-   - `git push origin Opus-coding`
-   - 回复 Opus："**M? 完成**，已 push，自检通过/失败：..."
+   - `git push origin Composer-coding`
+   - 回复 Opus："**M? 完成**，已 push 到 `Composer-coding`，自检通过/失败：..."
    - **等 Opus 放行再继续 M?+1**
 
 4. **🔍 每 task 结束的 3 件事**：
@@ -651,10 +663,10 @@ rg 'animate-on-scroll|useScrollReveal' frontend/src/pages/MemberDetailPage.tsx
 
 **全部通过后**：
 ```bash
-git push origin Opus-coding
+git push origin Composer-coding
 ```
 
-**然后回复 Opus**："C M1 完成，已 push。自检清单全部通过：[贴 rg 输出]。"
+**然后回复 Opus**："C M1 完成，已 push 到 `Composer-coding`。自检清单全部通过：[贴 rg 输出]。"
 
 **等 Opus 放行再进 M2。**
 
@@ -878,7 +890,7 @@ const EMOTION_OPTIONS = [
 - `npm run type-check` 0 错
 - `npm run build` 成功
 - 手工：记忆卡可开 Drawer；Drawer 显示正文 / meta / 占位媒体区
-- `git push origin Opus-coding`
+- `git push origin Composer-coding`
 - 等 Opus 放行
 
 ---
@@ -1399,7 +1411,7 @@ export default function MediaLightbox({ media, onClose }: MediaLightboxProps) {
 - `npm run type-check` + `npm run build` 通过
 - 手工：上传 1 张 JPG（成功）+ 1 张超限 JPG（前端拦截）+ 1 个 MP4 + 1 个 WAV
 - 相册 Tabs 切换正常，照片点击可放大
-- `git push origin Opus-coding`
+- `git push origin Composer-coding`
 - 等 Opus 放行
 
 ---
@@ -1579,7 +1591,7 @@ TimelinePage 添加 `activeMemory` state，Timeline 的 onItemClick 触发 setAc
 
 - 手工：Timeline 按年显示，筛选联动生效，点卡打开 Drawer
 - type-check + build 通过
-- `git push origin Opus-coding`
+- `git push origin Composer-coding`
 - 等 Opus 放行
 
 ---
@@ -1638,7 +1650,7 @@ export * from './state'
 # 子项目 C · 核心记忆流 · 收尾记录
 
 **完成日期**：2026-04-24
-**主导分支**：`Opus-coding`
+**分支**：Composer 2 实现 → `Composer-coding`；Opus 设计/审阅/收尾 → `Opus-coding`；最终合入 `main`
 **执行模型**：Composer 2（实现） · Claude 4.7 Opus（设计 + 审验 + 收尾）
 
 ---
@@ -1771,6 +1783,7 @@ rg '还没有' frontend/src/pages/Archive*.tsx  # = 0（改用 EmptyState descri
 
 - **v1.0** (2026-04-24, Opus)：初版。28 task 分 5 milestone，对齐主 spec 8 个核心决策；固化 B 阶段硬约束（含三条红线 + git notes 归属）；明确 T3.0 前置与选项 A/B；附 A/B/C 三个速查附录。
 - **v1.0.1** (2026-04-24, Opus)：补 PR #15 链接、启动顺序（M1 起 → M1 末等 Opus 核查）、M3 选项 A/B 与 T3.0 curl 判定说明；task 数 29→28 勘误。
+- **v1.1** (2026-04-24, Opus · 由用户裁决)：**分支规则反转** — Composer 2 的所有实现 commit 必须落在独立分支 `Composer-coding`（从 `main` 切出），不再沿用 B 阶段的"同一 `Opus-coding` + git notes"。Opus 仍在 `Opus-coding` 提交设计/审阅/收尾 commit，最终由 Opus 开 PR 合入 `main`。§0 三条红线 + 硬约束 §1 与各 milestone DoD 的 `git push` 目标统一改为 `Composer-coding`。
 
 ---
 
