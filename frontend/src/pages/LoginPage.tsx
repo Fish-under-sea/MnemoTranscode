@@ -2,7 +2,7 @@
  * 登录页面 — 支持 returnTo 参数返回来源页面
  */
 import { useState } from 'react'
-import { Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '@/services/api'
@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const { setAuth } = useAuthStore()
 
   const returnTo = searchParams.get('returnTo') || '/dashboard'

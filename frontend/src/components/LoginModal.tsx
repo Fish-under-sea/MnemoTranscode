@@ -3,7 +3,7 @@
  * 支持 returnTo 参数，登录成功后返回指定页面
  */
 import { useState } from 'react'
-import { Mail, Lock, LogIn, Eye, EyeOff, X, UserPlus } from 'lucide-react'
+import { Mail, Lock, LogIn, Eye, EyeOff, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { authApi } from '@/services/api'

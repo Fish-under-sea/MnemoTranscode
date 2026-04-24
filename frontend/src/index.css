@@ -1,15 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600&display=swap');
+/**
+ * 全局基础样式
+ * ---------------------------------------------------------------
+ * 子项目 A 改造（docs/superpowers/plans/2026-04-24-A-design-system-plan.md M1·任务 4）：
+ *   - 移除 Google Fonts @import（由 @fontsource 自托管替代，见 src/styles/fonts.css）
+ *   - :root 字体族改为依赖 Tailwind 默认 `font-sans` 字族链（思源黑为主）
+ *   - 颜色/背景改为读取 tokens.css CSS 变量，支持暗色
+ *   - 保留 @layer components 里的 .btn-*, .glass-*, .gradient-text-*, .floating-orb,
+ *     .dot-grid-bg——标记为 @deprecated，等子项目 B/C 重做页面后再清理
+ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: 'Work Sans', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Outfit', 'Work Sans', system-ui, sans-serif;
   line-height: 1.7;
-  color: #1a2e1a;
-  background-color: #FEFEF9;
+  color: var(--text-primary);
+  background-color: var(--bg-canvas);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -55,12 +66,13 @@ body {
 
 /* ========== 焦点状态 ========== */
 :focus-visible {
-  outline: 2px solid #10B981;
+  outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ========== 过渡动画基础类 ========== */
+/* ========== 过渡动画基础类（legacy） ========== */
+/* @deprecated 新组件请使用 motion preset（lib/motion.ts），不要继续用这些 CSS 过渡类 */
 .transition-base {
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -69,8 +81,14 @@ body {
   transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ========== 玻璃态组件 ========== */
+/**
+ * ========== 组件层（保留，逐步 deprecated） ==========
+ * 子项目 A 引入 components/ui/* 后，以下 @apply 类会被新组件替代。
+ * 目前 14+ 页面仍在使用，不直接删除——子项目 B/C 重做页面时一并移除。
+ * 请勿在**新代码**里继续使用带 @deprecated 注释的类。
+ */
 @layer components {
+  /* @deprecated 改用 components/ui/Card variant="glass" */
   .glass-card {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(12px);
@@ -78,6 +96,7 @@ body {
     border: 1px solid rgba(167, 243, 208, 0.3);
   }
 
+  /* @deprecated 导航组件由子项目 B 统一重做 */
   .glass-nav {
     background: rgba(254, 254, 249, 0.85);
     backdrop-filter: blur(16px);
@@ -85,6 +104,7 @@ body {
     border-bottom: 1px solid rgba(167, 243, 208, 0.2);
   }
 
+  /* @deprecated 改用 components/ui/Button variant="primary" */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 px-7 py-3.5
            bg-jade-500 text-white rounded-2xl font-semibold
@@ -93,6 +113,7 @@ body {
            transition-all duration-300 cursor-pointer;
   }
 
+  /* @deprecated 改用 components/ui/Button variant="secondary" */
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 px-7 py-3.5
            bg-white text-jade-700 rounded-2xl font-semibold
@@ -102,6 +123,7 @@ body {
            transition-all duration-300 cursor-pointer;
   }
 
+  /* @deprecated 改用 components/ui/Button variant="ghost" */
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2
            text-jade-600 rounded-xl font-medium
@@ -109,7 +131,7 @@ body {
            transition-all duration-200 cursor-pointer;
   }
 
-  /* 渐变文字 */
+  /* @deprecated 渐变文字改走 Tailwind 的 bg-clip-text 组合 */
   .gradient-text-jade {
     background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%);
     -webkit-background-clip: text;
@@ -124,20 +146,20 @@ body {
     background-clip: text;
   }
 
-  /* 浮动装饰元素 */
+  /* @deprecated 装饰元素由子项目 B 重做落地页时移除 */
   .floating-orb {
     @apply absolute rounded-full blur-3xl opacity-40 animate-float;
     pointer-events: none;
   }
 
-  /* 网格点阵背景 */
   .dot-grid-bg {
     background-image: radial-gradient(circle, #D1FAE5 1px, transparent 1px);
     background-size: 28px 28px;
   }
 }
 
-/* ========== 页面入场动画 ========== */
+/* ========== 页面入场动画（legacy） ========== */
+/* @deprecated 改用 components/ui/ScrollReveal */
 .animate-on-scroll {
   opacity: 0;
   transform: translateY(28px);
@@ -150,7 +172,6 @@ body {
   transform: translateY(0);
 }
 
-/* 交错动画延迟 */
 .delay-100 { transition-delay: 100ms; }
 .delay-200 { transition-delay: 200ms; }
 .delay-300 { transition-delay: 300ms; }
@@ -158,6 +179,7 @@ body {
 .delay-500 { transition-delay: 500ms; }
 
 /* ========== 响应式无障碍 ========== */
+/* 注：新组件通过 MotionProvider 统一尊重 reduced-motion；这里的全局 CSS 覆盖作为兜底。 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

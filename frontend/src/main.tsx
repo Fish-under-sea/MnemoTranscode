@@ -2,8 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
 import App from './App'
+// 先于 index.css 引入，确保 CSS 变量与字体族优先建立
+import './styles/tokens.css'
+import './styles/fonts.css'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -78,17 +80,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          {/* Toaster 统一由 App.tsx 的 <ToastHost /> 挂载（走设计系统 token 样式），
+              不要在这里再挂一份，否则同一条 toast 会被渲染两次。 */}
           <App />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 3000,
-              style: {
-                background: '#1a2e1a',
-                color: '#fff',
-              },
-            }}
-          />
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

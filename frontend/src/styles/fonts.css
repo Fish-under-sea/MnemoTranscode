@@ -1,0 +1,24 @@
+/**
+ * 子项目 A · 自托管思源字体
+ * ---------------------------------------------------------------
+ * 对应 docs/design-system.md §3.1（字体族）。
+ *
+ * 选择 @fontsource 而非 Google Fonts 的原因：
+ *   1. 国内访问 fonts.googleapis.com 不稳，首屏白块最多能卡几秒。
+ *   2. @fontsource 会被 Vite 打进静态资源，CDN 命中更稳。
+ *   3. 按字重拆分，构建产物可被 tree-shake，不用的字重不会进 bundle。
+ *
+ * 当前加载的字重：
+ *   Sans（正文）：400 / 500 / 600 / 700
+ *   Serif（标题/引用/数字）：400 / 500 / 700
+ * 其他字重（如 300/900）如果 MVP 期间用不到就不加，避免无谓体积。
+ */
+
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/500.css';
+@import '@fontsource/noto-sans-sc/600.css';
+@import '@fontsource/noto-sans-sc/700.css';
+
+@import '@fontsource/noto-serif-sc/400.css';
+@import '@fontsource/noto-serif-sc/500.css';
+@import '@fontsource/noto-serif-sc/700.css';

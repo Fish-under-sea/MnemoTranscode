@@ -1,0 +1,78 @@
+/**
+ * 子项目 A · 设计系统语义令牌
+ * ---------------------------------------------------------------
+ * 对应 docs/design-system.md §2（色彩系统）
+ *
+ * 使用原则：
+ *   1. 组件里不要直接写十六进制色——只用 var(--xxx) 或 tailwind.config.js
+ *      里通过这些变量暴露的语义类（bg-canvas / text-primary / border-default ...）。
+ *   2. 亮/暗两套值在这里集中管理，切主题时只切一个 .dark class。
+ *   3. 所有 rgb(a) 阴影基色走 --shadow-color，避免暗色下硬阴影。
+ *
+ * 来源色板（已在 docs/design-system.md §2.1 定版）：
+ *   - warm  ：奶油米背景 #FEFEF9 → #1A120B
+ *   - jade  ：翠色主品牌 #10B981（亮） / amber-400（暗·dark-amber 策略）
+ *   - amber ：琥珀辅色
+ */
+
+:root {
+  /* ============ 背景层 ============ */
+  --bg-canvas: #FEFEF9;     /* warm-50  · 页面底色 */
+  --bg-surface: #FFFFFF;    /*          · 卡片 / Modal 白面 */
+  --bg-subtle: #FAF7E6;     /* warm-200 · 次级区块 */
+  --bg-muted: #F5F0D6;      /* warm-300 · 分隔 / 跳色 */
+
+  /* ============ 文本层 ============ */
+  --text-primary: #064E3B;  /* jade-900 · 正文一级 */
+  --text-secondary: #047857;/* jade-700 · 正文二级 / 链接默认 */
+  --text-muted: #64748B;    /* slate-500· 辅助 / placeholder */
+  --text-inverse: #FFFFFF;  /*          · 深色按钮/tag 上的字 */
+
+  /* ============ 品牌色 ============ */
+  --brand-primary: #10B981;         /* jade-500 · 主按钮 / CTA */
+  --brand-primary-hover: #059669;   /* jade-600 */
+  --brand-primary-active: #047857;  /* jade-700 */
+  --brand-accent: #F59E0B;          /* amber-500· 次按钮 / 强调提示 */
+
+  /* ============ 边框 ============ */
+  --border-default: rgba(167, 243, 208, 0.4); /* jade-200/40 */
+  --border-strong: rgba(5, 150, 105, 0.25);   /* jade-600/25 */
+
+  /* ============ 状态 ============ */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #E11D48;  /* rose-600 */
+  --info: #0EA5E9;    /* sky-500 */
+
+  /* ============ 阴影基色（供 box-shadow rgba 用） ============ */
+  --shadow-color: 5, 150, 105;  /* jade-600 的 rgb 分量 */
+}
+
+.dark {
+  /* 暗色：dark-amber 策略（docs/design-system.md §2.2）
+     主轴从 jade 翻到 amber-400，但整体依然温润、非冰冷。 */
+
+  --bg-canvas: #1A120B;
+  --bg-surface: #2A1D12;
+  --bg-subtle: #3A2819;
+  --bg-muted: #4A3422;
+
+  --text-primary: #F5E6C8;
+  --text-secondary: #D4B896;
+  --text-muted: #9B8668;
+
+  --brand-primary: #FBBF24;         /* amber-400 */
+  --brand-primary-hover: #F59E0B;   /* amber-500 */
+  --brand-primary-active: #D97706;  /* amber-600 */
+  --brand-accent: #34D399;          /* jade-400 · 翠色退居辅位 */
+
+  --border-default: rgba(251, 191, 36, 0.2);
+  --border-strong: rgba(251, 191, 36, 0.35);
+
+  --success: #34D399;
+  --warning: #FBBF24;
+  --danger: #FB7185;
+  --info: #38BDF8;
+
+  --shadow-color: 0, 0, 0;
+}
