@@ -3,29 +3,17 @@
  */
 import Drawer from '@/components/ui/Drawer'
 import Button from '@/components/ui/Button'
+import MediaGallery from '@/components/media/MediaGallery'
 import { Edit, Trash, MapPin, Calendar } from 'lucide-react'
 import { formatDate, EMOTION_LABELS } from '@/lib/utils'
-
-/** 与列表/接口一致的记忆结构 */
-export interface MemoryRecord {
-  id: number
-  title: string
-  content_text: string
-  timestamp?: string | null
-  location?: string | null
-  emotion_label?: string | null
-  member_id: number
-  archive_id: number
-}
+import type { Memory } from '@/services/memoryTypes'
 
 export interface MemoryDetailDrawerProps {
-  memory: MemoryRecord | null
+  memory: Memory | null
   memberName: string
   onClose: () => void
   onEdit?: () => void
   onDelete?: () => void
-  /** M3 接入后由父级传入 true 以展示 MediaGallery */
-  showMediaGallery?: boolean
 }
 
 export default function MemoryDetailDrawer({
@@ -34,7 +22,6 @@ export default function MemoryDetailDrawer({
   onClose,
   onEdit,
   onDelete,
-  showMediaGallery = false,
 }: MemoryDetailDrawerProps) {
   if (!memory) return null
   const emotionInfo = EMOTION_LABELS.find((e) => e.value === memory.emotion_label)
@@ -83,11 +70,7 @@ export default function MemoryDetailDrawer({
 
       <div className="mt-6 pt-6 border-t border-border-default">
         <h3 className="text-body-lg font-medium text-ink-primary mb-3">关联媒体</h3>
-        {showMediaGallery ? (
-          <div className="text-body-sm text-ink-muted">请在 M3 集成后由 MediaGallery 渲染</div>
-        ) : (
-          <div className="text-body-sm text-ink-muted">M3 实现后这里会展示 Ta 的最近媒体。</div>
-        )}
+        <MediaGallery memberId={memory.member_id} memberName={memberName} />
       </div>
 
       {(onEdit || onDelete) && (
