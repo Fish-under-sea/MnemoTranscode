@@ -1,163 +1,109 @@
 /**
- * 登录弹窗组件 — 落地页内嵌式登录
- * 支持 returnTo 参数，登录成功后返回指定页面
+ * 登录弹窗 — 子项目 B · A 基座 Modal + useAuthForm
  */
-import { useState } from 'react'
-import { Mail, Lock, LogIn, Eye, EyeOff, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { authApi } from '@/services/api'
-import { useAuthStore } from '@/hooks/useAuthStore'
+import { Heart, Eye, EyeOff, Mail, Lock } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import Modal from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { useAuthForm } from '@/hooks/useAuthForm'
 
 interface LoginModalProps {
+  open: boolean
   onClose: () => void
-  returnTo?: string
+  onSuccess?: () => void
 }
 
-export default function LoginModal({ onClose, returnTo }: LoginModalProps) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
+export default function LoginModal({ open, onClose, onSuccess }: LoginModalProps) {
+  const navigate = useNavigate()
 
-  const { setAuth } = useAuthStore()
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (loading) return
-    setLoading(true)
-    try {
-      const response = await authApi.login(email, password) as any
-      if (!response?.access_token || !response?.user) {
-        throw new Error('登录响应格式异常')
-      }
-
-      if (rememberMe) {
-        localStorage.setItem('mtc-remember', 'true')
-      }
-
-      setAuth(response.access_token, response.user)
-      toast.success('登录成功')
-
-      // 根据 returnTo 决定跳转
-      if (returnTo && returnTo !== '/') {
-        window.location.href = returnTo
+  const form = useAuthForm({
+    mode: 'login',
+    onSuccess: () => {
+      onClose()
+      if (onSuccess) {
+        onSuccess()
       } else {
-        onClose()
+        navigate('/dashboard')
       }
-    } catch (error: any) {
-      console.error('[LoginModal] error:', error)
-      toast.error(error.detail || '登录失败，请检查邮箱和密码')
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+  })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* 遮罩 */}
-      <div
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <Modal open={open} onClose={onClose} size="md" title="登录">
+      <div className="text-center mb-4">
+        <div className="inline-flex items-center gap-2 text-ink-secondary">
+          <Heart className="w-6 h-6 text-jade-600" fill="currentColor" />
+          <span className="font-serif text-xl tracking-wider">MTC</span>
+        </div>
+        <p className="text-ink-secondary text-sm mt-2">继续守护你的记忆</p>
+      </div>
 
-      {/* 弹窗 */}
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 animate-fade-up">
-        {/* 关闭按钮 */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
-        >
-          <X size={18} />
-        </button>
-
-        {/* Logo */}
-        <div className="text-center mb-7">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-jade-400 to-jade-600 rounded-2xl mb-4 shadow-jade">
-            <span className="text-white font-bold text-lg">MTC</span>
-          </div>
-          <h2 className="font-display text-xl font-bold text-slate-900">欢迎回来</h2>
-          <p className="text-slate-500 text-sm mt-1">登录到你的记忆银行</p>
+      <form onSubmit={form.handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="modal-email" className="block text-sm font-medium text-ink-secondary mb-1.5">
+            邮箱
+          </label>
+          <Input
+            id="modal-email"
+            type="email"
+            autoComplete="email"
+            leftIcon={<Mail className="w-4 h-4" />}
+            value={form.email}
+            onChange={(e) => form.setEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={form.loading}
+            fullWidth
+            required
+          />
         </div>
 
-        {/* 表单 */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">邮箱</label>
-            <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="w-full pl-9 pr-4 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">密码</label>
-            <div className="relative">
-              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full pl-9 pr-10 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-              />
+        <div>
+          <label htmlFor="modal-password" className="block text-sm font-medium text-ink-secondary mb-1.5">
+            密码
+          </label>
+          <Input
+            id="modal-password"
+            type={form.showPassword ? 'text' : 'password'}
+            autoComplete="current-password"
+            leftIcon={<Lock className="w-4 h-4" />}
+            rightIcon={
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-jade-600 transition-colors cursor-pointer p-1"
+                onClick={form.togglePassword}
+                className="text-ink-muted hover:text-ink-primary transition-colors"
+                aria-label={form.showPassword ? '隐藏密码' : '显示密码'}
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {form.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-            </div>
-          </div>
-
-          {/* 记住我 */}
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-warm-300 text-jade-500 focus:ring-jade-400 cursor-pointer"
-              />
-              <span className="text-slate-600">记住我（7天免登录）</span>
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-jade-500 text-white rounded-xl font-semibold hover:bg-jade-600 active:bg-jade-700 disabled:opacity-50 transition-all shadow-jade hover:shadow-jade-lg flex items-center justify-center gap-2 text-sm cursor-pointer mt-2"
-          >
-            <LogIn size={15} />
-            {loading ? '登录中...' : '登录'}
-          </button>
-        </form>
-
-        {/* 注册入口 */}
-        <div className="mt-5 pt-5 border-t border-warm-200 text-center">
-          <p className="text-sm text-slate-500">
-            还没有账号？{' '}
-            <Link
-              to={returnTo ? `/register?returnTo=${encodeURIComponent(returnTo)}` : '/register'}
-              onClick={onClose}
-              className="text-jade-600 hover:underline font-semibold"
-            >
-              立即注册
-            </Link>
-          </p>
+            }
+            value={form.password}
+            onChange={(e) => form.setPassword(e.target.value)}
+            placeholder="请输入密码"
+            disabled={form.loading}
+            fullWidth
+            required
+          />
         </div>
+
+        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={form.loading} loading={form.loading}>
+          {form.loading ? '登录中...' : '登录'}
+        </Button>
+      </form>
+
+      <div className="text-center text-sm text-ink-secondary mt-4">
+        还没有账号？{' '}
+        <button
+          type="button"
+          onClick={() => {
+            onClose()
+            navigate('/register')
+          }}
+          className="text-jade-600 hover:text-jade-700 font-medium"
+        >
+          创建账号
+        </button>
       </div>
-    </div>
+    </Modal>
   )
 }

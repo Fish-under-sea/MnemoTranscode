@@ -1,160 +1,213 @@
 /**
- * 注册页面 — 支持 returnTo 参数
+ * 注册页 — 子项目 B · A 基座 + useAuthForm
  */
-import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { Mail, User, UserPlus, Eye, EyeOff } from 'lucide-react'
-import { authApi } from '@/services/api'
-import { useAuthStore } from '@/hooks/useAuthStore'
+import type { ReactNode } from 'react'
+import { motion } from 'motion/react'
+import { Link } from 'react-router-dom'
+import { Heart, Eye, EyeOff, Mail, Lock, User } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+import { useAuthForm } from '@/hooks/useAuthForm'
+import { fadeUp, staggerContainer } from '@/lib/motion'
 
 export default function RegisterPage() {
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [searchParams] = useSearchParams()
-  const { setAuth } = useAuthStore()
-
-  const returnTo = searchParams.get('returnTo') || '/dashboard'
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (loading) return
-    if (password !== confirmPassword) {
-      toast.error('两次输入的密码不一致')
-      return
-    }
-    setLoading(true)
-    try {
-      const response = await authApi.register({ username, email, password }) as any
-      if (!response?.access_token || !response?.user) {
-        throw new Error('注册响应格式异常')
-      }
-      setAuth(response.access_token, response.user)
-      toast.success('注册成功')
-
-      const target = returnTo.startsWith('/') ? returnTo : '/dashboard'
-      window.location.href = target
-    } catch (error: any) {
-      toast.error(error.detail || '注册失败')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const form = useAuthForm({ mode: 'register' })
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-warm-100 px-4">
-      {/* 浮动装饰背景 */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="floating-orb w-[500px] h-[500px] bg-jade-200 top-[-200px] right-[-100px] animate-blob" style={{ animationDuration: '15s' }} />
-        <div className="floating-orb w-[400px] h-[400px] bg-amber-100 bottom-[-100px] left-[-100px] animate-blob" style={{ animationDuration: '18s', animationDelay: '-5s' }} />
+    <div className="relative min-h-screen overflow-hidden bg-warm-50 flex items-center justify-center px-4 py-12">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="floating-orb floating-orb-jade w-[480px] h-[480px] -top-32 -right-32 opacity-40" />
+        <div className="floating-orb floating-orb-amber w-[360px] h-[360px] -bottom-24 -left-24 opacity-30" />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-jade-400 to-jade-600 rounded-2xl mb-5 shadow-jade">
-            <span className="text-white font-bold text-xl">MTC</span>
-          </div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">创建账号</h1>
-          <p className="text-slate-500 mt-2">开始守护你的珍贵记忆</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-glass-lg p-8 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">用户名</label>
-            <div className="relative">
-              <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="你的名字"
-                className="w-full pl-10 pr-4 py-3 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-                minLength={2}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">邮箱</label>
-            <div className="relative">
-              <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="w-full pl-10 pr-4 py-3 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">密码</label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少 6 位"
-                className="w-full pl-4 pr-12 py-3 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-                minLength={6}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-jade-600 transition-colors cursor-pointer p-1"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">确认密码</label>
-            <div className="relative">
-              <input
-                type={showConfirm ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="再次输入密码"
-                className="w-full pl-4 pr-12 py-3 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-jade-600 transition-colors cursor-pointer p-1"
-              >
-                {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-jade-500 text-white rounded-xl font-semibold hover:bg-jade-600 active:bg-jade-700 disabled:opacity-50 transition-all shadow-jade hover:shadow-jade-lg flex items-center justify-center gap-2 text-sm cursor-pointer mt-6"
+      <motion.div
+        className="relative w-full max-w-md"
+        variants={staggerContainer(0.06)}
+        initial="hidden"
+        animate="visible"
+      >
+        <motion.div variants={fadeUp} className="text-center mb-8">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-ink-secondary hover:text-jade-600 transition-colors"
           >
-            <UserPlus size={16} />
-            {loading ? '注册中...' : '注册'}
-          </button>
+            <Heart className="w-6 h-6 text-jade-600" fill="currentColor" />
+            <span className="font-serif text-2xl tracking-wider">MTC</span>
+          </Link>
+          <h1 className="font-serif text-3xl text-ink-primary mt-4">创建账号</h1>
+          <p className="text-ink-secondary mt-2">开始守护你的珍贵记忆</p>
+        </motion.div>
 
-          <p className="text-center text-sm text-slate-500">
-            已有账号？{' '}
-            <Link to={returnTo !== '/dashboard' ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login'} className="text-jade-600 hover:underline font-semibold">
-              立即登录
-            </Link>
-          </p>
-        </form>
-      </div>
+        <motion.div variants={fadeUp}>
+          <Card variant="glass" padding="lg">
+            <form onSubmit={form.handleSubmit} className="space-y-5">
+              <FormField
+                id="username"
+                label="用户名"
+                leftIcon={<User className="w-4 h-4" />}
+                value={form.username}
+                onChange={(v) => form.setUsername(v)}
+                placeholder="如何称呼你"
+                disabled={form.loading}
+                required
+                autoComplete="username"
+              />
+
+              <FormField
+                id="email"
+                label="邮箱"
+                type="email"
+                leftIcon={<Mail className="w-4 h-4" />}
+                value={form.email}
+                onChange={(v) => form.setEmail(v)}
+                placeholder="you@example.com"
+                disabled={form.loading}
+                required
+                autoComplete="email"
+              />
+
+              <PasswordField
+                id="password"
+                label="密码"
+                value={form.password}
+                onChange={(v) => form.setPassword(v)}
+                show={form.showPassword}
+                toggle={form.togglePassword}
+                placeholder="至少 6 位"
+                disabled={form.loading}
+                autoComplete="new-password"
+              />
+
+              <PasswordField
+                id="confirmPassword"
+                label="确认密码"
+                value={form.confirmPassword}
+                onChange={(v) => form.setConfirmPassword(v)}
+                show={form.showConfirm}
+                toggle={form.toggleConfirm}
+                placeholder="再次输入密码"
+                disabled={form.loading}
+                autoComplete="new-password"
+              />
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="w-full"
+                disabled={form.loading}
+                loading={form.loading}
+              >
+                {form.loading ? '注册中...' : '创建账号'}
+              </Button>
+            </form>
+          </Card>
+        </motion.div>
+
+        <motion.p variants={fadeUp} className="text-center text-sm text-ink-secondary mt-6">
+          已有账号？{' '}
+          <Link to="/login" className="text-jade-600 hover:text-jade-700 font-medium">
+            立即登录
+          </Link>
+        </motion.p>
+      </motion.div>
+    </div>
+  )
+}
+
+function FormField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  required,
+  type = 'text',
+  autoComplete,
+  leftIcon,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  disabled?: boolean
+  required?: boolean
+  type?: string
+  autoComplete?: string
+  leftIcon?: ReactNode
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-ink-secondary mb-1.5">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type={type}
+        autoComplete={autoComplete}
+        leftIcon={leftIcon}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        fullWidth
+        required={required}
+      />
+    </div>
+  )
+}
+
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  show,
+  toggle,
+  placeholder,
+  disabled,
+  autoComplete,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  show: boolean
+  toggle: () => void
+  placeholder?: string
+  disabled?: boolean
+  autoComplete?: string
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-ink-secondary mb-1.5">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        leftIcon={<Lock className="w-4 h-4" />}
+        rightIcon={
+          <button
+            type="button"
+            onClick={toggle}
+            className="text-ink-muted hover:text-ink-primary transition-colors"
+            aria-label={show ? '隐藏密码' : '显示密码'}
+          >
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        }
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        fullWidth
+        required
+      />
     </div>
   )
 }
