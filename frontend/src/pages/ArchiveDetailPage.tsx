@@ -43,10 +43,18 @@ export default function ArchiveDetailPage() {
   })
 
   const createMemberMutation = useMutation({
-    mutationFn: (data: typeof newMember) => archiveApi.createMember(Number(id), {
-      ...data,
-      relationship_type: data.relationship,
-    }) as any,
+    mutationFn: (data: typeof newMember) => {
+      const { death_year, ...rest } = data
+      return archiveApi.createMember(Number(id), {
+        name: rest.name,
+        relationship_type: rest.relationship,
+        birth_year: rest.birth_year,
+        bio: rest.bio,
+        ...(death_year != null
+          ? { status: 'deceased' as const, end_year: death_year }
+          : { status: 'alive' as const }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', id] })
       setCreateMemberModal(false)
