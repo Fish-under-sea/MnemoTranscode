@@ -87,3 +87,6 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+
+# Brainstorming visual companion 会话目录
+.superpowers/
