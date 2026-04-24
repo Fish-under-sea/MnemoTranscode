@@ -2,6 +2,7 @@
  * 个人中心页面 — 整合订阅、账号与安全、DIY UI、云端存储
  */
 import { useState, useEffect, useRef } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { authApi, usageApi, preferencesApi, subscriptionApi } from '@/services/api'
 import { useAIContext } from '@/hooks/useAIContext'
@@ -13,8 +14,14 @@ import {
   Check, RefreshCw, Download, Trash2, Moon, Sun, Monitor,
   AlertTriangle, Eye, EyeOff
 } from 'lucide-react'
-
 type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
+
+const VALID_TAB_IDS: TabId[] = ['overview', 'subscription', 'account', 'appearance', 'cloud']
+
+function parseTabParam(params: URLSearchParams): TabId {
+  const t = params.get('tab')
+  return t && VALID_TAB_IDS.includes(t as TabId) ? (t as TabId) : 'overview'
+}
 
 const tabs = [
   { id: 'overview', label: '概览', icon: BarChart3 },
@@ -62,14 +69,16 @@ function OverviewPanel() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    setLoading(true)
     usageApi.getStats().then((res: any) => {
       setStats(res)
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [])
+  }, [user?.monthly_token_limit, user?.subscription_tier])
 
   const limit = user?.monthly_token_limit || 100000
-  const used = stats?.monthly_used || user?.monthly_token_used || 0
+  const used = stats?.monthly_used ?? user?.monthly_token_used ?? 0
+  const isUnlimitedTier = user?.subscription_tier === 'enterprise'
 
   return (
     <div className="space-y-6">
@@ -116,11 +125,15 @@ function OverviewPanel() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">限额</span>
-                <span className="font-semibold text-slate-900">{limit.toLocaleString()} tokens</span>
+                <span className="font-semibold text-slate-900">
+                  {isUnlimitedTier ? '无限制' : `${limit.toLocaleString()} tokens`}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">剩余</span>
-                <span className="font-semibold text-jade-600">{Math.max(0, limit - used).toLocaleString()} tokens</span>
+                <span className="font-semibold text-jade-600">
+                  {isUnlimitedTier ? '—' : `${Math.max(0, limit - used).toLocaleString()} tokens`}
+                </span>
               </div>
               {/* 用量类型分布 */}
               {stats?.usage_by_type && Object.keys(stats.usage_by_type).length > 0 && (
@@ -140,11 +153,14 @@ function OverviewPanel() {
 
       {/* 快速操作 */}
       <div className="grid grid-cols-2 gap-4">
-        <button className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer">
+        <Link
+          to="/personal-center?tab=subscription"
+          className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer no-underline text-inherit block"
+        >
           <CreditCard size={20} className="text-jade-500 mb-2" />
           <div className="font-semibold text-slate-900 text-sm">升级方案</div>
           <div className="text-xs text-slate-500 mt-0.5">解锁更多用量</div>
-        </button>
+        </Link>
         <button className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer">
           <Download size={20} className="text-jade-500 mb-2" />
           <div className="font-semibold text-slate-900 text-sm">导出数据</div>
@@ -160,8 +176,9 @@ function SubscriptionPanel() {
   const { user, updateUser } = useAuthStore()
   const [sub, setSub] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [switching, setSwitching] = useState(false)
 
-  useEffect(() => {
+  const refreshSubscription = () =>
     subscriptionApi.get().then((res: any) => {
       setSub(res)
       updateUser({
@@ -169,9 +186,34 @@ function SubscriptionPanel() {
         monthly_token_limit: res.monthly_limit,
         monthly_token_used: res.monthly_used,
       })
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    })
+
+  useEffect(() => {
+    setLoading(true)
+    refreshSubscription()
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
+
+  const handleSelectPlan = async (planId: 'free' | 'pro' | 'enterprise') => {
+    if (planId === (user?.subscription_tier || 'free') || switching) return
+    setSwitching(true)
+    try {
+      const res = (await subscriptionApi.updateTier(planId)) as any
+      setSub(res)
+      updateUser({
+        subscription_tier: res.tier,
+        monthly_token_limit: res.monthly_limit,
+        monthly_token_used: res.monthly_used,
+      })
+      const label = planId === 'free' ? 'Free' : planId === 'pro' ? 'Pro' : 'Enterprise'
+      toast.success(`已切换至 ${label} 方案（演示环境无需支付）`)
+    } catch {
+      toast.error('切换方案失败，请稍后重试')
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   const plans = [
     {
@@ -267,17 +309,19 @@ function SubscriptionPanel() {
             </ul>
 
             <button
-              disabled={currentTier === plan.id}
+              type="button"
+              disabled={currentTier === plan.id || switching}
+              onClick={() => void handleSelectPlan(plan.id as 'free' | 'pro' | 'enterprise')}
               className={cn(
                 'w-full py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer',
-                currentTier === plan.id
+                currentTier === plan.id || switching
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                   : plan.color === 'jade'
                   ? 'bg-jade-500 text-white hover:bg-jade-600 shadow-jade'
                   : 'bg-slate-900 text-white hover:bg-slate-800'
               )}
             >
-              {currentTier === plan.id ? '当前方案' : plan.id === 'free' ? '降级' : '升级'}
+              {currentTier === plan.id ? '当前方案' : switching ? '切换中…' : plan.id === 'free' ? '降级' : '升级'}
             </button>
           </div>
         ))}
@@ -926,7 +970,17 @@ function CloudPanel() {
 // ========== 主组件 ==========
 
 export default function PersonalCenterPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<TabId>(() => parseTabParam(searchParams))
+
+  useEffect(() => {
+    setActiveTab(parseTabParam(searchParams))
+  }, [searchParams])
+
+  const selectTab = (id: TabId) => {
+    setActiveTab(id)
+    setSearchParams(id === 'overview' ? {} : { tab: id }, { replace: true })
+  }
 
   const panels: Record<TabId, React.ReactNode> = {
     overview: <OverviewPanel />,
@@ -947,7 +1001,8 @@ export default function PersonalCenterPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as TabId)}
+                  type="button"
+                  onClick={() => selectTab(tab.id as TabId)}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap cursor-pointer',
                     activeTab === tab.id

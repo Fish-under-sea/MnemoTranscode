@@ -2,6 +2,8 @@
 用量和偏好相关 Pydantic Schema
 """
 from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -123,6 +125,12 @@ class SubscriptionResponse(BaseModel):
     usage_percent: float
     expires_at: datetime | None = None
     features: list[str] = []
+
+
+class SubscriptionTierUpdate(BaseModel):
+    """切换订阅档位（演示环境免支付）。"""
+
+    tier: Literal["free", "pro", "enterprise"]
 
 
 # ==== AI 记忆 ====

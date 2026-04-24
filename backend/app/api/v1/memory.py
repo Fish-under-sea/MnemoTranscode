@@ -125,60 +125,7 @@ async def list_memories(
     query = query.order_by(Memory.timestamp.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     memories = result.scalars().all()
-    # #region agent log
-    import json
-    import time
-    from pathlib import Path
-
-    _log_path = Path(__file__).resolve().parents[4] / "debug-1f334f.log"
-    _out: list[MemoryResponse] = []
-    for _m in memories:
-        try:
-            _out.append(memory_to_response(_m))
-        except Exception as _ve:
-            try:
-                with open(_log_path, "a", encoding="utf-8") as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "1f334f",
-                                "timestamp": int(time.time() * 1000),
-                                "location": "memory.py:list_memories",
-                                "message": "memory_response_build_failed",
-                                "data": {
-                                    "memory_id": getattr(_m, "id", None),
-                                    "err_type": type(_ve).__name__,
-                                    "err": str(_ve)[:500],
-                                },
-                                "hypothesisId": "H-M1",
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            raise
-    try:
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "sessionId": "1f334f",
-                        "timestamp": int(time.time() * 1000),
-                        "location": "memory.py:list_memories",
-                        "message": "memory_list_ok",
-                        "data": {"returned": len(_out), "runId": "post-fix"},
-                        "hypothesisId": "H-M1",
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    return _out
-    # #endregion
+    return [memory_to_response(m) for m in memories]
 
 
 @router.get("/{memory_id}", response_model=MemoryResponse)

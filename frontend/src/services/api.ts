@@ -260,6 +260,9 @@ export const aiMemoryApi = {
 
 export const subscriptionApi = {
   get: () => api.get('/auth/subscription'),
+
+  updateTier: (tier: 'free' | 'pro' | 'enterprise') =>
+    api.patch('/auth/subscription', { tier }),
 }
 
 // ========== 媒体两阶段上传（C · M3）==========

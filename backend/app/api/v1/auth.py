@@ -21,7 +21,8 @@ from app.schemas.memory import (
     UserCreate, UserUpdate, UserResponse,
     TokenResponse
 )
-from app.schemas.user_center import SubscriptionResponse
+from app.schemas.user_center import SubscriptionResponse, SubscriptionTierUpdate
+from app.services.subscription import apply_tier_to_user, build_subscription_response
 
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -146,23 +147,20 @@ async def get_subscription(
     current_user: User = Depends(get_current_user),
 ):
     """获取订阅信息"""
-    tier = current_user.subscription_tier or "free"
+    return build_subscription_response(current_user)
 
-    feature_map = {
-        "free": ["基础 AI 对话", "档案管理", "记忆录入", "语义搜索"],
-        "pro": ["基础 AI 对话", "档案管理", "记忆录入", "语义搜索", "故事书生成", "记忆胶囊", "优先队列", "5x 用量限额"],
-        "enterprise": ["全功能", "无限用量", "自定义模型", "专属支持", "API 访问"],
-    }
 
-    return SubscriptionResponse(
-        tier=tier,
-        monthly_limit=current_user.monthly_token_limit or 100000,
-        monthly_used=current_user.monthly_token_used or 0,
-        remaining=max(0, (current_user.monthly_token_limit or 100000) - (current_user.monthly_token_used or 0)),
-        usage_percent=round((current_user.monthly_token_used or 0) / (current_user.monthly_token_limit or 100000) * 100, 2),
-        expires_at=current_user.subscription_expires_at,
-        features=feature_map.get(tier, []),
-    )
+@router.patch("/subscription", response_model=SubscriptionResponse)
+async def update_subscription_tier(
+    body: SubscriptionTierUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """切换订阅档位（当前版本免支付，直接生效）。"""
+    apply_tier_to_user(current_user, body.tier)
+    await db.commit()
+    await db.refresh(current_user)
+    return build_subscription_response(current_user)
 
 
 @router.post("/refresh-token", response_model=TokenResponse)
@@ -233,38 +231,6 @@ async def upload_avatar(
 
         # 构建公开访问 URL
         file_url = f"http://{settings.minio_endpoint}/{bucket_name}/{object_name}"
-
-        # #region agent log
-        import json
-        import time
-        from pathlib import Path
-
-        try:
-            with open(Path(__file__).resolve().parents[4] / "debug-1f334f.log", "a", encoding="utf-8") as _df:
-                _df.write(
-                    json.dumps(
-                        {
-                            "sessionId": "1f334f",
-                            "timestamp": int(time.time() * 1000),
-                            "location": "auth.py:upload_avatar",
-                            "message": "avatar_upload_put_ok",
-                            "data": {
-                                "minio_endpoint": settings.minio_endpoint,
-                                "bucket": bucket_name,
-                                "object_prefix": object_name[:64],
-                                "bytes": len(content),
-                                "content_type": content_type,
-                            },
-                            "hypothesisId": "H-A1",
-                            "runId": "post-fix",
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
 
         # 更新用户头像 URL
         current_user.avatar_url = file_url
