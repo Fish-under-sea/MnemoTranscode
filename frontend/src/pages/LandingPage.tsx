@@ -7,15 +7,20 @@
  */
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import {
   Monitor, Download, Smartphone, MessageCircle, Brain, Clock,
   Shield, Sparkles, Heart, ChevronRight, Users, Layers,
-  ArrowRight, Quote, Star, Menu, X
+  ArrowRight, Quote, Star, Menu, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import LoginModal from '@/components/LoginModal'
 import KouriChatLaunchModal from '@/components/kourichat/KouriChatLaunchModal'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import ScrollReveal from '@/components/ui/ScrollReveal'
+import { fadeUp, motionPresets, staggerContainer } from '@/lib/motion'
 
 // ========== 静态数据 ==========
 
@@ -29,7 +34,7 @@ const FEATURES = [
   {
     icon: MessageCircle,
     title: '多渠道对话',
-    desc: '网页、微信、QQ 均可与逝去的亲人对话，声音+记忆还原真实的人',
+    desc: '网页、微信、QQ 均可与重要的 ta 对话，声音+记忆还原真实的人',
     color: 'jade',
   },
   {
@@ -53,7 +58,7 @@ const FEATURES = [
   {
     icon: Heart,
     title: '声音克隆',
-    desc: '用克隆的声音读出文字，让逝者的声音穿越时空再次响起',
+    desc: '用克隆的声音读出文字，让珍贵的声音穿越时空再次响起',
     color: 'amber',
   },
 ]
@@ -95,85 +100,7 @@ const ARCHIVE_TYPES = [
   { label: '国家历史', desc: '民族的共同记忆', color: 'bg-sky-100 text-sky-700' },
 ]
 
-// ========== 辅助 Hook ==========
-
-/** 滚动触发动画 */
-function useScrollReveal() {
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('visible')
-          }
-        })
-      },
-      { threshold: 0.1, rootMargin: '0px 0px -60px 0px' }
-    )
-
-    const elements = document.querySelectorAll('.animate-on-scroll')
-    elements.forEach((el) => observer.observe(el))
-
-    return () => observer.disconnect()
-  }, [])
-}
-
 // ========== 子组件 ==========
-
-/** 功能卡片 */
-function FeatureCard({
-  icon: Icon,
-  title,
-  desc,
-  color,
-  delay,
-}: {
-  icon: any
-  title: string
-  desc: string
-  color: string
-  delay: number
-}) {
-  const colorClasses =
-    color === 'amber'
-      ? 'group-hover:bg-amber-50 group-hover:border-amber-200 group-hover:shadow-warm'
-      : 'group-hover:bg-jade-50 group-hover:border-jade-200 group-hover:shadow-glass'
-
-  return (
-    <div
-      className={cn(
-        'group relative p-8 rounded-3xl border border-warm-200 bg-white/60',
-        'hover:bg-white hover:shadow-glass-lg transition-all duration-500',
-        'animate-on-scroll cursor-default',
-        colorClasses
-      )}
-      style={{ transitionDelay: `${delay}ms` }}
-    >
-      {/* 顶部装饰线 */}
-      <div
-        className={cn(
-          'absolute top-0 left-8 right-8 h-0.5 rounded-b-full opacity-0 group-hover:opacity-100 transition-opacity duration-500',
-          color === 'amber' ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent' : 'bg-gradient-to-r from-transparent via-jade-400 to-transparent'
-        )}
-      />
-
-      <div
-        className={cn(
-          'w-14 h-14 rounded-2xl flex items-center justify-center mb-6 transition-colors duration-300',
-          color === 'amber' ? 'bg-amber-50 group-hover:bg-amber-100' : 'bg-jade-50 group-hover:bg-jade-100'
-        )}
-      >
-        <Icon
-          size={26}
-          className={color === 'amber' ? 'text-amber-500' : 'text-jade-600'}
-        />
-      </div>
-
-      <h3 className="font-display text-xl font-semibold text-slate-900 mb-3">{title}</h3>
-      <p className="text-slate-500 leading-relaxed text-sm">{desc}</p>
-    </div>
-  )
-}
 
 /** 下载入口卡片 */
 function DownloadCard({
@@ -295,7 +222,9 @@ export default function LandingPage() {
     checkAuth()
   }, [])
 
-  useScrollReveal()
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   const nextTestimonial = () => {
     setActiveTestimonial((prev) => (prev + 1) % TESTIMONIALS.length)
@@ -315,7 +244,7 @@ export default function LandingPage() {
   ]
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    <div className="relative min-h-screen overflow-x-hidden bg-warm-50">
       {/* ========== 浮动装饰背景 ========== */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         {/* 网格点阵 */}
@@ -356,28 +285,33 @@ export default function LandingPage() {
             {/* 行动按钮 */}
             <div className="flex items-center gap-2">
               {isAuthenticated ? (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="hidden sm:inline-flex"
                   onClick={() => navigate('/dashboard')}
-                  className="hidden sm:inline-flex items-center px-4 py-2 text-sm text-jade-700 hover:text-jade-800 hover:bg-jade-50 rounded-xl transition-all duration-200 font-medium cursor-pointer"
                 >
                   进入应用
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="hidden sm:inline-flex"
                   onClick={() => setShowLoginModal(true)}
-                  className="hidden sm:inline-flex items-center px-4 py-2 text-sm text-jade-700 hover:text-jade-800 hover:bg-jade-50 rounded-xl transition-all duration-200 font-medium cursor-pointer"
                 >
                   登录
-                </button>
+                </Button>
               )}
               {!isAuthenticated && (
-                <Link
-                  to="/register"
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-jade-500 text-white text-sm font-semibold rounded-xl hover:bg-jade-600 active:bg-jade-700 shadow-jade hover:shadow-jade-lg transition-all duration-300"
+                <Button
+                  variant="primary"
+                  size="sm"
+                  rightIcon={<ArrowRight size={14} />}
+                  onClick={() => navigate('/register')}
                 >
                   开始使用
-                  <ArrowRight size={14} />
-                </Link>
+                </Button>
               )}
 
               {/* 移动端菜单 */}
@@ -434,65 +368,82 @@ export default function LandingPage() {
       </header>
 
       {/* ========== Hero 区域 ========== */}
-      <section className="relative pt-36 pb-24 px-5 sm:px-6 lg:px-8">
+      <motion.section
+        variants={staggerContainer(0.08)}
+        initial="hidden"
+        animate="visible"
+        className="relative pt-36 pb-24 px-5 sm:px-6 lg:px-8"
+      >
         <div className="max-w-4xl mx-auto text-center">
-          {/* 标签 */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-jade-50 border border-jade-200 rounded-full mb-8 animate-on-scroll">
-            <Sparkles size={13} className="text-jade-600" />
-            <span className="text-xs font-semibold text-jade-700 tracking-wide">
-              用 AI 守护每一段珍贵的记忆
-            </span>
-          </div>
+          <motion.div
+            variants={fadeUp}
+            className="inline-flex items-center gap-2 px-4 py-1.5 bg-jade-50 border border-jade-200 rounded-full mb-8"
+          >
+            <Heart className="w-3.5 h-3.5 text-jade-600" fill="currentColor" />
+            <span className="text-sm text-jade-700">用 AI 守护每一段珍贵的记忆</span>
+          </motion.div>
 
-          {/* 主标题 */}
-          <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold text-slate-900 leading-[1.1] tracking-tight mb-8 animate-on-scroll delay-100">
-            人的记忆是一种
+          <motion.h1
+            variants={fadeUp}
+            className="font-serif text-5xl sm:text-6xl lg:text-7xl text-ink-primary leading-tight tracking-tight mb-8"
+          >
+            <span>人的记忆</span>
             <br />
-            <span className="gradient-text-jade">不讲道理</span>
+            <span className="gradient-text-jade">是一种不讲道理的</span>
             <br />
-            的存储介质
-          </h1>
+            <span>存储介质</span>
+          </motion.h1>
 
-          {/* 副标题 */}
-          <p className="text-lg sm:text-xl text-slate-500 leading-relaxed max-w-2xl mx-auto mb-5 animate-on-scroll delay-200">
-            这个项目存在的意义，就是把这些失衡的记忆碎片提取出来，
-            完成从生物硬盘到数字硬盘的格式转换。
-          </p>
-          <p className="text-base text-slate-400 max-w-xl mx-auto mb-12 animate-on-scroll delay-300">
-            当这些瞬间被脱离情绪、平铺在显示屏上时——
-            留下的，只是一个具体的、真实的、曾在你的生命里留下过折痕的人。
-          </p>
+          <motion.p
+            variants={fadeUp}
+            className="text-lg sm:text-xl text-ink-secondary leading-relaxed max-w-2xl mx-auto mb-5"
+          >
+            这个项目存在的意义，就是把这些失衡的记忆碎片提取出来，完成从生物硬盘到数字硬盘的格式转换。
+          </motion.p>
+          <motion.p
+            variants={fadeUp}
+            className="text-base text-ink-secondary max-w-xl mx-auto mb-12"
+          >
+            当这些瞬间被脱离情绪、平铺在显示屏上时——留下的，只是一个具体的、真实的、曾在你的生命里留下过折痕的人。
+          </motion.p>
 
-          {/* CTA 按钮组 */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20 animate-on-scroll delay-400">
+          <motion.div
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20"
+          >
             {isAuthenticated ? (
-              <button
+              <Button
+                variant="primary"
+                size="lg"
+                leftIcon={<Monitor className="w-4 h-4" />}
                 onClick={() => navigate('/dashboard')}
-                className="btn-primary text-base px-8 py-4 rounded-2xl cursor-pointer"
               >
-                <Monitor size={18} />
                 进入网页版应用
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="primary"
+                size="lg"
+                leftIcon={<Monitor className="w-4 h-4" />}
                 onClick={() => setShowLoginModal(true)}
-                className="btn-primary text-base px-8 py-4 rounded-2xl cursor-pointer"
               >
-                <Monitor size={18} />
-                登录进入应用
-              </button>
+                开始守护记忆
+              </Button>
             )}
-            <a
-              href="#download"
-              className="btn-secondary text-base px-8 py-4 rounded-2xl"
+            <Button
+              variant="ghost"
+              size="lg"
+              leftIcon={<Download className="w-4 h-4" />}
+              onClick={() => scrollToSection('download')}
             >
-              <Download size={18} />
               下载客户端
-            </a>
-          </div>
+            </Button>
+          </motion.div>
 
-          {/* 数据统计 */}
-          <div className="grid grid-cols-4 gap-6 animate-on-scroll delay-500">
+          <motion.div
+            variants={fadeUp}
+            className="grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl mx-auto"
+          >
             {STATS.map((stat) => {
               const Icon = stat.icon
               return (
@@ -500,99 +451,127 @@ export default function LandingPage() {
                   <div className="w-12 h-12 mx-auto mb-3 bg-jade-50 rounded-2xl flex items-center justify-center group-hover:bg-jade-100 transition-colors duration-300">
                     <Icon size={20} className="text-jade-600" />
                   </div>
-                  <div className="text-2xl sm:text-3xl font-display font-bold text-slate-900">
+                  <div className="text-2xl sm:text-3xl font-serif font-medium text-ink-primary">
                     {stat.value}
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">{stat.label}</div>
+                  <div className="text-xs text-ink-secondary mt-1">{stat.label}</div>
                 </div>
               )
             })}
-          </div>
+          </motion.div>
         </div>
 
-        {/* 装饰箭头 */}
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-          <ChevronRight size={20} className="text-jade-300 rotate-270" />
+          <ChevronRight size={20} className="text-jade-300 -rotate-90" />
         </div>
-      </section>
+      </motion.section>
 
       {/* ========== 引言区 ========== */}
       <section className="py-20 px-5 sm:px-6 lg:px-8 relative">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="animate-on-scroll">
-            <div className="w-16 h-16 mx-auto mb-8 bg-jade-50 rounded-3xl flex items-center justify-center">
-              <Quote size={28} className="text-jade-400" />
-            </div>
-            <blockquote className="text-xl sm:text-2xl text-slate-700 font-display leading-relaxed space-y-4">
-              <p>
-                <span className="gradient-text-jade font-semibold">ta</span> 会在某个瞬间表现出近乎完美的体贴，
-                也会在另一些日子里，迟钝、敷衍、甚至消失得理所当然。
-              </p>
-              <p className="text-slate-500 text-lg italic">
-                是的，此刻，阳光在江面碎成一万个夏天，闪烁，又汇聚成一个冬天。
-                这一切在你午睡时发生，你从未察觉。
-              </p>
-            </blockquote>
+        <motion.div
+          className="max-w-3xl mx-auto text-center"
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={motionPresets.cinematic}
+        >
+          <div className="w-16 h-16 mx-auto mb-8 bg-jade-50 rounded-3xl flex items-center justify-center">
+            <Quote size={28} className="text-jade-400" />
           </div>
-        </div>
+          <blockquote className="text-xl sm:text-2xl text-ink-primary font-serif leading-relaxed space-y-4">
+            <p>
+              <span className="gradient-text-jade font-semibold">ta</span>{' '}
+              会在某个瞬间表现出近乎完美的体贴，也会在另一些日子里，迟钝、敷衍、甚至消失得理所当然。
+            </p>
+            <p className="text-ink-secondary text-lg italic">
+              是的，此刻，阳光在江面碎成一万个夏天，闪烁，又汇聚成一个冬天。这一切在你午睡时发生，你从未察觉。
+            </p>
+          </blockquote>
+        </motion.div>
       </section>
 
       {/* ========== 功能展示 ========== */}
       <section id="features" className="py-24 px-5 sm:px-6 lg:px-8 bg-warm-100/50">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="animate-on-scroll inline-flex items-center gap-2 px-4 py-1.5 bg-jade-50 border border-jade-200 rounded-full mb-6">
-              <Brain size={13} className="text-jade-600" />
-              <span className="text-xs font-medium text-jade-700">核心能力</span>
+          <ScrollReveal>
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-jade-50 border border-jade-200 rounded-full mb-6">
+                <Brain size={13} className="text-jade-600" />
+                <span className="text-xs font-medium text-jade-700">核心能力</span>
+              </div>
+              <h2 className="font-serif text-3xl sm:text-4xl text-ink-primary mb-5">不只是存储，是传承</h2>
+              <p className="text-ink-secondary max-w-2xl mx-auto">
+                六个能力，把散落在时光里的碎片，慢慢收集回来。
+              </p>
             </div>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5 animate-on-scroll delay-100">
-              不只是存储，是传承
-            </h2>
-            <p className="text-slate-500 max-w-xl mx-auto animate-on-scroll delay-200">
-              MTC 将 AI 能力融入记忆的每一个环节，让回忆不再是模糊的碎片，
-              而是一段段清晰、可交互、可传承的永恒故事。
-            </p>
-          </div>
+          </ScrollReveal>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {FEATURES.map((feature, i) => (
-              <FeatureCard key={feature.title} {...feature} delay={i * 100} />
-            ))}
-          </div>
+          <motion.div
+            variants={staggerContainer(0.08)}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
+          >
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon
+              return (
+                <motion.div key={feature.title} variants={fadeUp}>
+                  <Card variant="plain" padding="lg" className="h-full hover:shadow-e3 transition-shadow">
+                    <div
+                      className={cn(
+                        'w-12 h-12 rounded-xl flex items-center justify-center mb-4',
+                        feature.color === 'amber' ? 'bg-amber-50' : 'bg-jade-50',
+                      )}
+                    >
+                      <Icon className="w-6 h-6 text-jade-600" />
+                    </div>
+                    <h3 className="font-serif text-xl text-ink-primary mb-2">{feature.title}</h3>
+                    <p className="text-ink-secondary leading-relaxed text-sm">{feature.desc}</p>
+                  </Card>
+                </motion.div>
+              )
+            })}
+          </motion.div>
         </div>
       </section>
 
       {/* ========== 档案类型 ========== */}
-      <section id="types" className="py-24 px-5 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5 animate-on-scroll">
-              不只服务于家族
-            </h2>
-            <p className="text-slate-500 max-w-xl mx-auto animate-on-scroll delay-100">
-              MTC 可以承载多种类型的记忆档案。
-              每一个档案，都是一段独一无二的生命故事。
-            </p>
-          </div>
+      <section id="types" className="py-24 px-5 sm:px-6 lg:px-8 bg-warm-100/40">
+        <div className="max-w-6xl mx-auto">
+          <ScrollReveal>
+            <div className="text-center mb-16">
+              <h2 className="font-serif text-3xl sm:text-4xl text-ink-primary mb-5">不只服务于家族</h2>
+              <p className="text-ink-secondary max-w-2xl mx-auto">
+                每一种值得被守护的关系，都能找到自己的档案
+              </p>
+            </div>
+          </ScrollReveal>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {ARCHIVE_TYPES.map((type, i) => (
-              <div
-                key={type.label}
-                className={cn(
-                  'animate-on-scroll rounded-2xl p-5 text-center transition-all duration-300 hover:scale-105 hover:shadow-glass cursor-default',
-                  type.color
-                )}
-                style={{ transitionDelay: `${i * 80}ms` }}
-              >
-                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-white/60 flex items-center justify-center font-display text-xl">
-                  {type.label.charAt(0)}
-                </div>
-                <div className="font-semibold text-sm mb-1">{type.label}</div>
-                <div className="text-xs opacity-70">{type.desc}</div>
-              </div>
+          <motion.div
+            variants={staggerContainer(0.06)}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.15 }}
+            className="grid grid-cols-2 md:grid-cols-3 gap-4"
+          >
+            {ARCHIVE_TYPES.map((type) => (
+              <motion.div key={type.label} variants={fadeUp}>
+                <Card variant="plain" padding="md" className="h-full text-center hover:shadow-md transition-shadow">
+                  <div
+                    className={cn(
+                      'w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-3 text-lg font-serif',
+                      type.color,
+                    )}
+                  >
+                    {type.label.charAt(0)}
+                  </div>
+                  <h3 className="font-serif text-lg text-ink-primary">{type.label}</h3>
+                  <p className="text-sm text-ink-secondary mt-1">{type.desc}</p>
+                </Card>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -600,10 +579,10 @@ export default function LandingPage() {
       <section id="download" className="py-24 px-5 sm:px-6 lg:px-8 bg-warm-100/50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5 animate-on-scroll">
+            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5">
               选择你的使用方式
             </h2>
-            <p className="text-slate-500 max-w-xl mx-auto animate-on-scroll delay-100">
+            <p className="text-slate-500 max-w-xl mx-auto">
               MTC 提供多种使用方式。无论你在哪里，记忆始终与你同在。
             </p>
           </div>
@@ -622,7 +601,7 @@ export default function LandingPage() {
               icon={MessageCircle}
               tag="WeChat Integration"
               title="KouriChat — 微信 AI 助手"
-              desc="将 MTC 的 AI 能力接入微信。在微信里直接和逝去的亲人对话，像以前一样聊天。支持私聊和群聊，自动记忆上下文。"
+              desc="将 MTC 的 AI 能力接入微信。在微信里直接和重要的 ta 对话，像以前一样聊天。支持私聊和群聊，自动记忆上下文。"
               action="免费使用"
               onClick={() => setShowKouriChatModal(true)}
             />
@@ -646,15 +625,15 @@ export default function LandingPage() {
               <Heart size={13} className="text-amber-500" />
               <span className="text-xs font-medium text-amber-700">真实用户</span>
             </div>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5 animate-on-scroll delay-100">
+            <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900 mb-5">
               他们的故事
             </h2>
-            <p className="text-slate-500 animate-on-scroll delay-200">
+            <p className="text-slate-500">
               每一段记忆都值得被守护
             </p>
           </div>
 
-          <div className="animate-on-scroll delay-300">
+          <div className="">
             <div className="bg-white rounded-3xl border border-warm-200 p-8 sm:p-12 shadow-glass relative overflow-hidden">
               {/* 背景引号 */}
               <Quote size={80} className="absolute top-4 right-6 text-jade-100 select-none" />
@@ -732,19 +711,19 @@ export default function LandingPage() {
             <span className="text-xs font-medium">每一个生命都值得被铭记</span>
           </div>
 
-          <h2 className="font-display text-3xl sm:text-4xl font-bold leading-snug mb-6 animate-on-scroll delay-100">
+          <h2 className="font-display text-3xl sm:text-4xl font-bold leading-snug mb-6">
             留下，只是一个具体的、真实的、
             <br />曾在你的生命里留下过折痕的人。
           </h2>
 
-          <p className="text-jade-100 text-lg mb-10 animate-on-scroll delay-200">
+          <p className="text-jade-100 text-lg mb-10">
             当这个项目运行结束，那些被神化或被模糊的轮廓终将消失。
             剩下的，是平凡而真实的 ta。
           </p>
 
           <Link
             to="/register"
-            className="animate-on-scroll delay-300 inline-flex items-center gap-2 px-9 py-4 bg-white text-jade-700 text-base font-semibold rounded-2xl hover:bg-jade-50 transition-all duration-300 shadow-jade-lg hover:shadow-warm"
+            className=" inline-flex items-center gap-2 px-9 py-4 bg-white text-jade-700 text-base font-semibold rounded-2xl hover:bg-jade-50 transition-all duration-300 shadow-jade-lg hover:shadow-warm"
           >
             <Sparkles size={17} />
             开始守护记忆
@@ -797,7 +776,7 @@ export default function LandingPage() {
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             onClick={() => setShowNotifyModal(false)}
           />
-          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 animate-on-scroll">
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-8">
             <div className="text-center mb-7">
               <div className="w-16 h-16 mx-auto mb-5 bg-jade-50 rounded-2xl flex items-center justify-center">
                 <Layers size={30} className="text-jade-600" />
@@ -847,10 +826,7 @@ export default function LandingPage() {
         <KouriChatLaunchModal onClose={() => setShowKouriChatModal(false)} />
       )}
 
-      {/* 登录弹窗 */}
-      {showLoginModal && (
-        <LoginModal onClose={() => setShowLoginModal(false)} returnTo="/dashboard" />
-      )}
+      <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </div>
   )
 }
