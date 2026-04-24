@@ -13,6 +13,7 @@ import TimelinePage from './pages/TimelinePage'
 import StoryBookPage from './pages/StoryBookPage'
 import SettingsPage from './pages/SettingsPage'
 import PersonalCenterPage from './pages/PersonalCenterPage'
+import DSPlayground from './pages/DSPlayground'
 import ThemeProvider from './components/ThemeProvider'
 import { ToastHost } from './components/ui/Toast'
 import MotionProvider from './providers/MotionProvider'
@@ -42,6 +43,12 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+
+          {/* dev-only：设计系统 Playground（prod 构建下不注册路由）
+              必须在匿名 catch-all Navigate 之前，否则未登录访问会被跳走 */}
+          {import.meta.env.DEV && (
+            <Route path="/ds-playground" element={<DSPlayground />} />
+          )}
 
           {/* 受保护的应用页面 */}
           {isAuthenticated ? (
