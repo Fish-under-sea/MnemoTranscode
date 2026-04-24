@@ -77,20 +77,22 @@ export default function Modal({
               }}
               asChild
             >
-              <motion.div
-                variants={scaleIn}
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                className={cn(
-                  'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
-                  'w-[calc(100vw-2rem)] rounded-2xl bg-surface shadow-e4 overflow-hidden',
-                  'border border-border-default',
-                  sizeClasses[size],
-                  size === 'full' && 'flex flex-col',
-                  className,
-                )}
-              >
+              {/* flex 居中：避免 motion scale 覆盖 translate 导致弹窗卡在右下 */}
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+                <motion.div
+                  variants={scaleIn}
+                  initial="hidden"
+                  animate="visible"
+                  exit="hidden"
+                  className={cn(
+                    'pointer-events-auto w-full max-h-[min(90vh,920px)] overflow-hidden flex flex-col',
+                    'rounded-2xl bg-surface shadow-e4',
+                    'border border-border-default',
+                    sizeClasses[size],
+                    size === 'full' && 'max-h-[92vh]',
+                    className,
+                  )}
+                >
                 {(title || !hideClose) && (
                   <div className="flex items-center justify-between px-6 py-4 border-b border-border-default">
                     {title ? (
@@ -113,15 +115,16 @@ export default function Modal({
                     )}
                   </div>
                 )}
-                <div className={cn('p-6', size === 'full' && 'flex-1 overflow-auto')}>
+                <div className={cn('p-6 overflow-y-auto min-h-0', size === 'full' && 'flex-1')}>
                   {children}
                 </div>
                 {footer && (
-                  <div className="px-6 py-4 border-t border-border-default bg-subtle/40">
+                  <div className="px-6 py-4 border-t border-border-default bg-subtle/40 shrink-0">
                     {footer}
                   </div>
                 )}
-              </motion.div>
+                </motion.div>
+              </div>
             </Dialog.Content>
           </Dialog.Portal>
         )}
