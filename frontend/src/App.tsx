@@ -14,6 +14,7 @@ import StoryBookPage from './pages/StoryBookPage'
 import SettingsPage from './pages/SettingsPage'
 import PersonalCenterPage from './pages/PersonalCenterPage'
 import ThemeProvider from './components/ThemeProvider'
+import { ToastHost } from './components/ui/Toast'
 import MotionProvider from './providers/MotionProvider'
 import { useAuthStore } from './hooks/useAuthStore'
 
@@ -35,6 +36,7 @@ export default function App() {
   return (
     <MotionProvider>
       <ThemeProvider>
+        <ToastHost />
         <Routes>
           {/* 公开页面 */}
           <Route path="/" element={<LandingPage />} />
