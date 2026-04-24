@@ -1,5 +1,5 @@
 /**
- * 个人中心页面 — 整合订阅管理、账号设置、DIY UI、云端存储
+ * 个人中心页面 — 整合订阅、账号与安全、DIY UI、云端存储
  */
 import { useState, useEffect, useRef } from 'react'
 import { useAuthStore } from '@/hooks/useAuthStore'
@@ -19,7 +19,7 @@ type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
 const tabs = [
   { id: 'overview', label: '概览', icon: BarChart3 },
   { id: 'subscription', label: '订阅管理', icon: CreditCard },
-  { id: 'account', label: '账号设置', icon: User },
+  { id: 'account', label: '账号与安全', icon: User },
   { id: 'appearance', label: 'DIY UI', icon: Palette },
   { id: 'cloud', label: '云端存储', icon: Cloud },
 ]
@@ -299,7 +299,7 @@ function SubscriptionPanel() {
   )
 }
 
-/** 账号设置面板 */
+/** 账号与安全（头像、用户名、密码等） */
 function AccountPanel() {
   const { user, updateUser } = useAuthStore()
   const [username, setUsername] = useState(user?.username || '')

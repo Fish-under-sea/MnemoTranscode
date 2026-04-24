@@ -3,10 +3,10 @@
 """
 
 from datetime import datetime
-from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -19,11 +19,32 @@ from app.schemas.memory import (
 )
 from app.api.v1.auth import get_current_user
 from app.services.vector_service import VectorService
-from app.services.emotion_service import EmotionService
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
+
+
+def memory_to_response(m: Memory) -> MemoryResponse:
+    """Memory ORM 无 archive_id 列，需从已加载的 member 填充。"""
+    if m.member is None:
+        raise ValueError("Memory.member must be loaded (use selectinload)")
+    return MemoryResponse(
+        id=m.id,
+        title=m.title,
+        content_text=m.content_text,
+        timestamp=m.timestamp,
+        location=m.location,
+        member_id=m.member_id,
+        archive_id=m.member.archive_id,
+        emotion_label=m.emotion_label,
+        vector_embedding_id=m.vector_embedding_id,
+        is_capsule=m.is_capsule,
+        unlock_date=m.unlock_date,
+        media_refs=list(m.media_refs) if m.media_refs is not None else [],
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
 
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
@@ -58,7 +79,22 @@ async def create_memory(
     await db.commit()
     await db.refresh(memory)
 
-    return MemoryResponse.model_validate(memory)
+    return MemoryResponse(
+        id=memory.id,
+        title=memory.title,
+        content_text=memory.content_text,
+        timestamp=memory.timestamp,
+        location=memory.location,
+        member_id=memory.member_id,
+        archive_id=member.archive_id,
+        emotion_label=memory.emotion_label,
+        vector_embedding_id=memory.vector_embedding_id,
+        is_capsule=memory.is_capsule,
+        unlock_date=memory.unlock_date,
+        media_refs=list(memory.media_refs) if memory.media_refs is not None else [],
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+    )
 
 
 @router.get("", response_model=list[MemoryResponse])
@@ -74,6 +110,7 @@ async def list_memories(
     """获取记忆列表（支持按档案/成员/情绪筛选）"""
     query = (
         select(Memory)
+        .options(selectinload(Memory.member))
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Archive.owner_id == current_user.id)
@@ -88,7 +125,60 @@ async def list_memories(
     query = query.order_by(Memory.timestamp.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     memories = result.scalars().all()
-    return [MemoryResponse.model_validate(m) for m in memories]
+    # #region agent log
+    import json
+    import time
+    from pathlib import Path
+
+    _log_path = Path(__file__).resolve().parents[4] / "debug-1f334f.log"
+    _out: list[MemoryResponse] = []
+    for _m in memories:
+        try:
+            _out.append(memory_to_response(_m))
+        except Exception as _ve:
+            try:
+                with open(_log_path, "a", encoding="utf-8") as _f:
+                    _f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "1f334f",
+                                "timestamp": int(time.time() * 1000),
+                                "location": "memory.py:list_memories",
+                                "message": "memory_response_build_failed",
+                                "data": {
+                                    "memory_id": getattr(_m, "id", None),
+                                    "err_type": type(_ve).__name__,
+                                    "err": str(_ve)[:500],
+                                },
+                                "hypothesisId": "H-M1",
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                pass
+            raise
+    try:
+        with open(_log_path, "a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "1f334f",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "memory.py:list_memories",
+                        "message": "memory_list_ok",
+                        "data": {"returned": len(_out), "runId": "post-fix"},
+                        "hypothesisId": "H-M1",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    return _out
+    # #endregion
 
 
 @router.get("/{memory_id}", response_model=MemoryResponse)
@@ -100,6 +190,7 @@ async def get_memory(
     """获取单条记忆详情"""
     result = await db.execute(
         select(Memory)
+        .options(selectinload(Memory.member))
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Memory.id == memory_id, Archive.owner_id == current_user.id)
@@ -107,7 +198,7 @@ async def get_memory(
     memory = result.scalar_one_or_none()
     if not memory:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
-    return MemoryResponse.model_validate(memory)
+    return memory_to_response(memory)
 
 
 @router.patch("/{memory_id}", response_model=MemoryResponse)
@@ -120,6 +211,7 @@ async def update_memory(
     """更新记忆条目"""
     result = await db.execute(
         select(Memory)
+        .options(selectinload(Memory.member))
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Memory.id == memory_id, Archive.owner_id == current_user.id)
@@ -133,8 +225,18 @@ async def update_memory(
 
     memory.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(memory)
-    return MemoryResponse.model_validate(memory)
+
+    res2 = await db.execute(
+        select(Memory)
+        .options(selectinload(Memory.member))
+        .join(Member, Memory.member_id == Member.id)
+        .join(Archive, Member.archive_id == Archive.id)
+        .where(Memory.id == memory_id, Archive.owner_id == current_user.id)
+    )
+    memory2 = res2.scalar_one_or_none()
+    if not memory2:
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
+    return memory_to_response(memory2)
 
 
 @router.delete("/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -167,17 +269,40 @@ async def search_memories(
     """语义搜索记忆（基于向量检索）"""
     try:
         vector_service = VectorService()
-        results = await vector_service.search_memories(
+        raw = await vector_service.search_memories(
             query=search_request.query,
             user_id=current_user.id,
             archive_id=search_request.archive_id,
             member_id=search_request.member_id,
             limit=search_request.limit,
         )
+        mem_ids: list[int] = []
+        for item in raw:
+            pl = item.get("payload") if isinstance(item, dict) else None
+            if not isinstance(pl, dict):
+                continue
+            mid = pl.get("memory_id")
+            if mid is not None:
+                try:
+                    mem_ids.append(int(mid))
+                except (TypeError, ValueError):
+                    pass
+        if not mem_ids:
+            return MemorySearchResponse(results=[], query=search_request.query, total=0)
+        stmt = (
+            select(Memory)
+            .options(selectinload(Memory.member))
+            .join(Member, Memory.member_id == Member.id)
+            .join(Archive, Member.archive_id == Archive.id)
+            .where(Memory.id.in_(mem_ids), Archive.owner_id == current_user.id)
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+        by_id = {m.id: m for m in rows}
+        ordered = [by_id[i] for i in mem_ids if i in by_id]
         return MemorySearchResponse(
-            results=[MemoryResponse.model_validate(r) for r in results],
+            results=[memory_to_response(m) for m in ordered],
             query=search_request.query,
-            total=len(results),
+            total=len(ordered),
         )
     except Exception as e:
         raise DomainInternalError(error_code="INTERNAL_SERVER_ERROR", message=f"搜索失败: {str(e)}")
