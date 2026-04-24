@@ -25,6 +25,8 @@ class UserPreferences(Base):
 
     # 自定义
     custom_css = Column(Text, nullable=True)
+    # 主应用区背景图 URL（全屏铺底，与 DIY UI 同步）
+    app_background_url = Column(String(1024), nullable=True)
 
     # AI 记忆同步
     ai_memory_sync = Column(String(10), default="on")

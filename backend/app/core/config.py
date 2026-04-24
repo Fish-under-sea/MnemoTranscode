@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     app_name: str = "MTC - Memory To Code"
     app_version: str = "0.1.0"
     debug: bool = False
+    # 浏览器可访问的 API 根，用于头像等绝对链（如 https://api.example.com）。空则仅返回以 / 开头的 path，依赖前端同源/反代
+    app_public_origin: str = ""
 
     # 数据库
     database_url: str = "postgresql+asyncpg://mtc:mtc_password@localhost:5432/mtc_db"
@@ -53,11 +55,17 @@ class Settings(BaseSettings):
     cosyvoice_retry_backoff_factor: int = 2
 
     # MinIO / 对象存储
+    # 服务端连接（Docker 内一般为 minio:9000；本机开发多为 localhost:9000）
     minio_endpoint: str = "localhost:9000"
+    # 浏览器可访问的 MinIO 主机:端口，用于预签名 URL（宿主机浏览器无法解析容器名 minio，须用 localhost/127.0.0.1）
+    # 空时：与 minio_endpoint 相同，但若 minio_endpoint 为 minio:9000，头像模块会自动改用 127.0.0.1:同端口
+    minio_public_endpoint: str = ""
     minio_access_key: str = "mtc_access_key"
     minio_secret_key: str = "mtc_secret_key"
     minio_bucket: str = "mtc-media"
     minio_secure: bool = False
+    # 头像预签名 GET 有效期（小时）；过短会导致浏览器中头像链接过期失效
+    minio_presign_avatar_hours: int = 720
 
     # JWT 鉴权
     secret_key: str = "change-me-in-production"

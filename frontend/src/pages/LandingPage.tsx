@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/hooks/useAuthStore'
+import Avatar from '@/components/ui/Avatar'
 import LoginModal from '@/components/LoginModal'
 import KouriChatLaunchModal from '@/components/kourichat/KouriChatLaunchModal'
 import { Button } from '@/components/ui/Button'
@@ -215,7 +216,8 @@ export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
   const navigate = useNavigate()
-  const { isAuthenticated, checkAuth } = useAuthStore()
+  const { isAuthenticated, checkAuth, user } = useAuthStore()
+  const accountLabel = user?.username?.trim() || '用户'
 
   // 每次落地页挂载时同步认证状态
   useEffect(() => {
@@ -238,7 +240,7 @@ export default function LandingPage() {
 
   const navLinks = [
     { label: '功能', href: '#features' },
-    { label: '档案类型', href: '#types' },
+    { label: '标准定价', href: '#pricing' },
     { label: '下载', href: '#download' },
     { label: '用户故事', href: '#testimonials' },
   ]
@@ -255,69 +257,115 @@ export default function LandingPage() {
         <div className="floating-orb w-[300px] h-[300px] bg-jade-100 top-[40%] left-[60%] animate-blob" style={{ animationDuration: '12s', animationDelay: '-8s' }} />
       </div>
 
-      {/* ========== 导航栏 ========== */}
-      <header className="fixed top-4 left-4 right-4 z-50 glass-nav rounded-2xl shadow-glass">
-        <div className="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-jade-400 to-jade-600 rounded-xl flex items-center justify-center shadow-jade">
-                <span className="text-white font-bold text-xs tracking-tight">MTC</span>
-              </div>
-              <span className="font-display font-semibold text-slate-900 hidden sm:block">
-                Memory To Code
-              </span>
+      {/* ========== 顶栏：左品牌 | 中导航 absolute 居中 | 右：已登录(头像+昵称+邮箱) → 进入应用 → 汉堡（md- 最右）========== */}
+      <header className="fixed top-4 left-2 right-2 z-50 glass-nav rounded-2xl shadow-glass sm:left-3 sm:right-3 md:left-4 md:right-4">
+        <div className="w-full min-w-0 px-1.5 sm:px-2">
+          <div className="relative flex h-14 w-full min-w-0 items-center">
+            {/* 左：/welcome 全宽条内最左（不再使用 max-w-7xl 避免宽屏“悬空”） */}
+            <div className="relative z-20 min-w-0 max-w-[min(12rem,46vw)] shrink-0 pr-1.5 sm:max-w-[min(20rem,50vw)] sm:pr-2">
+              <Link
+                to="/welcome"
+                className="flex min-w-0 max-w-full items-center gap-2.5 sm:gap-3 rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-jade-400/40"
+              >
+                <div className="w-9 h-9 shrink-0 bg-gradient-to-br from-jade-400 to-jade-600 rounded-xl flex items-center justify-center shadow-jade">
+                  <span className="text-white font-bold text-xs tracking-tight">MTC</span>
+                </div>
+                <span className="font-display min-w-0 font-semibold text-slate-900 hidden sm:block truncate">
+                  Memory To Code
+                </span>
+              </Link>
             </div>
 
-            {/* 桌面导航 */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav
+              className="pointer-events-auto absolute left-1/2 top-1/2 z-10 hidden w-auto max-w-[min(100%,32rem)] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-0.5 md:flex"
+              aria-label="页面主要导航"
+            >
               {navLinks.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
-                  className="px-4 py-2 text-sm text-slate-600 hover:text-jade-700 hover:bg-jade-50 rounded-xl transition-all duration-200"
+                  className="whitespace-nowrap px-2.5 py-2 text-sm text-slate-600 hover:text-jade-700 hover:bg-jade-50/90 rounded-xl transition-all duration-200 sm:px-3.5"
                 >
                   {link.label}
                 </a>
               ))}
             </nav>
 
-            {/* 行动按钮 */}
-            <div className="flex items-center gap-2">
+            <div className="relative z-20 ml-auto flex min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2 pl-1.5">
               {isAuthenticated ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="hidden sm:inline-flex"
-                  onClick={() => navigate('/dashboard')}
-                >
-                  进入应用
-                </Button>
+                <>
+                  {user && (
+                    <div
+                      className="hidden min-w-0 max-w-[min(220px,36vw)] items-center gap-2.5 md:flex"
+                      title={`${user.username} · ${user.email}`}
+                    >
+                      <Avatar
+                        key={user.avatar_url || 'av'}
+                        src={user.avatar_url || undefined}
+                        name={accountLabel}
+                        size={36}
+                        className="shrink-0 ring-2 ring-white shadow-sm"
+                      />
+                      <div className="min-w-0 text-left">
+                        <div className="text-sm font-semibold text-slate-900 truncate leading-tight">
+                          {user.username}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate leading-tight mt-0.5">
+                          {user.email}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {user && (
+                    <div
+                      className="flex md:hidden items-center"
+                      title={`${user.username} · ${user.email}`}
+                    >
+                      <Avatar
+                        key={user.avatar_url || 'av2'}
+                        src={user.avatar_url || undefined}
+                        name={accountLabel}
+                        size={32}
+                        className="ring-2 ring-white shadow-sm"
+                      />
+                    </div>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hidden sm:inline-flex shrink-0"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    进入应用
+                  </Button>
+                </>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="hidden sm:inline-flex"
-                  onClick={() => setShowLoginModal(true)}
-                >
-                  登录
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hidden sm:inline-flex"
+                    onClick={() => setShowLoginModal(true)}
+                  >
+                    登录
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="hidden sm:inline-flex shrink-0"
+                    rightIcon={<ArrowRight size={14} />}
+                    onClick={() => navigate('/register')}
+                  >
+                    开始使用
+                  </Button>
+                </>
               )}
-              {!isAuthenticated && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  rightIcon={<ArrowRight size={14} />}
-                  onClick={() => navigate('/register')}
-                >
-                  开始使用
-                </Button>
-              )}
-
-              {/* 移动端菜单 */}
               <button
+                type="button"
                 className="md:hidden p-2 text-slate-600 hover:text-jade-700 hover:bg-jade-50 rounded-xl transition-colors"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-expanded={mobileMenuOpen}
+                aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
               >
                 {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
@@ -328,6 +376,20 @@ export default function LandingPage() {
         {/* 移动端导航 */}
         {mobileMenuOpen && (
           <nav className="md:hidden border-t border-warm-200 px-5 py-3 space-y-1">
+            {isAuthenticated && user && (
+              <div className="flex items-center gap-3 px-4 py-3 mb-1 rounded-xl bg-jade-50/80 border border-jade-100">
+                <Avatar
+                  src={user.avatar_url || undefined}
+                  name={accountLabel}
+                  size={40}
+                  className="shrink-0 ring-2 ring-white"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-900 truncate">{user.username}</div>
+                  <div className="text-xs text-slate-500 truncate mt-0.5">{user.email}</div>
+                </div>
+              </div>
+            )}
             {isAuthenticated ? (
               <a
                 href="/dashboard"
@@ -533,6 +595,36 @@ export default function LandingPage() {
               )
             })}
           </motion.div>
+        </div>
+      </section>
+
+      {/* ========== 标准定价（顶栏「标准定价」锚点）========== */}
+      <section id="pricing" className="py-20 px-5 sm:px-6 lg:px-8 bg-warm-100/25 border-y border-warm-200/50">
+        <div className="max-w-3xl mx-auto text-center">
+          <p className="text-xs font-medium uppercase tracking-widest text-jade-600/90 mb-3">标准定价</p>
+          <h2 className="font-serif text-2xl sm:text-3xl text-ink-primary mb-4">简单透明，从免费到专业</h2>
+          <p className="text-ink-secondary text-sm sm:text-base leading-relaxed mb-8">
+            免费版支持日常记忆整理与对话；Pro / 企业版提供更高模型与用量。可在
+            <Link
+              to="/personal-center?tab=subscription"
+              className="text-jade-700 font-medium hover:underline mx-0.5"
+            >
+              个人中心
+            </Link>
+            中随时调整订阅与用量。
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button variant="primary" size="md" onClick={() => navigate('/register')}>
+              免费开始
+            </Button>
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => navigate('/personal-center?tab=subscription')}
+            >
+              查看与升级方案
+            </Button>
+          </div>
         </div>
       </section>
 

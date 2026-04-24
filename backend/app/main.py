@@ -16,7 +16,20 @@ from app.api.middleware.exception_handlers import register_exception_handlers
 from app.api.middleware.request_id import RequestIDMiddleware
 from app.core.config import get_settings
 from app.core.database import engine
-from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook, kourichat, usage, preferences, ai_memory
+from app.api.v1 import (
+    auth,
+    memory,
+    archive,
+    dialogue,
+    media,
+    capsule,
+    storybook,
+    kourichat,
+    usage,
+    preferences,
+    ai_memory,
+    llm_probe,
+)
 
 settings = get_settings()
 
@@ -81,6 +94,7 @@ app.include_router(kourichat.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(preferences.router, prefix="/api/v1")
 app.include_router(ai_memory.router, prefix="/api/v1")
+app.include_router(llm_probe.router, prefix="/api/v1")
 
 
 @app.get("/")

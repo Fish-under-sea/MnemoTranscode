@@ -9,6 +9,7 @@ import { Plus, MessageCircle, Clock, BookOpen, Users, FileText } from 'lucide-re
 import { archiveApi, memoryApi } from '@/services/api'
 import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import type { MemberStatus } from '@/lib/memberStatus'
+import { memberStatusToApi } from '@/lib/memberStatus'
 import { staggerContainer, fadeUp } from '@/lib/motion'
 import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
@@ -35,6 +36,8 @@ type NewMemberState = {
 
 export default function ArchiveDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const archiveId = id != null && id !== '' ? Number(id) : NaN
+  const archiveIdValid = Number.isInteger(archiveId) && archiveId > 0
   const queryClient = useQueryClient()
   const { show } = useApiError()
 
@@ -51,32 +54,40 @@ export default function ArchiveDetailPage() {
 
   const { data: archive, isLoading, error, refetch } = useQuery({
     queryKey: ['archive', id],
-    queryFn: () => archiveApi.get(Number(id)) as any,
-    enabled: !!id,
+    queryFn: () => archiveApi.get(archiveId) as any,
+    enabled: archiveIdValid,
   })
 
   const { data: members = [] } = useQuery({
     queryKey: ['members', id],
-    queryFn: () => archiveApi.listMembers(Number(id)) as any,
-    enabled: !!id,
+    queryFn: () => archiveApi.listMembers(archiveId) as any,
+    enabled: archiveIdValid,
   })
 
   const { data: memories = [] } = useQuery({
     queryKey: ['memories', 'archive', id],
-    queryFn: () => memoryApi.list({ archive_id: Number(id) }) as any,
-    enabled: !!id,
+    queryFn: () => memoryApi.list({ archive_id: archiveId }) as any,
+    enabled: archiveIdValid,
   })
 
   const createMemberMutation = useMutation({
-    mutationFn: (data: NewMemberState) =>
-      archiveApi.createMember(Number(id), {
-        name: data.name,
-        relationship_type: data.relationship,
+    retry: 0,
+    mutationFn: (data: NewMemberState) => {
+      if (!archiveIdValid) {
+        return Promise.reject(new Error('ARCHIVE_ID_INVALID'))
+      }
+      const state = data.status ?? 'alive'
+      const status = memberStatusToApi(state)
+      // 与地址栏 /archives/:id 使用同一数字，避免与接口返回的 id 字段不同步时拼出 /archives/undefined|NaN/members
+      return archiveApi.createMember(archiveId, {
+        name: data.name.trim(),
+        relationship_type: data.relationship.trim(),
         birth_year: data.birth_year,
-        status: data.status,
-        end_year: data.status === 'alive' ? undefined : data.end_year,
-        bio: data.bio,
-      }),
+        status,
+        end_year: state === 'alive' ? undefined : data.end_year,
+        bio: data.bio?.trim() || undefined,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', id] })
       setCreateMemberModal(false)
@@ -90,8 +101,22 @@ export default function ArchiveDetailPage() {
       })
       toast.success('成员添加成功')
     },
-    onError: (err) => show(err),
+    onError: (err) => {
+      if (err instanceof Error && err.message === 'ARCHIVE_ID_INVALID') {
+        toast.error('档案 ID 无效，请从档案库重新进入', { id: 'add-member' })
+        return
+      }
+      if (err instanceof Error && err.message.startsWith('INVALID_ARCHIVE_ID_IN_PATH')) {
+        toast.error('档案 ID 无效，请刷新或从档案库重新进入', { id: 'add-member' })
+        return
+      }
+      show(err)
+    },
   })
+
+  if (!archiveIdValid) {
+    return <EmptyState title="无效的档案链接" description="请从档案库重新进入" />
+  }
 
   if (isLoading) {
     return <LoadingState message="正在加载档案…" />
@@ -314,6 +339,11 @@ export default function ArchiveDetailPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            if (createMemberMutation.isPending) return
+            if (!archiveIdValid || !archive) {
+              toast.error('档案未加载完成，请稍后再试', { id: 'add-member' })
+              return
+            }
             createMemberMutation.mutate(newMember)
           }}
           className="space-y-4"

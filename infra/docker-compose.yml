@@ -14,15 +14,26 @@ services:
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
+      # 容器内连接 MinIO；预签名/浏览器用宿主机端口（与 ports 中 9000:9000 一致）
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_PUBLIC_ENDPOINT=localhost:9000
+      # 仓库根下 kourichat/ 挂入，供 /api/v1/kourichat/start 找到 run_config_web.py
+      - KOURICHAT_DIR=/kourichat
       - UVICORN_EXTRA_ARGS=--reload
     env_file:
       - ../backend/.env
     depends_on:
-      - postgres
-      - redis
-      - qdrant
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ../backend:/app
+      - ../kourichat:/kourichat:ro
     networks:
       - mtc-network
     healthcheck:
@@ -39,8 +50,12 @@ services:
     container_name: mtc-frontend
     ports:
       - "5173:80"
+    environment:
+      # Nginx 反代到 backend 容器；若 API 在宿主机见 infra/docker-compose.hybrid-frontend.example.yml
+      - API_UPSTREAM=backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - mtc-network
 
@@ -93,11 +108,13 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - mtc-network
+    # 官方镜像无 curl，用 bash 探测 REST 端口（/readyz 与 curl 等效目的）
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
   # ========== 对象存储 ==========
 

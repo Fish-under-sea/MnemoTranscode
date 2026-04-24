@@ -62,7 +62,10 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   updateUser: (partial) => {
     const current = get().user
     if (!current) return
-    const updated = { ...current, ...partial }
+    const clean = Object.fromEntries(
+      Object.entries(partial).filter(([, v]) => v !== undefined),
+    ) as Partial<AuthUser>
+    const updated = { ...current, ...clean }
     localStorage.setItem(USER_KEY, JSON.stringify(updated))
     set({ user: updated })
   },
@@ -81,7 +84,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const raw = localStorage.getItem(USER_KEY)
     let user: AuthUser | null = null
     if (raw) {
-      try { user = JSON.parse(raw) } catch { /* ignore */ }
+      try {
+        const parsed = JSON.parse(raw) as AuthUser
+        // 预签名 URL 会过期，勿信任从本地恢复的 avatar_url，交给 App 中 GET /auth/me 重签
+        const { avatar_url: _a, ...rest } = parsed
+        user = rest as AuthUser
+      } catch { /* ignore */ }
     }
     set({ token, user, isAuthenticated: !!token, authChecked: true })
   },
