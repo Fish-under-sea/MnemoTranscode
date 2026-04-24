@@ -11,7 +11,7 @@ import MemberDetailPage from './pages/MemberDetailPage'
 import DialoguePage from './pages/DialoguePage'
 import TimelinePage from './pages/TimelinePage'
 import StoryBookPage from './pages/StoryBookPage'
-import SettingsPage from './pages/SettingsPage'
+import ModelSettingsPage from './pages/ModelSettingsPage'
 import PersonalCenterPage from './pages/PersonalCenterPage'
 import CapsulePage from './pages/CapsulePage'
 import DSPlayground from './pages/DSPlayground'
@@ -63,7 +63,8 @@ export default function App() {
               <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
               <Route path="timeline/:archiveId" element={<TimelinePage />} />
               <Route path="storybook/:archiveId" element={<StoryBookPage />} />
-              <Route path="settings" element={<SettingsPage />} />
+              <Route path="model-settings" element={<ModelSettingsPage />} />
+              <Route path="settings" element={<Navigate to="/model-settings" replace />} />
               <Route path="personal-center" element={<PersonalCenterPage />} />
               <Route path="capsules" element={<CapsulePage />} />
             </Route>
