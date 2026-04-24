@@ -15,7 +15,8 @@ export interface MemoryCardData {
   location?: string | null
   emotion_label?: string | null
   member_id: number
-  archive_id: number
+  /** 部分列表不返回，卡片展示可不依赖 */
+  archive_id?: number
 }
 
 interface MemoryCardProps extends MemoryCardData {
