@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.middleware.exception_handlers import register_exception_handlers
+from app.api.middleware.request_id import RequestIDMiddleware
 from app.core.config import get_settings
 from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook, kourichat, usage, preferences, ai_memory
 
@@ -60,6 +62,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIDMiddleware)
+register_exception_handlers(app)
 
 
 # 注册路由
