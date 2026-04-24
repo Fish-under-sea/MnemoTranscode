@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
 from app.core.config import get_settings
+from app.core.avatar_public_url import resolve_client_avatar_url
 from app.models.user import User
 from app.models.preferences import UserPreferences
 from app.schemas.memory import (
@@ -64,7 +65,7 @@ def build_user_response(user: User) -> UserResponse:
         username=user.username,
         is_active=user.is_active,
         created_at=user.created_at,
-        avatar_url=user.avatar_url,
+        avatar_url=resolve_client_avatar_url(user.avatar_url),
         subscription_tier=user.subscription_tier or "free",
         monthly_token_limit=user.monthly_token_limit or 100000,
         monthly_token_used=user.monthly_token_used or 0,
@@ -233,13 +234,45 @@ async def upload_avatar(
         # 构建公开访问 URL
         file_url = f"http://{settings.minio_endpoint}/{bucket_name}/{object_name}"
 
+        # #region agent log
+        import json
+        import time
+        from pathlib import Path
+
+        try:
+            with open(Path(__file__).resolve().parents[4] / "debug-1f334f.log", "a", encoding="utf-8") as _df:
+                _df.write(
+                    json.dumps(
+                        {
+                            "sessionId": "1f334f",
+                            "timestamp": int(time.time() * 1000),
+                            "location": "auth.py:upload_avatar",
+                            "message": "avatar_upload_put_ok",
+                            "data": {
+                                "minio_endpoint": settings.minio_endpoint,
+                                "bucket": bucket_name,
+                                "object_prefix": object_name[:64],
+                                "bytes": len(content),
+                                "content_type": content_type,
+                            },
+                            "hypothesisId": "H-A1",
+                            "runId": "post-fix",
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
+
         # 更新用户头像 URL
         current_user.avatar_url = file_url
         await db.commit()
         await db.refresh(current_user)
 
         return {
-            "url": file_url,
+            "url": resolve_client_avatar_url(file_url),
             "user": build_user_response(current_user),
         }
 
