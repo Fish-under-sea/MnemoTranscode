@@ -2,6 +2,7 @@
  * API 服务层
  */
 import axios from 'axios'
+import { useAuthStore } from '@/hooks/useAuthStore'
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -20,16 +21,16 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// 响应拦截器：401 时清除本地登录状态
+// 响应拦截器：401 时清除本地登录状态并跳转首页
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('mtc-token')
-      localStorage.removeItem('mtc-user')
-      // 只有当前页面不是登录/注册页时才跳转
-      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
-        window.location.href = '/login'
+      const store = useAuthStore.getState()
+      store.clearAuth()
+      // 401 时返回首页（落地页），而非强制跳转登录页
+      if (window.location.pathname !== '/' && !window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+        window.location.href = '/'
       }
     }
     if (error.response?.data?.detail) {
@@ -51,6 +52,18 @@ export const authApi = {
     }),
 
   getMe: () => api.get('/auth/me'),
+
+  updateMe: (data: { username?: string }) => api.patch('/auth/me', data),
+
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/auth/avatar', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  deleteAvatar: () => api.delete('/auth/avatar'),
 }
 
 // ========== 档案相关 ==========
@@ -132,6 +145,46 @@ export const kourichatApi = {
   stop: () => api.post('/kourichat/stop'),
 
   getStatus: () => api.get('/kourichat/status'),
+}
+
+// ========== 用量统计 ==========
+
+export const usageApi = {
+  getStats: () => api.get('/usage/stats'),
+
+  getHistory: (params?: { page?: number; page_size?: number; action_type?: string }) =>
+    api.get('/usage/history', { params }),
+
+  getQuota: () => api.get('/usage/quota'),
+}
+
+// ========== 用户偏好 ==========
+
+export const preferencesApi = {
+  get: () => api.get('/preferences'),
+
+  update: (data: {
+    theme?: string; primary_color?: string; card_style?: string;
+    font_size?: string; dashboard_layout?: string; custom_css?: string;
+    ai_memory_sync?: string;
+  }) => api.put('/preferences', data),
+}
+
+// ========== AI 记忆同步 ==========
+
+export const aiMemoryApi = {
+  get: () => api.get('/ai-memory'),
+
+  update: (context: { summaries: object[]; last_updated?: string }) =>
+    api.put('/ai-memory', { context }),
+
+  clear: () => api.delete('/ai-memory'),
+}
+
+// ========== 订阅相关 ==========
+
+export const subscriptionApi = {
+  get: () => api.get('/auth/subscription'),
 }
 
 export default api

@@ -1,22 +1,27 @@
 /**
- * 登录页面
+ * 登录页面 — 支持 returnTo 参数返回来源页面
  */
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '@/services/api'
-import { setAuth } from '@/hooks/useAuth'
+import { useAuthStore } from '@/hooks/useAuthStore'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { setAuth } = useAuthStore()
+
+  const returnTo = searchParams.get('returnTo') || '/dashboard'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // 防止 StrictMode 重复提交
     if (loading) return
     setLoading(true)
     try {
@@ -24,9 +29,17 @@ export default function LoginPage() {
       if (!response?.access_token || !response?.user) {
         throw new Error('登录响应格式异常')
       }
+
+      if (rememberMe) {
+        localStorage.setItem('mtc-remember', 'true')
+      }
+
       setAuth(response.access_token, response.user)
       toast.success('登录成功')
-      window.location.href = '/dashboard'
+
+      // 安全检查：只能重定向到同源页面
+      const target = returnTo.startsWith('/') ? returnTo : '/dashboard'
+      window.location.href = target
     } catch (error: any) {
       console.error('[Login] error:', error)
       toast.error(error.detail || '登录失败，请检查邮箱和密码')
@@ -92,6 +105,19 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {/* 记住我 */}
+          <div className="flex items-center">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-warm-300 text-jade-500 focus:ring-jade-400 cursor-pointer"
+              />
+              <span className="text-sm text-slate-600">记住我（7天免登录）</span>
+            </label>
+          </div>
+
           <button
             type="submit"
             disabled={loading}
@@ -103,7 +129,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-slate-500">
             还没有账号？{' '}
-            <Link to="/register" className="text-jade-600 hover:underline font-semibold">
+            <Link to={returnTo !== '/dashboard' ? `/register?returnTo=${encodeURIComponent(returnTo)}` : '/register'} className="text-jade-600 hover:underline font-semibold">
               立即注册
             </Link>
           </p>

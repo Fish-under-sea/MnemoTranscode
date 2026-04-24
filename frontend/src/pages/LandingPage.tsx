@@ -6,13 +6,15 @@
  * 配合柔和暖白 + 翠绿配色，营造沉浸式情感体验。
  */
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Monitor, Download, Smartphone, MessageCircle, Brain, Clock,
   Shield, Sparkles, Heart, ChevronRight, Users, Layers,
-  ArrowRight, Quote, Star, Menu, X
+  ArrowRight, Quote, Star, Menu, X, Home
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/hooks/useAuthStore'
+import LoginModal from '@/components/LoginModal'
 import KouriChatLaunchModal from '@/components/kourichat/KouriChatLaunchModal'
 
 // ========== 静态数据 ==========
@@ -284,6 +286,14 @@ export default function LandingPage() {
   const [showKouriChatModal, setShowKouriChatModal] = useState(false)
   const [notifyEmail, setNotifyEmail] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const navigate = useNavigate()
+  const { isAuthenticated, checkAuth } = useAuthStore()
+
+  // 每次落地页挂载时同步认证状态
+  useEffect(() => {
+    checkAuth()
+  }, [])
 
   useScrollReveal()
 
@@ -345,19 +355,30 @@ export default function LandingPage() {
 
             {/* 行动按钮 */}
             <div className="flex items-center gap-2">
-              <Link
-                to="/login"
-                className="hidden sm:inline-flex items-center px-4 py-2 text-sm text-jade-700 hover:text-jade-800 hover:bg-jade-50 rounded-xl transition-all duration-200 font-medium"
-              >
-                登录
-              </Link>
-              <Link
-                to="/register"
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-jade-500 text-white text-sm font-semibold rounded-xl hover:bg-jade-600 active:bg-jade-700 shadow-jade hover:shadow-jade-lg transition-all duration-300"
-              >
-                开始使用
-                <ArrowRight size={14} />
-              </Link>
+              {isAuthenticated ? (
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="hidden sm:inline-flex items-center px-4 py-2 text-sm text-jade-700 hover:text-jade-800 hover:bg-jade-50 rounded-xl transition-all duration-200 font-medium cursor-pointer"
+                >
+                  进入应用
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="hidden sm:inline-flex items-center px-4 py-2 text-sm text-jade-700 hover:text-jade-800 hover:bg-jade-50 rounded-xl transition-all duration-200 font-medium cursor-pointer"
+                >
+                  登录
+                </button>
+              )}
+              {!isAuthenticated && (
+                <Link
+                  to="/register"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-jade-500 text-white text-sm font-semibold rounded-xl hover:bg-jade-600 active:bg-jade-700 shadow-jade hover:shadow-jade-lg transition-all duration-300"
+                >
+                  开始使用
+                  <ArrowRight size={14} />
+                </Link>
+              )}
 
               {/* 移动端菜单 */}
               <button
@@ -373,6 +394,31 @@ export default function LandingPage() {
         {/* 移动端导航 */}
         {mobileMenuOpen && (
           <nav className="md:hidden border-t border-warm-200 px-5 py-3 space-y-1">
+            {isAuthenticated ? (
+              <a
+                href="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-4 py-3 text-sm text-jade-700 hover:bg-jade-50 rounded-xl transition-colors font-medium"
+              >
+                进入应用
+              </a>
+            ) : (
+              <button
+                onClick={() => { setMobileMenuOpen(false); setShowLoginModal(true) }}
+                className="block w-full text-left px-4 py-3 text-sm text-jade-700 hover:bg-jade-50 rounded-xl transition-colors font-medium cursor-pointer"
+              >
+                登录
+              </button>
+            )}
+            {!isAuthenticated && (
+              <a
+                href="/register"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-4 py-3 text-sm text-slate-600 hover:text-jade-700 hover:bg-jade-50 rounded-xl transition-colors font-medium"
+              >
+                注册
+              </a>
+            )}
             {navLinks.map((link) => (
               <a
                 key={link.href}
@@ -419,13 +465,23 @@ export default function LandingPage() {
 
           {/* CTA 按钮组 */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20 animate-on-scroll delay-400">
-            <Link
-              to="/dashboard"
-              className="btn-primary text-base px-8 py-4 rounded-2xl"
-            >
-              <Monitor size={18} />
-              进入网页版应用
-            </Link>
+            {isAuthenticated ? (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="btn-primary text-base px-8 py-4 rounded-2xl cursor-pointer"
+              >
+                <Monitor size={18} />
+                进入网页版应用
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowLoginModal(true)}
+                className="btn-primary text-base px-8 py-4 rounded-2xl cursor-pointer"
+              >
+                <Monitor size={18} />
+                登录进入应用
+              </button>
+            )}
             <a
               href="#download"
               className="btn-secondary text-base px-8 py-4 rounded-2xl"
@@ -789,6 +845,11 @@ export default function LandingPage() {
       {/* KouriChat 启动弹窗 */}
       {showKouriChatModal && (
         <KouriChatLaunchModal onClose={() => setShowKouriChatModal(false)} />
+      )}
+
+      {/* 登录弹窗 */}
+      {showLoginModal && (
+        <LoginModal onClose={() => setShowLoginModal(false)} returnTo="/dashboard" />
       )}
     </div>
   )

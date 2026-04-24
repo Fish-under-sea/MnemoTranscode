@@ -1,12 +1,12 @@
 /**
- * 注册页面
+ * 注册页面 — 支持 returnTo 参数
  */
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Mail, User, UserPlus, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '@/services/api'
-import { setAuth } from '@/hooks/useAuth'
+import { useAuthStore } from '@/hooks/useAuthStore'
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('')
@@ -16,6 +16,10 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [searchParams] = useSearchParams()
+  const { setAuth } = useAuthStore()
+
+  const returnTo = searchParams.get('returnTo') || '/dashboard'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,7 +36,9 @@ export default function RegisterPage() {
       }
       setAuth(response.access_token, response.user)
       toast.success('注册成功')
-      window.location.href = '/dashboard'
+
+      const target = returnTo.startsWith('/') ? returnTo : '/dashboard'
+      window.location.href = target
     } catch (error: any) {
       toast.error(error.detail || '注册失败')
     } finally {
@@ -143,7 +149,7 @@ export default function RegisterPage() {
 
           <p className="text-center text-sm text-slate-500">
             已有账号？{' '}
-            <Link to="/login" className="text-jade-600 hover:underline font-semibold">
+            <Link to={returnTo !== '/dashboard' ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login'} className="text-jade-600 hover:underline font-semibold">
               立即登录
             </Link>
           </p>
