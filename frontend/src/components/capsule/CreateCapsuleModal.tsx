@@ -37,17 +37,21 @@ export default function CreateCapsuleModal({ open, onClose }: CreateCapsuleModal
     enabled: !!selectedArchiveId,
   })
 
-  const archiveOptions: SelectOption[] = (archives as any[]).map((a: any) => ({
-    value: String(a.id),
-    label: a.name,
-  }))
+  const archiveOptions: SelectOption[] = (archives as any[])
+    .filter((a: any) => a?.id != null && String(a.id) !== '')
+    .map((a: any) => ({
+      value: String(a.id),
+      label: a.name ?? `档案 #${a.id}`,
+    }))
 
   const memberOptions: SelectOption[] = selectedArchiveId
-    ? (members as any[]).map((m: any) => ({
-        value: String(m.id),
-        label: m.name,
-      }))
-    : [{ value: '', label: '请先选择档案', disabled: true }]
+    ? (members as any[])
+        .filter((m: any) => m?.id != null && String(m.id) !== '')
+        .map((m: any) => ({
+          value: String(m.id),
+          label: m.name ?? `成员 #${m.id}`,
+        }))
+    : []
 
   // 最小解封时间为明天
   const minDatetime = (() => {
@@ -103,21 +107,27 @@ export default function CreateCapsuleModal({ open, onClose }: CreateCapsuleModal
       <div className="space-y-4">
         <Select
           label="选择档案"
-          options={archiveOptions.length > 0 ? archiveOptions : [{ value: '', label: '暂无档案', disabled: true }]}
-          value={selectedArchiveId}
+          options={archiveOptions}
+          value={selectedArchiveId || undefined}
           onValueChange={(v) => {
             setSelectedArchiveId(v)
             setSelectedMemberId('')
           }}
-          placeholder="请选择档案"
+          placeholder={archiveOptions.length > 0 ? '请选择档案' : '暂无档案，请先在档案库创建'}
           fullWidth
         />
         <Select
           label="选择成员"
           options={memberOptions}
-          value={selectedMemberId}
+          value={selectedMemberId || undefined}
           onValueChange={setSelectedMemberId}
-          placeholder="请选择成员"
+          placeholder={
+            !selectedArchiveId
+              ? '请先选择档案'
+              : memberOptions.length > 0
+                ? '请选择成员'
+                : '该档案下暂无成员'
+          }
           disabled={!selectedArchiveId}
           fullWidth
         />
