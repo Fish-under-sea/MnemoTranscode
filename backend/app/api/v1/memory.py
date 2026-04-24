@@ -4,12 +4,13 @@
 
 from datetime import datetime
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.exceptions import DomainAuthError, DomainInternalError, DomainResourceError
 from app.models.user import User
 from app.models.memory import Memory, Member, Archive
 from app.schemas.memory import (
@@ -37,13 +38,13 @@ async def create_memory(
     )
     member = result.scalar_one_or_none()
     if not member:
-        raise HTTPException(status_code=404, detail="成员不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
 
     result = await db.execute(
         select(Archive).where(Archive.id == member.archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限在此档案下创建记忆")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限在此档案下创建记忆")
 
     memory = Memory(
         title=memory_data.title,
@@ -105,7 +106,7 @@ async def get_memory(
     )
     memory = result.scalar_one_or_none()
     if not memory:
-        raise HTTPException(status_code=404, detail="记忆不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
     return MemoryResponse.model_validate(memory)
 
 
@@ -125,7 +126,7 @@ async def update_memory(
     )
     memory = result.scalar_one_or_none()
     if not memory:
-        raise HTTPException(status_code=404, detail="记忆不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
 
     for field, value in update_data.model_dump(exclude_unset=True).items():
         setattr(memory, field, value)
@@ -151,7 +152,7 @@ async def delete_memory(
     )
     memory = result.scalar_one_or_none()
     if not memory:
-        raise HTTPException(status_code=404, detail="记忆不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
 
     await db.delete(memory)
     await db.commit()
@@ -179,4 +180,4 @@ async def search_memories(
             total=len(results),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+        raise DomainInternalError(error_code="INTERNAL_SERVER_ERROR", message=f"搜索失败: {str(e)}")

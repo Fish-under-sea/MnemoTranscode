@@ -6,10 +6,11 @@
 
 import uuid
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import DomainInternalError, DomainMediaError
 from app.core.config import get_settings
 from app.models.user import User
 from app.api.v1.auth import get_current_user
@@ -37,9 +38,9 @@ async def upload_file(
     content = await file.read()
 
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）",
+        raise DomainMediaError(
+            error_code="MEDIA_UPLOAD_INIT_FILE_TOO_LARGE",
+            message=f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）",
         )
 
     content_type = file.content_type or "application/octet-stream"
@@ -49,9 +50,9 @@ async def upload_file(
         and content_type not in ALLOWED_VIDEO_TYPES
         and content_type not in ALLOWED_AUDIO_TYPES
     ):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="不支持的文件类型",
+        raise DomainMediaError(
+            error_code="MEDIA_UPLOAD_INIT_INVALID_TYPE",
+            message="不支持的文件类型",
         )
 
     file_ext = file.filename.split(".")[-1] if file.filename else "bin"
@@ -89,9 +90,9 @@ async def upload_file(
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"文件上传失败: {str(e)}",
+        raise DomainInternalError(
+            error_code="INTERNAL_SERVER_ERROR",
+            message=f"文件上传失败: {str(e)}",
         )
 
 
