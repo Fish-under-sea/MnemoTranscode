@@ -113,17 +113,18 @@ export default function DSPlayground() {
             className="md:col-span-2"
           />
           <Select
-            label="与逝者关系"
+            label="Ta 和你的关系"
             value={selectVal}
             onValueChange={setSelectVal}
             placeholder="请选择关系"
             fullWidth
             options={[
               { value: 'parent', label: '父母' },
-              { value: 'spouse', label: '配偶' },
+              { value: 'spouse', label: '配偶 / 伴侣' },
               { value: 'sibling', label: '兄弟姐妹' },
               { value: 'child', label: '子女' },
               { value: 'friend', label: '挚友' },
+              { value: 'pet', label: '宠物' },
               { value: 'other', label: '其他' },
             ]}
           />
