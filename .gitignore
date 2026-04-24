@@ -55,11 +55,15 @@ data/config/config.json
 # KouriChat 数据文件（自动生成）
 kourichat/data/avatars/
 kourichat/data/database/
+kourichat/data/images/
 kourichat/data/.running_port
 kourichat/data/config/backups/
 kourichat/data/config/config.json
+kourichat/data/tasks.json
 kourichat/src/autoupdate/cloud/version.json
 kourichat/src/autoupdate/cloud/dismissed_announcements.json
+kourichat/src/autoupdate/config/autoupdate_config.json
+kourichat/wxauto_logs/
 
 # Environment
 .env
@@ -74,6 +78,10 @@ frontend/node_modules/
 # Build
 frontend/dist/
 backend/dist/
+
+# Test cache
+.pytest_cache/
+backend/.pytest_cache/
 
 # Coverage
 .coverage
