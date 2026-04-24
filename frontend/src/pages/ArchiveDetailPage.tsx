@@ -11,14 +11,15 @@ import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import type { MemberStatus } from '@/lib/memberStatus'
 import { staggerContainer, fadeUp } from '@/lib/motion'
 import MemoryCard from '@/components/memory/MemoryCard'
-import MemoryDetailDrawer, { type MemoryRecord } from '@/components/memory/MemoryDetailDrawer'
+import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
+import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
 import { useState } from 'react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
-import { LoadingState, ErrorState, EmptyState } from '@/components/ui/state'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberStatusBadge from '@/components/member/MemberStatusBadge'
 import MemberStatusInput from '@/components/member/MemberStatusInput'
@@ -46,7 +47,7 @@ export default function ArchiveDetailPage() {
     end_year: undefined,
     bio: '',
   })
-  const [activeMemory, setActiveMemory] = useState<MemoryRecord | null>(null)
+  const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
 
   const { data: archive, isLoading, error, refetch } = useQuery({
     queryKey: ['archive', id],
@@ -266,7 +267,7 @@ export default function ArchiveDetailPage() {
             <div className="grid md:grid-cols-2 gap-4">
               {memories.slice(0, 6).map((memory: Record<string, unknown>) => {
                 const mem = memory
-                const rec: MemoryRecord = {
+                const rec: Memory = {
                   id: Number(mem.id),
                   title: String(mem.title ?? ''),
                   content_text: String(mem.content_text ?? ''),

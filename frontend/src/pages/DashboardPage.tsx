@@ -12,7 +12,7 @@ import { useDashboardStats } from '@/hooks/useDashboardStats'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
-import { EmptyState, ErrorState, LoadingState } from '@/components/ui/state'
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui'
 import ScrollReveal, { ScrollRevealGroup } from '@/components/ui/ScrollReveal'
 import { fadeUp, staggerContainer } from '@/lib/motion'
 
