@@ -621,7 +621,7 @@ export default function LandingPage() {
       <section id="testimonials" className="py-24 px-5 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-14">
-            <div className="animate-on-scroll inline-flex items-center gap-2 px-4 py-1.5 bg-amber-50 border border-amber-200 rounded-full mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-amber-50 border border-amber-200 rounded-full mb-6">
               <Heart size={13} className="text-amber-500" />
               <span className="text-xs font-medium text-amber-700">真实用户</span>
             </div>
@@ -706,9 +706,9 @@ export default function LandingPage() {
         <div className="absolute inset-0 opacity-20 dot-grid-bg" />
 
         <div className="relative max-w-3xl mx-auto text-center text-white">
-          <div className="animate-on-scroll inline-flex items-center gap-2 px-4 py-1.5 bg-white/20 rounded-full mb-8">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/20 rounded-full mb-8">
             <Heart size={13} />
-            <span className="text-xs font-medium">每一个生命都值得被铭记</span>
+            <span className="text-xs font-medium">每一个值得的人都值得被铭记</span>
           </div>
 
           <h2 className="font-display text-3xl sm:text-4xl font-bold leading-snug mb-6">
