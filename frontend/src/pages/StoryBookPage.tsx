@@ -1,137 +1,264 @@
-/**
- * 故事书生成页面
- */
-import { useState } from 'react'
+// frontend/src/pages/StoryBookPage.tsx
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { motion, AnimatePresence } from 'motion/react'
 import { BookOpen, Loader2 } from 'lucide-react'
-import { archiveApi, memoryApi } from '@/services/api'
+import { archiveApi, memoryApi, storybookApi } from '@/services/api'
+import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
+import Badge from '@/components/ui/Badge'
+import { Card } from '@/components/ui/Card'
+import PageTransition from '@/components/ui/PageTransition'
+import { LoadingState } from '@/components/ui/state'
+import { useApiError } from '@/hooks/useApiError'
+import StoryPreview from '@/components/storybook/StoryPreview'
+import { fadeUp, fadeIn, staggerContainer } from '@/lib/motion'
+import { cn } from '@/lib/utils'
 
 const STORY_STYLES = [
-  { value: 'nostalgic', label: '怀旧温情', desc: '像翻看老照片一样温暖' },
-  { value: 'literary', label: '文学风格', desc: '优美的散文叙事' },
-  { value: 'simple', label: '简洁平实', desc: '朴实无华的叙述' },
-  { value: 'dialogue', label: '对话为主', desc: '以对话展现故事' },
+  { value: 'nostalgic', label: '怀旧温情', desc: '像翻看老照片一样温暖', emoji: '📸' },
+  { value: 'literary', label: '文学风格', desc: '优美的散文叙事', emoji: '✍️' },
+  { value: 'simple', label: '简洁平实', desc: '朴实无华的叙述', emoji: '📄' },
+  { value: 'dialogue', label: '对话为主', desc: '以对话展现故事', emoji: '💬' },
+] as const
+
+type StyleValue = (typeof STORY_STYLES)[number]['value']
+
+const PROGRESS_TEXTS = [
+  '正在整理记忆碎片…',
+  '正在编织故事线索…',
+  '正在润色语言…',
+  '即将完成…',
 ]
 
 export default function StoryBookPage() {
   const { archiveId } = useParams<{ archiveId: string }>()
-  const [style, setStyle] = useState('nostalgic')
-  const [story, setStory] = useState('')
+  const archiveIdNum = Number(archiveId)
+  const [style, setStyle] = useState<StyleValue>('nostalgic')
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('all')
+  const [story, setStory] = useState<{ text: string; memberName: string; memCount: number } | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [progressIdx, setProgressIdx] = useState(0)
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { show: showError } = useApiError()
 
-  const { data: archive } = useQuery({
-    queryKey: ['archive', archiveId],
-    queryFn: () => archiveApi.get(Number(archiveId)) as any,
-    enabled: !!archiveId,
+  const { data: archive, isLoading: archiveLoading } = useQuery({
+    queryKey: ['archive', archiveIdNum],
+    queryFn: () => archiveApi.get(archiveIdNum) as any,
   })
 
   const { data: members = [] } = useQuery({
-    queryKey: ['members', archiveId],
-    queryFn: () => archiveApi.listMembers(Number(archiveId)) as any,
-    enabled: !!archiveId,
+    queryKey: ['members', archiveIdNum],
+    queryFn: () => archiveApi.listMembers(archiveIdNum) as any,
+    enabled: !!archiveIdNum,
   })
 
-  const { data: memories = [] } = useQuery({
-    queryKey: ['memories', 'archive', archiveId],
-    queryFn: () => memoryApi.list({ archive_id: Number(archiveId), limit: 100 }) as any,
-    enabled: !!archiveId,
+  const { data: memoriesRaw } = useQuery({
+    queryKey: ['memories', 'archive', archiveIdNum],
+    queryFn: () => memoryApi.list({ archive_id: archiveIdNum, limit: 100 }) as any,
+    enabled: !!archiveIdNum,
   })
 
-  const generateStory = async () => {
+  const memories = Array.isArray(memoriesRaw) ? memoriesRaw : (memoriesRaw?.items ?? [])
+
+  // 进度文案循环
+  useEffect(() => {
+    if (generating) {
+      setProgressIdx(0)
+      progressIntervalRef.current = setInterval(() => {
+        setProgressIdx((prev) => (prev + 1) % PROGRESS_TEXTS.length)
+      }, 1500)
+    } else {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+    }
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+    }
+  }, [generating])
+
+  const memberOptions = [
+    { value: 'all', label: '全部成员' },
+    ...(members as any[]).map((m: any) => ({ value: String(m.id), label: m.name })),
+  ]
+
+  const handleGenerate = async () => {
     if (memories.length === 0) {
-      toast.error('暂无记忆数据，无法生成故事')
+      showError(new Error('暂无记忆数据，无法生成故事'), '暂无记忆数据')
       return
     }
     setGenerating(true)
+    setStory(null)
     try {
-      const response = await fetch('/api/v1/storybook/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          archive_id: Number(archiveId),
-          member_id: members[0]?.id,
-          memories,
-          style,
-        }),
+      const memberIdNum = selectedMemberId !== 'all' ? Number(selectedMemberId) : undefined
+      const result = await storybookApi.generate({
+        archive_id: archiveIdNum,
+        member_id: memberIdNum,
+        style,
       })
-      const data = await response.json()
-      setStory(data.story || '故事生成服务暂不可用，请稍后再试。')
-    } catch {
-      toast.error('生成失败，请稍后重试')
+      const selectedMember = memberIdNum
+        ? (members as any[]).find((m: any) => m.id === memberIdNum)
+        : null
+      setStory({
+        text: result.story,
+        memberName: selectedMember?.name ?? '全体成员',
+        memCount: result.memory_count,
+      })
+    } catch (err) {
+      showError(err, '故事生成失败，请稍后重试')
     } finally {
       setGenerating(false)
     }
   }
 
+  if (archiveLoading) return <LoadingState />
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">{archive?.name} — 家族故事书</h1>
-        <p className="text-gray-500 mt-1">
-          基于 {memories.length} 条记忆自动生成
-        </p>
-      </div>
+    <PageTransition>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 页面标题 */}
+        <motion.div variants={fadeUp} initial="hidden" animate="visible" className="mb-8">
+          <h1 className="text-h2 font-display font-bold text-ink-primary">
+            {(archive as any)?.name} — 故事书
+          </h1>
+          <p className="text-ink-secondary mt-1">用 AI 将记忆编织成一段流传的故事</p>
+        </motion.div>
 
-      {/* 风格选择 */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
-        <h2 className="font-medium text-gray-900 mb-4">选择故事风格</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {STORY_STYLES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setStyle(s.value)}
-              className={`p-4 rounded-xl border text-left transition-base ${
-                style === s.value
-                  ? 'border-primary-500 bg-primary-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="font-medium text-gray-900">{s.label}</div>
-              <div className="text-xs text-gray-500 mt-1">{s.desc}</div>
-            </button>
-          ))}
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
+          {/* 左侧配置栏 */}
+          <motion.div
+            variants={staggerContainer(0.06)}
+            initial="hidden"
+            animate="visible"
+            className="space-y-4"
+          >
+            {/* 成员选择 */}
+            <motion.div variants={fadeUp}>
+              <Card variant="plain" padding="md">
+                <Select
+                  label="选择成员"
+                  options={memberOptions}
+                  value={selectedMemberId}
+                  onValueChange={setSelectedMemberId}
+                  fullWidth
+                />
+              </Card>
+            </motion.div>
 
-        <button
-          onClick={generateStory}
-          disabled={generating || memories.length === 0}
-          className="mt-6 w-full py-3 bg-accent-coral text-white rounded-xl hover:bg-accent-coral/90 disabled:opacity-50 transition-base flex items-center justify-center gap-2 font-medium"
-        >
-          {generating ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              AI 正在创作中...
-            </>
-          ) : (
-            <>
-              <BookOpen size={18} />
-              生成故事书
-            </>
-          )}
-        </button>
-      </div>
+            {/* 风格选择 */}
+            <motion.div variants={fadeUp}>
+              <Card variant="plain" padding="md">
+                <div className="text-body-sm font-medium text-ink-primary mb-3">故事风格</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {STORY_STYLES.map((s) => (
+                    <button
+                      key={s.value}
+                      onClick={() => setStyle(s.value)}
+                      className={cn(
+                        'p-3 rounded-xl border text-left transition-all duration-200',
+                        style === s.value
+                          ? 'border-brand bg-jade-50 outline outline-2 outline-brand/30'
+                          : 'border-border-default hover:border-jade-300 hover:bg-subtle'
+                      )}
+                    >
+                      <div className="text-lg mb-1">{s.emoji}</div>
+                      <div className="text-body-sm font-medium text-ink-primary">{s.label}</div>
+                      <div className="text-caption text-ink-muted mt-0.5">{s.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            </motion.div>
 
-      {/* 故事内容 */}
-      {story && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-semibold text-gray-900">
-              {archive?.name} 的故事
-            </h2>
-            <button
-              onClick={() => navigator.clipboard.writeText(story)}
-              className="text-sm text-primary-600 hover:underline"
-            >
-              复制全文
-            </button>
+            {/* 数据概览 */}
+            <motion.div variants={fadeUp}>
+              <Card variant="accent" padding="sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-caption text-ink-secondary">成员数</span>
+                  <Badge tone="jade" size="sm">{(members as any[]).length}</Badge>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-caption text-ink-secondary">记忆数</span>
+                  <Badge tone="amber" size="sm">{memories.length}</Badge>
+                </div>
+              </Card>
+            </motion.div>
+
+            {/* 生成按钮 */}
+            <motion.div variants={fadeUp}>
+              <Button
+                variant="primary"
+                fullWidth
+                leftIcon={generating ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
+                onClick={handleGenerate}
+                disabled={generating || memories.length === 0}
+              >
+                {generating ? 'AI 正在创作中…' : '生成故事书'}
+              </Button>
+            </motion.div>
+          </motion.div>
+
+          {/* 右侧预览区 */}
+          <div className="min-h-[400px]">
+            <AnimatePresence mode="wait">
+              {generating && (
+                <motion.div
+                  key="progress"
+                  variants={fadeIn}
+                  initial="hidden"
+                  animate="visible"
+                  exit={{ opacity: 0 }}
+                  className="h-full flex flex-col items-center justify-center py-20"
+                >
+                  <Loader2 size={32} className="text-brand animate-spin mb-6" />
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={progressIdx}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.4 }}
+                      className="text-body text-ink-secondary"
+                    >
+                      {PROGRESS_TEXTS[progressIdx]}
+                    </motion.p>
+                  </AnimatePresence>
+                </motion.div>
+              )}
+
+              {!generating && story && (
+                <motion.div
+                  key="story"
+                  variants={fadeUp}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <StoryPreview
+                    story={story.text}
+                    archiveName={(archive as any)?.name ?? ''}
+                    memberName={story.memberName}
+                    style={style}
+                    memoryCount={story.memCount}
+                  />
+                </motion.div>
+              )}
+
+              {!generating && !story && (
+                <motion.div
+                  key="empty"
+                  variants={fadeIn}
+                  initial="hidden"
+                  animate="visible"
+                  className="h-full flex flex-col items-center justify-center py-20 text-ink-muted"
+                >
+                  <BookOpen size={48} className="mb-4 opacity-30" />
+                  <p className="text-body-sm">配置完成后点击"生成故事书"</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <div className="prose prose-gray max-w-none">
-            <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">{story}</p>
-          </div>
         </div>
-      )}
-    </div>
+      </div>
+    </PageTransition>
   )
 }
