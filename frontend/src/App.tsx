@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Layout from './components/Layout'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
@@ -12,15 +12,15 @@ import DialoguePage from './pages/DialoguePage'
 import TimelinePage from './pages/TimelinePage'
 import StoryBookPage from './pages/StoryBookPage'
 import SettingsPage from './pages/SettingsPage'
+import PersonalCenterPage from './pages/PersonalCenterPage'
+import ThemeProvider from './components/ThemeProvider'
+import { useAuthStore } from './hooks/useAuthStore'
 
 export default function App() {
-  const [authChecked, setAuthChecked] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const { isAuthenticated, authChecked, checkAuth } = useAuthStore()
 
   useEffect(() => {
-    const token = localStorage.getItem('mtc-token')
-    setIsLoggedIn(!!token)
-    setAuthChecked(true)
+    checkAuth()
   }, [])
 
   if (!authChecked) {
@@ -32,29 +32,32 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      {/* 公开页面 */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+    <ThemeProvider>
+      <Routes>
+        {/* 公开页面 */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
 
-      {/* 受保护的应用页面 */}
-      {isLoggedIn ? (
-        <Route element={<Layout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="archives" element={<ArchiveListPage />} />
-          <Route path="archives/:id" element={<ArchiveDetailPage />} />
-          <Route path="archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
-          <Route path="dialogue" element={<DialoguePage />} />
-          <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
-          <Route path="timeline/:archiveId" element={<TimelinePage />} />
-          <Route path="storybook/:archiveId" element={<StoryBookPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      ) : (
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      )}
-    </Routes>
+        {/* 受保护的应用页面 */}
+        {isAuthenticated ? (
+          <Route element={<Layout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="archives" element={<ArchiveListPage />} />
+            <Route path="archives/:id" element={<ArchiveDetailPage />} />
+            <Route path="archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
+            <Route path="dialogue" element={<DialoguePage />} />
+            <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
+            <Route path="timeline/:archiveId" element={<TimelinePage />} />
+            <Route path="storybook/:archiveId" element={<StoryBookPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="personal-center" element={<PersonalCenterPage />} />
+          </Route>
+        ) : (
+          <Route path="*" element={<Navigate to="/" replace />} />
+        )}
+      </Routes>
+    </ThemeProvider>
   )
 }

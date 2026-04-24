@@ -43,6 +43,10 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     created_at: datetime
+    avatar_url: str | None = None
+    subscription_tier: str = "free"
+    monthly_token_limit: int = 100000
+    monthly_token_used: int = 0
 
     class Config:
         from_attributes = True
