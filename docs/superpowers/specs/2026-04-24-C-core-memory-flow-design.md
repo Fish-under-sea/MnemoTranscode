@@ -3,6 +3,7 @@
 **起草人**：Claude 4.7 Opus（A 轨）
 **日期**：2026-04-24
 **范围**：档案库 / 档案详情 / 成员详情 / 记忆 CRUD / 媒体上传 / 时间线
+**合入用 PR**：[#15 — docs(C): 子项目 C 设计 + 实现计划 · 核心记忆流](https://github.com/Fish-under-sea/MnemoTranscode/pull/15)（与 [`2026-04-24-C-core-memory-flow-plan.md`](../plans/2026-04-24-C-core-memory-flow-plan.md) 同批）
 **依赖**：
 - 子项目 A：设计系统 + 动效基座（16 UI 组件 + motionPresets + ScrollReveal）
 - 子项目 B：`services/errors.ts` + `useApiError` + `components/ui/state/*` 三件套 + `useDashboardStats` 聚合范式

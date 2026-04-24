@@ -4,7 +4,8 @@
 **主 spec**：[`docs/superpowers/specs/2026-04-24-C-core-memory-flow-design.md`](../specs/2026-04-24-C-core-memory-flow-design.md)
 **执行人（B 轨）**：Composer 2
 **分支**：`Opus-coding`（**严禁独立开分支**）
-**估时**：~4 天（29 task，5 milestone）
+**估时**：~4 天（**28** task，5 milestone）
+**合入用 PR**：[docs(C): 子项目 C 设计 + 实现计划 · 核心记忆流 — PR #15](https://github.com/Fish-under-sea/MnemoTranscode/pull/15)
 
 ---
 
@@ -12,9 +13,17 @@
 
 ### 0.1 你是谁 · 你要做什么
 
-你是 Composer 2，负责把本计划里的 29 个 task 转化为代码。每个 task 都对齐到设计文档里的具体章节——**不要擅自发挥，有设计偏差先问 Opus**。
+你是 Composer 2，负责把本计划里的 **28** 个 task 转化为代码。每个 task 都对齐到设计文档里的具体章节——**不要擅自发挥，有设计偏差先问 Opus**。
+
+**启动顺序**：从 **M1 · T1.1** 起；M1 全部 task + T1.7 DoD 完成后，**向 Opus 报告并等待 grep 核查与放行**，再进 M2。
 
 ### 0.2 工作模式（B 阶段教训固化 · 硬约束）
+
+**三条红线（与下述 1–5 细项一一对应，已写入本节）：**
+
+1. **禁止新开分支** — 第一件事 `git branch --show-current` 必须是 `Opus-coding`；不是就切过去。不要创建 `Composer-coding` / `ComposerC-coding`。**归属用 git notes 标记执行模型，不靠分支名。**
+2. **一 task 一 commit** — 每完成一个 task 独立 commit，禁止把多个 task 合成一笔。
+3. **每 milestone 完成后暂停** — 跑完 `type-check` + **附录 A** 对应 M 的 grep 自检 + `push` 后，回来报告 **「M? 完成」**，等 Opus 放行再开下一 M。禁止一口气做完 5 个 M 再汇报。
 
 **⚠️ 以下 5 条是硬约束，违反会被要求回退。**
 
@@ -26,19 +35,24 @@
    git commit -m "..."      # 按下方 commit 信息模板
    git log --oneline -3     # 核验 commit 数，应为 task 数
    ```
+   推荐在每一笔实现 commit 后附加归属注记（不替代分支要求）：
+   ```bash
+   git notes add -m "actual-model: composer-2" HEAD
+   ```
    不要把 5 个 task 合成 1 个 commit。Milestone 内部可以合并同一文件的小修补（比如 T1.5 发现 T1.4 有遗漏，这两个可以合并），但**不同 task 原则上不合 commit**。
 
 3. **⏸ 每 milestone 完成后暂停**。不要一口气做完 5 个 milestone 再汇报。每完成一个 M（比如 M1）：
    - 跑 `npm run type-check` 必须 0 错误
+   - 跑 `npm run build`（M1 在 T1.7 已写）
    - 跑 §附录 A 的 M? 自检 grep 清单
    - `git push origin Opus-coding`
-   - 回复 Opus："M? 完成，已 push，自检通过/失败：..."
+   - 回复 Opus："**M? 完成**，已 push，自检通过/失败：..."
    - **等 Opus 放行再继续 M?+1**
 
 4. **🔍 每 task 结束的 3 件事**：
    - `npm run type-check`（必过）
    - 手工跑一次冒烟（见 task 的"冒烟清单"）
-   - commit + push（可只在 milestone 结束时 push，但推荐 task 也 push）
+   - commit（**milestone 结束必须含** `type-check` + 附录 A + `git push`；单 task 是否中间 push 由你决定，但**禁止**在里程碑边界漏 push）
 
 5. **🚫 禁止扩范围**。如果在实现某 task 时发现 spec 里没写到的相关 bug（比如顺手想修个跟你 task 无关的动画 bug），**不要当场修**——记到 M5 的 T5.6（新增 backlog 记录），由 Opus 在 M5 决定修或扔。
 
@@ -86,7 +100,12 @@
 
 **执行顺序**：`M1 → M2 → M3 → M4 → M5`（线性）
 
-**如 T3.0 的 E 接口补丁尚未就绪**：允许先跳过 M3 做 M4，回头再做 M3（但必须向 Opus 报备，不要自作主张）。
+**E 未就绪时的两条路（与 spec §五 风险 1 一致）**：
+
+- **选项 A**：先在 **E** 上补 `GET /api/v1/media?member_id=&purpose=`（小改动，照 `archive.py` / `memory.py` 的 list pattern），然后按 **M1 → M2 → M3 → M4 → M5** 线性执行。
+- **选项 B**：Composer 2 先做 **M1 → M2 → M4**，**跳过 M3**；等 E 补完列表端点后，**回头做 M3**。启动 M3 前必须跑 **§M3 T3.0** 的 curl 判定；不通则**停止 M3 并报告 Opus**，不要硬写假数据绕路。
+
+**如 T3.0 的 E 接口尚未就绪**：必须选 B 并**向 Opus 报备**；禁止在未确认的情况下自作主张合 commit 或合 milestone。
 
 ---
 
@@ -866,14 +885,15 @@ const EMOTION_OPTIONS = [
 
 ## M3 · MediaUploader + MediaGallery + mediaApi + 成员相册
 
-**⚠️ T3.0 前置**：**启动 M3 之前确认 E 是否已补 GET `/media` 列表接口**。如果还没，**暂停 M3，先做 M4**，回头再做 M3。启动 M3 时自己跑一次：
+**⚠️ T3.0 前置（判定命令 · Composer 启动 M3 时必跑）**：**启动 M3 之前确认 E 是否已补 `GET /api/v1/media` 列表**（`member_id` / `archive_id` / `purpose`  query，见设计文档风险 1）。**未就绪** → 不要实现 MediaGallery 拉全量列表；**暂停 M3，改走 M1→M2→M4，或等选项 A 的 E 补丁后再线性做 M3**。
 
 ```bash
 curl -X GET "http://localhost:8000/api/v1/media?member_id=1" -H "Authorization: Bearer <token>"
+# 有 purpose 筛选时自行追加 &purpose=archive_photo 等
 ```
 
-- 返回 200 + array → M3 可启动
-- 返回 404 / 405 → 向 Opus 报备，切到 M4
+- 返回 **200** 且 body 为 **JSON 数组**（可空 `[]`）→ M3 可启动
+- 返回 **404 / 405** 或明确无 list 路由 → **向 Opus 报告**；切 **选项 B** 先做 M4，或等 E 合入后再回到 M3
 
 ### T3.1 · 扩展 `services/api.ts` 加 `mediaApi`
 
@@ -1749,7 +1769,8 @@ rg '还没有' frontend/src/pages/Archive*.tsx  # = 0（改用 EmptyState descri
 
 ## 附录 C · 变更记录
 
-- **v1.0** (2026-04-24, Opus)：初版。29 task 分 5 milestone，对齐主 spec 8 个核心决策；固化 B 阶段 5 条硬约束；明确 T3.0 前置（等 E 补 GET /media 列表接口）；附 A/B/C 三个速查附录。
+- **v1.0** (2026-04-24, Opus)：初版。28 task 分 5 milestone，对齐主 spec 8 个核心决策；固化 B 阶段硬约束（含三条红线 + git notes 归属）；明确 T3.0 前置与选项 A/B；附 A/B/C 三个速查附录。
+- **v1.0.1** (2026-04-24, Opus)：补 PR #15 链接、启动顺序（M1 起 → M1 末等 Opus 核查）、M3 选项 A/B 与 T3.0 curl 判定说明；task 数 29→28 勘误。
 
 ---
 
