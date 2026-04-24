@@ -1,0 +1,6 @@
+执行模型: Composer 2 (Cursor 内置)
+组织 commit: Claude 4.7 Opus
+分支上下文: 本 commit 在 AI-coding 分支上提交，该分支已于 2026-04-24 按路线图 v1.4 新命名规则重命名为 Opus-coding；origin/AI-coding 已归档为 origin/old-AI-coding。
+规则背景: 子项目 A 中间段 M3-M5 临时交棒给 Composer 2 实现组件。Composer 2 未按 'one task, one commit' 规范提交（工作结束时所有改动为 unstaged），由 Opus 审阅后按 milestone 分组为 M3 / M4 / M5 三个 commit。
+本 commit 内容: M3 · 基础输入类 5 组件 (Button / Input / Textarea / Select / ConfirmDialog)
+溯源参考: docs/superpowers/completed/2026-04-24-A-design-system.md §执行时间线
