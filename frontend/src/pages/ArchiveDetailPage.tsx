@@ -11,6 +11,7 @@ import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import type { MemberStatus } from '@/lib/memberStatus'
 import { staggerContainer, fadeUp } from '@/lib/motion'
 import MemoryCard from '@/components/memory/MemoryCard'
+import MemoryDetailDrawer, { type MemoryRecord } from '@/components/memory/MemoryDetailDrawer'
 import Modal from '@/components/ui/Modal'
 import { useState } from 'react'
 import Card from '@/components/ui/Card'
@@ -45,6 +46,7 @@ export default function ArchiveDetailPage() {
     end_year: undefined,
     bio: '',
   })
+  const [activeMemory, setActiveMemory] = useState<MemoryRecord | null>(null)
 
   const { data: archive, isLoading, error, refetch } = useQuery({
     queryKey: ['archive', id],
@@ -99,6 +101,9 @@ export default function ArchiveDetailPage() {
   if (!archive) {
     return <EmptyState title="档案不存在" description="请从档案库重新进入" />
   }
+
+  const memberRows = members as { id: number; name?: string }[]
+  const memberNameById = (mid: number) => memberRows.find((m) => Number(m.id) === mid)?.name ?? ''
 
   const typeInfo = ARCHIVE_TYPE_OPTIONS.find((t) => t.value === String(archive.archive_type))
 
@@ -261,17 +266,21 @@ export default function ArchiveDetailPage() {
             <div className="grid md:grid-cols-2 gap-4">
               {memories.slice(0, 6).map((memory: Record<string, unknown>) => {
                 const mem = memory
+                const rec: MemoryRecord = {
+                  id: Number(mem.id),
+                  title: String(mem.title ?? ''),
+                  content_text: String(mem.content_text ?? ''),
+                  timestamp: mem.timestamp as string | null | undefined,
+                  location: mem.location as string | null | undefined,
+                  emotion_label: mem.emotion_label as string | null | undefined,
+                  member_id: Number(mem.member_id),
+                  archive_id: Number(archive.id),
+                }
                 return (
                   <MemoryCard
                     key={String(mem.id)}
-                    id={Number(mem.id)}
-                    title={String(mem.title ?? '')}
-                    content_text={String(mem.content_text ?? '')}
-                    timestamp={mem.timestamp as string | null | undefined}
-                    location={mem.location as string | null | undefined}
-                    emotion_label={mem.emotion_label as string | null | undefined}
-                    member_id={Number(mem.member_id)}
-                    archive_id={Number(archive.id)}
+                    {...rec}
+                    onClick={() => setActiveMemory(rec)}
                   />
                 )
               })}
@@ -279,6 +288,26 @@ export default function ArchiveDetailPage() {
           )}
         </Card>
       </motion.div>
+
+      <MemoryDetailDrawer
+        memory={activeMemory}
+        memberName={activeMemory ? memberNameById(activeMemory.member_id) : ''}
+        onClose={() => setActiveMemory(null)}
+        onDelete={
+          activeMemory
+            ? async () => {
+                try {
+                  await memoryApi.delete(activeMemory.id)
+                  queryClient.invalidateQueries({ queryKey: ['memories', 'archive', id] })
+                  setActiveMemory(null)
+                  toast.success('记忆已删除')
+                } catch (err) {
+                  show(err)
+                }
+              }
+            : undefined
+        }
+      />
 
       <Modal open={createMemberModal} onClose={() => setCreateMemberModal(false)} title="添加成员" size="lg">
         <form
