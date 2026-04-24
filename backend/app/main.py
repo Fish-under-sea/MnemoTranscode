@@ -11,7 +11,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.core.database import init_db
 from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook, kourichat, usage, preferences, ai_memory
 
 settings = get_settings()
@@ -27,8 +26,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info(f"启动 {settings.app_name} v{settings.app_version}")
-    await init_db()
-    logger.info("数据库初始化完成")
     yield
     logger.info("应用关闭")
 
