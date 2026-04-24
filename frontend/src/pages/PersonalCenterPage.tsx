@@ -62,14 +62,16 @@ function OverviewPanel() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    setLoading(true)
     usageApi.getStats().then((res: any) => {
       setStats(res)
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [])
+  }, [user?.monthly_token_limit, user?.subscription_tier])
 
   const limit = user?.monthly_token_limit || 100000
-  const used = stats?.monthly_used || user?.monthly_token_used || 0
+  const used = stats?.monthly_used ?? user?.monthly_token_used ?? 0
+  const isUnlimitedTier = user?.subscription_tier === 'enterprise'
 
   return (
     <div className="space-y-6">
@@ -116,11 +118,15 @@ function OverviewPanel() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">限额</span>
-                <span className="font-semibold text-slate-900">{limit.toLocaleString()} tokens</span>
+                <span className="font-semibold text-slate-900">
+                  {isUnlimitedTier ? '无限制' : `${limit.toLocaleString()} tokens`}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">剩余</span>
-                <span className="font-semibold text-jade-600">{Math.max(0, limit - used).toLocaleString()} tokens</span>
+                <span className="font-semibold text-jade-600">
+                  {isUnlimitedTier ? '—' : `${Math.max(0, limit - used).toLocaleString()} tokens`}
+                </span>
               </div>
               {/* 用量类型分布 */}
               {stats?.usage_by_type && Object.keys(stats.usage_by_type).length > 0 && (
@@ -160,8 +166,9 @@ function SubscriptionPanel() {
   const { user, updateUser } = useAuthStore()
   const [sub, setSub] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [switching, setSwitching] = useState(false)
 
-  useEffect(() => {
+  const refreshSubscription = () =>
     subscriptionApi.get().then((res: any) => {
       setSub(res)
       updateUser({
@@ -169,9 +176,34 @@ function SubscriptionPanel() {
         monthly_token_limit: res.monthly_limit,
         monthly_token_used: res.monthly_used,
       })
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    })
+
+  useEffect(() => {
+    setLoading(true)
+    refreshSubscription()
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
+
+  const handleSelectPlan = async (planId: 'free' | 'pro' | 'enterprise') => {
+    if (planId === (user?.subscription_tier || 'free') || switching) return
+    setSwitching(true)
+    try {
+      const res = (await subscriptionApi.updateTier(planId)) as any
+      setSub(res)
+      updateUser({
+        subscription_tier: res.tier,
+        monthly_token_limit: res.monthly_limit,
+        monthly_token_used: res.monthly_used,
+      })
+      const label = planId === 'free' ? 'Free' : planId === 'pro' ? 'Pro' : 'Enterprise'
+      toast.success(`已切换至 ${label} 方案（演示环境无需支付）`)
+    } catch {
+      toast.error('切换方案失败，请稍后重试')
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   const plans = [
     {
@@ -267,17 +299,19 @@ function SubscriptionPanel() {
             </ul>
 
             <button
-              disabled={currentTier === plan.id}
+              type="button"
+              disabled={currentTier === plan.id || switching}
+              onClick={() => void handleSelectPlan(plan.id as 'free' | 'pro' | 'enterprise')}
               className={cn(
                 'w-full py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer',
-                currentTier === plan.id
+                currentTier === plan.id || switching
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                   : plan.color === 'jade'
                   ? 'bg-jade-500 text-white hover:bg-jade-600 shadow-jade'
                   : 'bg-slate-900 text-white hover:bg-slate-800'
               )}
             >
-              {currentTier === plan.id ? '当前方案' : plan.id === 'free' ? '降级' : '升级'}
+              {currentTier === plan.id ? '当前方案' : switching ? '切换中…' : plan.id === 'free' ? '降级' : '升级'}
             </button>
           </div>
         ))}
