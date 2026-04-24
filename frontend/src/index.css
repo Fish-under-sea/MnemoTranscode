@@ -158,26 +158,6 @@ body {
   }
 }
 
-/* ========== 页面入场动画（legacy） ========== */
-/* @deprecated 改用 components/ui/ScrollReveal */
-.animate-on-scroll {
-  opacity: 0;
-  transform: translateY(28px);
-  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.animate-on-scroll.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.delay-100 { transition-delay: 100ms; }
-.delay-200 { transition-delay: 200ms; }
-.delay-300 { transition-delay: 300ms; }
-.delay-400 { transition-delay: 400ms; }
-.delay-500 { transition-delay: 500ms; }
-
 /* ========== 响应式无障碍 ========== */
 /* 注：新组件通过 MotionProvider 统一尊重 reduced-motion；这里的全局 CSS 覆盖作为兜底。 */
 @media (prefers-reduced-motion: reduce) {
