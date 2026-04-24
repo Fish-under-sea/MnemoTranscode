@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     # CosyVoice (阿里开源)
     cosyvoice_url: str = "http://localhost:5000"
+    cosyvoice_api_key: str = ""
+    cosyvoice_connect_timeout_seconds: int = 3
+    cosyvoice_read_timeout_seconds: int = 45
+    cosyvoice_retry_count: int = 2
+    cosyvoice_retry_backoff_base_ms: int = 200
+    cosyvoice_retry_backoff_factor: int = 2
 
     # MinIO / 对象存储
     minio_endpoint: str = "localhost:9000"
@@ -67,6 +73,16 @@ class Settings(BaseSettings):
 
     # 情感分析模型
     emotion_model: str = "deepctrl/sentiment-analysis-distilbert-zh"
+
+    # Voice 业务约束
+    voice_default_provider: str = "cosyvoice"
+    voice_feature_clone_enabled: bool = False
+    voice_max_text_length: int = 2000
+    voice_max_concurrent_tts: int = 10
+
+    # Celery
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str = "redis://localhost:6379/2"
 
     class Config:
         env_file = ".env"

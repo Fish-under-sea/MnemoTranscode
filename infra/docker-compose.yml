@@ -5,7 +5,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-backend
     ports:
@@ -14,21 +14,27 @@ services:
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
+      - UVICORN_EXTRA_ARGS=--reload
     env_file:
-      - ./backend/.env
+      - ../backend/.env
     depends_on:
       - postgres
       - redis
       - qdrant
     volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ../backend:/app
     networks:
       - mtc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 60s
 
   frontend:
     build:
-      context: ./frontend
+      context: ../frontend
       dockerfile: Dockerfile
     container_name: mtc-frontend
     ports:
@@ -55,10 +61,10 @@ services:
     networks:
       - mtc-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mtc -d mtc_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -71,9 +77,9 @@ services:
       - mtc-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # ========== 向量数据库 ==========
 
@@ -119,20 +125,22 @@ services:
 
   celery-worker:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-celery-worker
-    command: celery -A app.tasks worker --loglevel=info
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     env_file:
-      - ./backend/.env
+      - ../backend/.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - postgres
-      - redis
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ../backend:/app
     networks:
       - mtc-network
 

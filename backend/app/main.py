@@ -9,9 +9,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
+from app.api.middleware.exception_handlers import register_exception_handlers
+from app.api.middleware.request_id import RequestIDMiddleware
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import engine
 from app.api.v1 import auth, memory, archive, dialogue, media, capsule, storybook, kourichat, usage, preferences, ai_memory
 
 settings = get_settings()
@@ -27,8 +31,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info(f"启动 {settings.app_name} v{settings.app_version}")
-    await init_db()
-    logger.info("数据库初始化完成")
     yield
     logger.info("应用关闭")
 
@@ -63,6 +65,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIDMiddleware)
+register_exception_handlers(app)
 
 
 # 注册路由
@@ -93,3 +97,21 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy"}
+
+
+@app.get("/healthz")
+async def healthz():
+    """依赖级健康检查（DB + 配置可用性）"""
+    checks = {"config": "ok"}
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception as exc:
+        checks["db"] = f"fail: {exc.__class__.__name__}"
+
+    is_ok = all(value == "ok" for value in checks.values())
+    return JSONResponse(
+        status_code=200 if is_ok else 503,
+        content={"status": "ok" if is_ok else "degraded", "checks": checks},
+    )

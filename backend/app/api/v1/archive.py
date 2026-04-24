@@ -2,11 +2,12 @@
 档案管理 API 路由
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import DomainAuthError, DomainResourceError
 from app.core.database import get_db
 from app.models.user import User
 from app.models.memory import Archive, Member, Memory
@@ -76,7 +77,7 @@ async def get_archive(
     )
     archive = result.scalar_one_or_none()
     if not archive:
-        raise HTTPException(status_code=404, detail="档案不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="档案不存在")
     resp = ArchiveResponse.model_validate(archive)
     resp.member_count = len(archive.members)
     resp.memory_count = sum(len(m.memories) for m in archive.members)
@@ -96,7 +97,7 @@ async def update_archive(
     )
     archive = result.scalar_one_or_none()
     if not archive:
-        raise HTTPException(status_code=404, detail="档案不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="档案不存在")
 
     for field, value in update_data.model_dump(exclude_unset=True).items():
         setattr(archive, field, value)
@@ -117,7 +118,7 @@ async def delete_archive(
     )
     archive = result.scalar_one_or_none()
     if not archive:
-        raise HTTPException(status_code=404, detail="档案不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="档案不存在")
     await db.delete(archive)
     await db.commit()
 
@@ -136,14 +137,15 @@ async def create_member(
         select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限")
 
     member = Member(
         name=member_data.name,
         relationship_type=member_data.relationship_type,
         archive_id=archive_id,
         birth_year=member_data.birth_year,
-        death_year=member_data.death_year,
+        status=member_data.status or "active",
+        end_year=member_data.end_year,
         bio=member_data.bio,
     )
     db.add(member)
@@ -163,7 +165,7 @@ async def list_members(
         select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限")
 
     result = await db.execute(
         select(Member).where(Member.archive_id == archive_id).order_by(Member.birth_year)
@@ -184,14 +186,14 @@ async def get_member(
         select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限")
 
     result = await db.execute(
         select(Member).where(Member.id == member_id, Member.archive_id == archive_id)
     )
     member = result.scalar_one_or_none()
     if not member:
-        raise HTTPException(status_code=404, detail="成员不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
     return MemberResponse.model_validate(member)
 
 
@@ -208,16 +210,19 @@ async def update_member(
         select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限")
 
     result = await db.execute(
         select(Member).where(Member.id == member_id, Member.archive_id == archive_id)
     )
     member = result.scalar_one_or_none()
     if not member:
-        raise HTTPException(status_code=404, detail="成员不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
 
+    ignored_legacy_fields = {"is_alive", "death_year"}
     for field, value in update_data.model_dump(exclude_unset=True).items():
+        if field in ignored_legacy_fields:
+            continue
         setattr(member, field, value)
     await db.commit()
     await db.refresh(member)
@@ -236,13 +241,13 @@ async def delete_member(
         select(Archive).where(Archive.id == archive_id, Archive.owner_id == current_user.id)
     )
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="无权限")
+        raise DomainAuthError(error_code="AUTH_FORBIDDEN", message="无权限")
 
     result = await db.execute(
         select(Member).where(Member.id == member_id, Member.archive_id == archive_id)
     )
     member = result.scalar_one_or_none()
     if not member:
-        raise HTTPException(status_code=404, detail="成员不存在")
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
     await db.delete(member)
     await db.commit()

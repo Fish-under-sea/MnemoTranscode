@@ -3,7 +3,9 @@
 """
 
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from typing import Any, Literal
+
+from pydantic import BaseModel, EmailStr, Field, model_serializer, model_validator
 from enum import Enum
 
 
@@ -94,12 +96,69 @@ class ArchiveResponse(ArchiveBase):
 
 # ==== 成员 Schema ====
 
+MemberStatus = Literal["active", "passed", "distant", "pet", "other"]
+
+
+def _normalize_member_payload(raw: Any, mode: Literal["create", "update"]) -> Any:
+    """按规格对成员字段做归一化与冲突校验。"""
+    if not isinstance(raw, dict):
+        return raw
+
+    data = dict(raw)
+    state_fields = ("status", "end_year", "is_alive", "death_year")
+
+    # PATCH 场景：状态相关字段全未提供时直接放行
+    if mode == "update" and all(field not in data for field in state_fields):
+        return data
+
+    # 空字符串快速失败
+    for field in ("status", "end_year", "death_year"):
+        value = data.get(field)
+        if isinstance(value, str) and value.strip() == "":
+            raise ValueError(f"VALIDATION_EMPTY_{field.upper()}")
+
+    has_status_value = "status" in data and data.get("status") is not None
+    status = data.get("status")
+    is_alive = data.get("is_alive")
+    death_year = data.get("death_year")
+    end_year = data.get("end_year")
+
+    # status 缺失或显式 null 时，按旧字段降级推导
+    if not has_status_value:
+        if is_alive is True:
+            data["status"] = "active"
+        elif is_alive is False:
+            data["status"] = "passed"
+            if end_year is None and death_year is not None:
+                data["end_year"] = death_year
+
+    # Create 场景必须得到 status
+    if mode == "create" and ("status" not in data or data.get("status") is None):
+        raise ValueError("VALIDATION_REQUIRED_STATUS")
+
+    status = data.get("status")
+    death_year = data.get("death_year")
+    end_year = data.get("end_year")
+
+    # 冲突检测
+    if status == "active" and is_alive is False:
+        raise ValueError("FIELD_CONFLICT_STATUS_IS_ALIVE")
+    if status is not None and status != "passed" and death_year is not None:
+        raise ValueError("FIELD_CONFLICT_STATUS_DEATH_YEAR")
+    if end_year is not None and death_year is not None and end_year != death_year:
+        raise ValueError("FIELD_CONFLICT_END_YEAR_DEATH_YEAR")
+
+    return data
+
 class MemberBase(BaseModel):
     """成员基础字段"""
     name: str = Field(..., min_length=1, max_length=100)
     relationship_type: str = Field(..., max_length=50)
     birth_year: int | None = None
+    status: MemberStatus | None = None
+    end_year: int | None = None
     death_year: int | None = None
+    is_alive: bool | None = None
     bio: str | None = None
 
 
@@ -107,15 +166,27 @@ class MemberCreate(MemberBase):
     """创建成员"""
     archive_id: int
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input(cls, raw: Any) -> Any:
+        return _normalize_member_payload(raw, "create")
+
 
 class MemberUpdate(BaseModel):
     """更新成员"""
     name: str | None = Field(None, min_length=1, max_length=100)
     relationship_type: str | None = Field(None, max_length=50)
     birth_year: int | None = None
+    status: MemberStatus | None = None
+    end_year: int | None = None
     death_year: int | None = None
     bio: str | None = None
     is_alive: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input(cls, raw: Any) -> Any:
+        return _normalize_member_payload(raw, "update")
 
 
 class MemberResponse(MemberBase):
@@ -123,13 +194,21 @@ class MemberResponse(MemberBase):
     id: int
     archive_id: int
     voice_profile_id: str | None = None
-    is_alive: bool = True
+    is_alive: bool | None = Field(default=None, deprecated=True)
     emotion_tags: list[str] = []
     memory_count: int = 0
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+    @model_serializer(mode="wrap")
+    def derive_legacy_fields(self, handler):
+        payload = handler(self)
+        status = payload.get("status")
+        payload["is_alive"] = status == "active"
+        payload["death_year"] = payload.get("end_year") if status == "passed" else None
+        return payload
 
 
 # ==== 记忆 Schema ====

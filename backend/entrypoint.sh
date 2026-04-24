@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+set -e
+
+alembic upgrade head
+
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 ${UVICORN_EXTRA_ARGS:---reload}
