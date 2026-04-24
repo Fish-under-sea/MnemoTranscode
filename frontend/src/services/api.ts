@@ -347,6 +347,66 @@ export async function uploadToPresignedUrl(
   })
 }
 
+// ========== 记忆胶囊 ==========
+
+export interface CapsuleItem {
+  id: number
+  member_id: number
+  title: string
+  unlock_date: string
+  status: 'locked' | 'delivered'
+  created_at: string
+  content?: string
+}
+
+export const capsuleApi = {
+  list: (params?: { member_id?: number }): Promise<CapsuleItem[]> =>
+    api.get('/capsules', { params }),
+
+  get: (id: number): Promise<CapsuleItem> =>
+    api.get(`/capsules/${id}`),
+
+  create: (data: {
+    member_id: number
+    title: string
+    content: string
+    unlock_date: string
+  }): Promise<CapsuleItem> =>
+    api.post('/capsules', null, {
+      params: {
+        member_id: data.member_id,
+        title: data.title,
+        content: data.content,
+        unlock_date: data.unlock_date,
+      },
+    }),
+}
+
+// ========== 故事书 ==========
+
+export interface StorybookResult {
+  story: string
+  archive_id: number
+  member_id: number | null
+  style: string
+  memory_count: number
+}
+
+export const storybookApi = {
+  generate: (data: {
+    archive_id: number
+    member_id?: number
+    style?: string
+  }): Promise<StorybookResult> =>
+    api.post('/storybook/generate', null, {
+      params: {
+        archive_id: data.archive_id,
+        ...(data.member_id !== undefined && { member_id: data.member_id }),
+        ...(data.style !== undefined && { style: data.style }),
+      },
+    }),
+}
+
 export type { Memory } from './memoryTypes'
 
 export default api
