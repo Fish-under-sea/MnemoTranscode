@@ -131,7 +131,7 @@ export const archiveApi = {
       name: string
       relationship_type: string
       birth_year?: number
-      /** 关系状态：alive=健在 / deceased=已离开 / unknown=未明示。E 已是唯一真源，B 不再传 death_year。 */
+      /** 关系状态：alive=健在 / deceased=已离开 / unknown=未明示。 */
       status?: 'alive' | 'deceased' | 'unknown'
       /** 结束年份（status=deceased 时为辞世年；status=alive 时可空；对组织/关系可表示终止年） */
       end_year?: number
