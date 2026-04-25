@@ -95,16 +95,37 @@ cp backend/.env.example backend/.env
 # DATABASE_URL、SECRET_KEY、OPENAI_API_KEY、MINIO_* 等
 ```
 
-### 3. 启动基础设施
+### 3. 启动服务（Docker）
+
+#### 一键启动（推荐）
+
+默认会在 **Docker 中启动完整栈**：PostgreSQL、Redis、Qdrant、MinIO、**后端**、**前端**（容器内 Nginx 映射 **5173**）、Celery Worker 等。**执行成功后，前后端已在容器内运行**，一般无需再单独跑下方「本机后端 / 本机前端」——除非你希望用本机 `uvicorn` / Vite 做热重载开发。
+
+| 方式 | 命令 |
+|------|------|
+| Bash（WSL / Linux / Git Bash） | `./scripts/start-services.sh` |
+| PowerShell（Windows + Docker Desktop） | `.\scripts\start-services.ps1` |
+| Make（需本机有 `bash`） | `make start-services` |
+
+常用参数：
+
+- **`--infra-only`**（PowerShell：`-InfraOnly`）：**只**启动 postgres / redis / qdrant / minio；**不会**在 Docker 里起应用前后端。此时请在仓库根目录另开终端执行 `make backend` 与 `make frontend`（须先完成依赖安装与 `alembic upgrade head`，见下方两节）。
+- **`--build`** / `-Build`：`docker compose up -d --build`，重建镜像后再启动。
+- **`--recreate`** / `-Recreate`：先 `docker compose down` 再 `up -d`（数据卷不删，容器重建）。
+
+脚本内 **`--help`** / **`-Help`** 可查看完整说明。
+
+#### 手动启动（与一键默认行为等价）
 
 ```bash
-# 启动 PostgreSQL、Qdrant、MinIO、Redis、backend、frontend（5173->80）
 docker compose -f infra/docker-compose.yml up -d
 ```
 
 Compose 中 backend 会只读挂载仓库内 `kourichat/`，供微信/机器人相关能力使用；**若前端需连宿主机上的后端** 而非同 compose 中的 `backend` 服务，见 `infra/docker-compose.hybrid-frontend.example.yml`。
 
-### 4. 启动后端
+### 4. 启动后端（本机开发，可选）
+
+**若已通过一键启动或完整 compose 起全栈，可跳过本节。**
 
 ```bash
 cd backend
@@ -117,7 +138,9 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 5. 启动前端
+### 5. 启动前端（本机开发，可选）
+
+**若已通过一键启动或完整 compose 起全栈，可跳过本节。**
 
 ```bash
 cd frontend
@@ -184,6 +207,8 @@ MTC/
 ├── infra/                     # 基础设施与编排
 │   ├── docker-compose.yml     # 全栈 + PG / Qdrant / MinIO / Redis
 │   └── docker-compose.hybrid-frontend.example.yml
+│
+├── scripts/                   # 运维脚本（如一键启动 Docker 栈 `start-services.*`）
 │
 └── docs/
     ├── MnemoTranscode.txt      # 项目文字宣言（项目初创即与此同源）
