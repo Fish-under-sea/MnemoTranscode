@@ -65,4 +65,4 @@ else {
     Write-Host "[MTC] 已启动: 后端 http://localhost:8000  前端 http://localhost:5173  MinIO http://localhost:9001"
 }
 
-Write-Host "[MTC] 完成。"
+Write-Host "[MTC] Done."

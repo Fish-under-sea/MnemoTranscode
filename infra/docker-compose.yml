@@ -8,6 +8,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -48,6 +49,7 @@ services:
       context: ../frontend
       dockerfile: Dockerfile
     container_name: mtc-frontend
+    restart: unless-stopped
     ports:
       - "5173:80"
     environment:
@@ -64,6 +66,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: mtc-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: mtc
       POSTGRES_PASSWORD: mtc_password
@@ -84,6 +87,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mtc-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -101,6 +105,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: mtc-qdrant
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -121,6 +126,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: mtc-minio
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -145,6 +151,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-celery-worker
+    restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     env_file:
       - ../backend/.env
