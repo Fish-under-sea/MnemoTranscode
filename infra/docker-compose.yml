@@ -20,7 +20,7 @@ services:
       - MINIO_PUBLIC_ENDPOINT=localhost:9000
       # 仓库根下 kourichat/ 挂入，供 /api/v1/kourichat/start 找到 run_config_web.py
       - KOURICHAT_DIR=/kourichat
-      - UVICORN_EXTRA_ARGS=--reload
+      # 勿在 Windows 宿主机 + 绑定挂载 下默认开 --reload，否则 WatchFiles 风暴致后端不断重启；见 backend/entrypoint.sh
     env_file:
       - ../backend/.env
     depends_on:
@@ -158,6 +158,9 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
+      # 与 app.core.config 中 Celery 默认（/1、/2）一致，须用服务名 redis，勿用 localhost
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
       backend:
         condition: service_healthy
