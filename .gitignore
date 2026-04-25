@@ -1,9 +1,6 @@
 # IDE 配置：整体 ignore，仅精准豁免项目级路线图规则（团队共享）
-.kiro/*
 .cursor/*
-!.cursor/rules
-.cursor/rules/*
-!.cursor/rules/mtc-refactor-roadmap.mdc
+.kiro/*
 
 # Python
 __pycache__/
