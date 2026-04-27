@@ -2,7 +2,7 @@
 # MTC (Memory To Code) - 常用命令集合
 # ============================================================
 
-.PHONY: help install dev backend frontend test lint clean docker-up docker-down docker-logs
+.PHONY: help install dev backend frontend test lint clean docker-up docker-down docker-logs docker-restart start-services
 
 # 默认目标
 help:
@@ -18,6 +18,8 @@ help:
 	@echo "  make docker-up     启动 Docker 容器"
 	@echo "  make docker-down   停止 Docker 容器"
 	@echo "  make docker-logs   查看容器日志"
+	@echo "  make docker-restart 重启所有 compose 服务（cd infra && compose restart）"
+	@echo "  make start-services 一键启动 Docker 栈（bash scripts/start-services.sh）"
 	@echo "  make db-migrate    运行数据库迁移"
 	@echo "  make db-reset      重置数据库"
 
@@ -97,6 +99,10 @@ docker-logs:
 
 docker-restart:
 	cd infra && docker compose restart
+
+# 与 scripts/start-services.sh 一致：infra 下 compose up -d（完整栈）
+start-services:
+	bash scripts/start-services.sh
 
 # ========== 数据库 ==========
 

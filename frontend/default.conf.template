@@ -1,14 +1,19 @@
 # 仅对 ${API_UPSTREAM} 做 envsubst，Nginx 内建变量放在 nginx-snippets/ 的静态 include 中
+# resolver + 变量 proxy_pass：在请求时经 127.0.0.11 解析 backend，避免启动瞬间 DNS 未就绪
+# 触发 host not found in upstream，进而 nginx -s fail、前端容器反复 Restarting
 server {
     listen 80;
     server_name localhost;
     root /usr/share/nginx/html;
     index index.html;
 
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api_origin http://${API_UPSTREAM};
+
     include /etc/nginx/snippets/spa-tryfiles.conf;
 
     location /api/ {
-        proxy_pass http://${API_UPSTREAM}/api/;
+        proxy_pass $api_origin$request_uri;
         include /etc/nginx/snippets/api-proxy-common.conf;
         proxy_connect_timeout 60s;
         proxy_read_timeout 60s;

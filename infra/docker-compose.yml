@@ -8,6 +8,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -19,7 +20,7 @@ services:
       - MINIO_PUBLIC_ENDPOINT=localhost:9000
       # 仓库根下 kourichat/ 挂入，供 /api/v1/kourichat/start 找到 run_config_web.py
       - KOURICHAT_DIR=/kourichat
-      - UVICORN_EXTRA_ARGS=--reload
+      # 勿在 Windows 宿主机 + 绑定挂载 下默认开 --reload，否则 WatchFiles 风暴致后端不断重启；见 backend/entrypoint.sh
     env_file:
       - ../backend/.env
     depends_on:
@@ -48,6 +49,7 @@ services:
       context: ../frontend
       dockerfile: Dockerfile
     container_name: mtc-frontend
+    restart: unless-stopped
     ports:
       - "5173:80"
     environment:
@@ -64,6 +66,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: mtc-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: mtc
       POSTGRES_PASSWORD: mtc_password
@@ -84,6 +87,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mtc-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -101,6 +105,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: mtc-qdrant
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -121,6 +126,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: mtc-minio
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -145,12 +151,16 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: mtc-celery-worker
+    restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     env_file:
       - ../backend/.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
+      # 与 app.core.config 中 Celery 默认（/1、/2）一致，须用服务名 redis，勿用 localhost
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
       backend:
         condition: service_healthy
