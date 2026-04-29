@@ -21,10 +21,17 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password_bytes.decode('utf-8', errors='ignore'))
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码是否匹配"""
-    password_bytes = plain_password.encode('utf-8')[:72]
-    return pwd_context.verify(password_bytes.decode('utf-8', errors='ignore'), hashed_password)
+def verify_password(plain_password: str, hashed_password: str | None) -> bool:
+    """验证密码是否匹配（哈希损坏或无法识别时返回 False，不向外抛异常）"""
+    if not hashed_password:
+        return False
+    password_bytes = plain_password.encode("utf-8")[:72]
+    plain = password_bytes.decode("utf-8", errors="ignore")
+    try:
+        return pwd_context.verify(plain, hashed_password)
+    except ValueError:
+        # passlib：空串、未知算法或非 bcrypt 格式的哈希
+        return False
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:

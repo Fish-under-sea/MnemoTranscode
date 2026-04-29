@@ -67,12 +67,24 @@ async def get_current_user(
 
 
 def build_user_response(user: User) -> UserResponse:
+    # UserResponse.username 要求 min_length=2；历史或异常数据可能为 NULL / 空 / 单字符，避免登录序列化报错 500
+    raw_name = (user.username or "").strip()
+    if len(raw_name) < 2:
+        local = ""
+        if user.email:
+            local = user.email.split("@", 1)[0].strip()
+        raw_name = local if len(local) >= 2 else f"用户{user.id}"
+
+    created = user.created_at
+    if created is None:
+        created = datetime.now(timezone.utc)
+
     return UserResponse(
         id=user.id,
         email=user.email,
-        username=user.username,
+        username=raw_name[:50],
         is_active=user.is_active,
-        created_at=user.created_at,
+        created_at=created,
         avatar_url=build_avatar_display_url(user.id, user.avatar_url),
         subscription_tier=user.subscription_tier or "free",
         monthly_token_limit=user.monthly_token_limit or 100000,

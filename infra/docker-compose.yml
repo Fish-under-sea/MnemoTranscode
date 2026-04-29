@@ -33,8 +33,13 @@ services:
       minio:
         condition: service_healthy
     volumes:
-      - ../backend:/app
-      - ../kourichat:/kourichat:ro
+      - type: bind
+        source: ../backend
+        target: /app
+      - type: bind
+        source: ../kourichat
+        target: /kourichat
+        read_only: true
     networks:
       - mtc-network
     healthcheck:
@@ -75,7 +80,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Windows：短写法展开为 D:\... 时，盘符的第一个 : 会破坏 host:destination 解析；用 bind 长格式可稳定挂载单文件
+      - type: bind
+        source: ./postgres/init.sql
+        target: /docker-entrypoint-initdb.d/init.sql
+        read_only: true
     networks:
       - mtc-network
     healthcheck:
@@ -167,7 +176,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ../backend:/app
+      - type: bind
+        source: ../backend
+        target: /app
     networks:
       - mtc-network
 

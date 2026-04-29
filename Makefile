@@ -2,7 +2,7 @@
 # MTC (Memory To Code) - 常用命令集合
 # ============================================================
 
-.PHONY: help install dev backend frontend test lint clean docker-up docker-down docker-logs docker-restart start-services
+.PHONY: help install dev backend frontend test lint clean docker-up docker-down docker-logs docker-restart start-services stable-backend
 
 # 默认目标
 help:
@@ -19,6 +19,7 @@ help:
 	@echo "  make docker-down   停止 Docker 容器"
 	@echo "  make docker-logs   查看容器日志"
 	@echo "  make docker-restart 重启所有 compose 服务（cd infra && compose restart）"
+	@echo "  make stable-backend 仅用 Docker 拉起 DB+Redis+Qdrant+MinIO+backend（稳定开发拓扑，详见 docs/stable-dev-windows.md）"
 	@echo "  make start-services 一键启动 Docker 栈（bash scripts/start-services.sh）"
 	@echo "  make db-migrate    运行数据库迁移"
 	@echo "  make db-reset      重置数据库"
@@ -103,6 +104,11 @@ docker-restart:
 # 与 scripts/start-services.sh 一致：infra 下 compose up -d（完整栈）
 start-services:
 	bash scripts/start-services.sh
+
+# 后端运行在 Compose 容器内，与 Postgres 同属 Docker 网络（避免 Win 宿主连 localhost:5432 断连）。
+# Windows 建议：powershell -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1（脚本会轮询 /healthz 至 DB 就绪）
+stable-backend:
+	cd infra && docker compose up -d postgres redis qdrant minio backend
 
 # ========== 数据库 ==========
 

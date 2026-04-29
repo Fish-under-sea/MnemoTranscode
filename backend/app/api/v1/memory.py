@@ -2,7 +2,7 @@
 记忆 CRUD API 路由
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,7 +71,7 @@ async def create_memory(
         title=memory_data.title,
         content_text=memory_data.content_text,
         member_id=memory_data.member_id,
-        timestamp=memory_data.timestamp or datetime.utcnow(),
+        timestamp=memory_data.timestamp or datetime.now(timezone.utc),
         location=memory_data.location,
         emotion_label=memory_data.emotion_label,
     )
@@ -170,7 +170,7 @@ async def update_memory(
     for field, value in update_data.model_dump(exclude_unset=True).items():
         setattr(memory, field, value)
 
-    memory.updated_at = datetime.utcnow()
+    memory.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     res2 = await db.execute(

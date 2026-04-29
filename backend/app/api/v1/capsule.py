@@ -4,7 +4,7 @@
 定时解封的记忆传承功能
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +17,13 @@ from app.api.v1.auth import get_current_user
 router = APIRouter(prefix="/capsules", tags=["记忆胶囊"])
 
 PydanticBase = None  # 避免循环导入，简化为字典返回
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """将 naive 视作 UTC，aware 则归一到 UTC，便于与 ORM DateTime(timezone=True) 比较。"""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -106,8 +113,9 @@ async def get_capsule(
     if not capsule:
         raise HTTPException(status_code=404, detail="胶囊不存在")
 
-    now = datetime.utcnow()
-    if capsule.unlock_date > now and capsule.status == "locked":
+    now = datetime.now(timezone.utc)
+    unlock = _as_utc(capsule.unlock_date)
+    if unlock > now and capsule.status == "locked":
         return {
             "id": capsule.id,
             "title": capsule.title,
