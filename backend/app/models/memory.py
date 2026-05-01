@@ -66,7 +66,11 @@ class Member(Base):
     bio = Column(Text, nullable=True)
     is_alive = Column(Boolean, default=True, nullable=True)
     voice_profile_id = Column(String(255), nullable=True)
+    # 成员展示头像（MinIO 对象 URL 存库；浏览器展示走 /archives/.../avatar-file 签名链）
+    avatar_url = Column(String(500), nullable=True)
     emotion_tags = Column(JSON, default=list)
+    # MnemoTranscode SelfCore 持久化（人格核心 JSON，可选）
+    mnemo_self_core = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     archive = relationship("Archive", back_populates="members")

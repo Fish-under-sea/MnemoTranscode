@@ -72,8 +72,13 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440  # 24小时
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS（含 127.0.0.1：用户用该地址打开前端时直连 API 需放行）
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # 向量嵌入模型
     embedding_model: str = "text-embedding-3-small"
@@ -91,6 +96,9 @@ class Settings(BaseSettings):
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+
+    # MnemoTranscode（图记忆 + 扩散激活 + 意识召回）；失败时对话路由自动回退传统模式
+    mnemo_transcode_enabled: bool = True
 
     class Config:
         env_file = ".env"

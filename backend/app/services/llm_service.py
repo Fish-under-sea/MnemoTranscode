@@ -4,8 +4,9 @@ AI 核心服务层
 整合 KouriChat 的 LLM Service 核心逻辑，支持多渠道对话
 """
 
-import os
-from typing import Literal
+import json
+import re
+from typing import Any
 
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -103,6 +104,38 @@ class LLMService:
         if think_start != -1 and think_end != -1:
             content = content[:think_start] + content[think_end + 9:].strip()
         return content
+
+    @staticmethod
+    def _parse_json_object(text: str) -> dict:
+        raw = text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```\w*\s*", "", raw)
+            raw = re.sub(r"\s*```\s*$", "", raw)
+        return json.loads(raw)
+
+    async def complete(self, prompt: str, **kwargs: Any) -> str:
+        """单轮补全（整段提示作为 user 消息）。"""
+        return await self.chat([{"role": "user", "content": prompt}], **kwargs)
+
+    async def json_complete(self, prompt: str, **kwargs: Any) -> dict:
+        """LLM 只输出 JSON 对象时的解析（用于冲突裁决、结构化抽取）。"""
+        temp = kwargs.pop("temperature", 0.2)
+        text = await self.complete(
+            prompt + "\n只输出一个 JSON 对象，不要 Markdown、不要其它说明文字。",
+            temperature=temp,
+            **kwargs,
+        )
+        text = self._filter_thinking_content(text)
+        try:
+            data = self._parse_json_object(text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m:
+                raise
+            data = json.loads(m.group(0))
+        if not isinstance(data, dict):
+            raise ValueError("json_complete 期望对象")
+        return data
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
         """直接传入消息列表进行对话"""

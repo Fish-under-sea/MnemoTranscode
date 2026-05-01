@@ -3,13 +3,11 @@
 """
 
 import io
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -22,6 +20,7 @@ from app.core.avatar_public_url import (
     parse_object_key_from_stored_url,
     verify_avatar_file_signature,
 )
+from app.core.minio_object_response import raise_if_expired, streaming_response_for_object_key
 from app.models.user import User
 from app.models.preferences import UserPreferences
 from app.schemas.memory import (
@@ -101,8 +100,7 @@ async def get_avatar_file(
 ):
     """拉取用户头像原图。供 <img src> 同域/反代使用，无需 MinIO 预签名、不经过浏览器直连对象存储。"""
 
-    if int(time.time()) > exp:
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="链接已过期，请刷新页面")
+    raise_if_expired(exp)
 
     result = await db.execute(select(User).where(User.id == uid))
     user = result.scalar_one_or_none()
@@ -116,67 +114,7 @@ async def get_avatar_file(
     if not key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="头像数据异常")
 
-    from minio import Minio
-    from minio.error import S3Error
-
-    client = Minio(
-        settings.minio_endpoint,
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret_key,
-        secure=settings.minio_secure,
-        region="us-east-1",
-    )
-    bucket = settings.minio_bucket
-    try:
-        stat = client.stat_object(bucket, key)
-    except S3Error as e:
-        code = getattr(e, "code", "") or ""
-        if "NoSuchKey" in str(e) or "NotFound" in str(e) or code in ("NoSuchKey", "NoSuchObject"):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="存储读取失败"
-        ) from e
-
-    try:
-        response = client.get_object(bucket, key)
-    except S3Error as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="存储读取失败"
-        ) from e
-
-    def guess_ct() -> str:
-        c = (stat.content_type or "").strip()
-        if c and c != "application/octet-stream":
-            return c
-        low = key.lower()
-        if low.endswith(".png"):
-            return "image/png"
-        if low.endswith((".jpg", ".jpeg")):
-            return "image/jpeg"
-        if low.endswith(".webp"):
-            return "image/webp"
-        if low.endswith(".gif"):
-            return "image/gif"
-        return "application/octet-stream"
-
-    content_type = guess_ct()
-
-    def gen():
-        try:
-            while True:
-                chunk = response.read(32 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            response.close()
-            response.release_conn()
-
-    return StreamingResponse(
-        gen(),
-        media_type=content_type,
-        headers={"Cache-Control": "private, max-age=300"},
-    )
+    return streaming_response_for_object_key(key)
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -310,6 +248,22 @@ ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
 
 
+def _user_avatar_content_type(filename: str, reported: str | None) -> str:
+    r = (reported or "").strip()
+    if r in ALLOWED_AVATAR_TYPES:
+        return r
+    low = (filename or "").lower()
+    if low.endswith(".png"):
+        return "image/png"
+    if low.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if low.endswith(".gif"):
+        return "image/gif"
+    if low.endswith(".webp"):
+        return "image/webp"
+    return r or "image/png"
+
+
 @router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -325,7 +279,7 @@ async def upload_avatar(
             detail=f"头像文件过大（最大 5MB）",
         )
 
-    content_type = file.content_type or "image/png"
+    content_type = _user_avatar_content_type(file.filename or "", file.content_type)
     if content_type not in ALLOWED_AVATAR_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

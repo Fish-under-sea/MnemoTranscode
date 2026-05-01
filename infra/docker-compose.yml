@@ -142,6 +142,8 @@ services:
     environment:
       MINIO_ROOT_USER: mtc_access_key
       MINIO_ROOT_PASSWORD: mtc_secret_key
+      # 浏览器直传预签名 PUT 需跨源访问 API 端口；默认已为 *，显式写出便于排查 CORS
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"

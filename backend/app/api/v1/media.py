@@ -2,9 +2,10 @@
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile, Form
 from minio import Minio
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import get_current_user
 from app.core.config import get_settings
+from app.core.minio_presign import minio_presign_endpoint
 from app.core.database import get_db
 from app.core.exceptions import DomainInternalError, DomainMediaError, DomainResourceError
 from app.models.media import MediaAsset, MediaUploadSession
@@ -64,9 +66,20 @@ class UploadCompleteRequest(BaseModel):
     size: int | None = None
 
 
-def _minio_client() -> Minio:
+def _minio_client_internal() -> Minio:
+    """服务端连对象存储（容器内可用 minio:9000）。"""
     return Minio(
         settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        secure=settings.minio_secure,
+    )
+
+
+def _minio_client_presign() -> Minio:
+    """仅用于生成浏览器可访问的预签名 URL（主机为 MINIO_PUBLIC_ENDPOINT 或 127.0.0.1:端口）。"""
+    return Minio(
+        minio_presign_endpoint(),
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_secure,
@@ -89,6 +102,126 @@ def _validate_upload_request(payload: UploadInitRequest) -> None:
         raise DomainMediaError("MEDIA_UPLOAD_INIT_FILE_TOO_LARGE", "文件大小超过限制")
 
 
+def _sniff_content_type(filename: str, reported: str) -> str:
+    """部分浏览器 file.type 为空，按扩展名补全以便通过校验。"""
+    r = (reported or "").strip()
+    if r and r != "application/octet-stream":
+        return r
+    low = (filename or "").lower()
+    if low.endswith(".png"):
+        return "image/png"
+    if low.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if low.endswith(".webp"):
+        return "image/webp"
+    if low.endswith(".heic"):
+        return "image/heic"
+    if low.endswith(".gif"):
+        return "image/gif"
+    if low.endswith(".mp4"):
+        return "video/mp4"
+    if low.endswith(".webm"):
+        return "video/webm"
+    if low.endswith(".mov"):
+        return "video/quicktime"
+    if low.endswith((".mp3", ".mpeg")):
+        return "audio/mpeg"
+    if low.endswith(".wav"):
+        return "audio/wav"
+    if low.endswith(".ogg"):
+        return "audio/ogg"
+    return r or "application/octet-stream"
+
+
+@router.post("/uploads/direct")
+async def upload_direct(
+    file: UploadFile = File(...),
+    purpose: str = Form(...),
+    member_id: int | None = Form(None),
+    archive_id: int | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """浏览器经 API  multipart 上传，由服务端写入 MinIO（避免预签名直连对象存储失败）。"""
+    try:
+        p = UploadPurpose(purpose)
+    except ValueError as exc:
+        raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_TYPE", f"无效的 purpose: {purpose}") from exc
+
+    raw_name = (file.filename or "upload").replace("/", "_").replace("\\", "_").strip()
+    if not raw_name:
+        raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_FILENAME", "文件名不能为空")
+
+    content = await file.read()
+    size = len(content)
+    if size <= 0:
+        raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_SIZE", "文件大小不合法")
+
+    content_type = _sniff_content_type(raw_name, file.content_type or "")
+
+    pseudo = UploadInitRequest(
+        filename=raw_name,
+        content_type=content_type,
+        size=size,
+        purpose=p,
+        archive_id=archive_id,
+        member_id=member_id,
+    )
+    _validate_upload_request(pseudo)
+
+    upload_id = str(uuid.uuid4())
+    object_key = f"{current_user.id}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{raw_name}"
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=3600)
+    now = datetime.now(timezone.utc)
+
+    try:
+        internal = _minio_client_internal()
+        bucket = settings.minio_bucket
+        if not internal.bucket_exists(bucket):
+            internal.make_bucket(bucket)
+        internal.put_object(bucket, object_key, io.BytesIO(content), size, content_type=content_type)
+    except Exception as exc:
+        raise DomainInternalError("INTERNAL_SERVER_ERROR", f"对象存储写入失败: {exc}") from exc
+
+    session = MediaUploadSession(
+        upload_id=upload_id,
+        owner_id=current_user.id,
+        archive_id=archive_id,
+        member_id=member_id,
+        purpose=p.value,
+        object_key=object_key,
+        content_type=content_type,
+        declared_size=size,
+        status="uploaded",
+        expires_at=expires_at,
+        completed_at=now,
+    )
+    db.add(session)
+    await db.flush()
+
+    asset = MediaAsset(
+        owner_id=current_user.id,
+        source_upload_session_id=session.id,
+        object_key=object_key,
+        bucket=settings.minio_bucket,
+        content_type=content_type,
+        size=size,
+        purpose=p.value,
+        archive_id=archive_id,
+        member_id=member_id,
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+
+    return {
+        "media_id": asset.id,
+        "object_key": object_key,
+        "upload_id": upload_id,
+        "status": "uploaded",
+    }
+
+
 @router.post("/uploads/init")
 async def init_upload(
     payload: UploadInitRequest,
@@ -107,11 +240,12 @@ async def init_upload(
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
     try:
-        client = _minio_client()
+        internal = _minio_client_internal()
         bucket = settings.minio_bucket
-        if not client.bucket_exists(bucket):
-            client.make_bucket(bucket)
-        put_url = client.presigned_put_object(bucket, object_key, expires=timedelta(seconds=expires_in))
+        if not internal.bucket_exists(bucket):
+            internal.make_bucket(bucket)
+        presign = _minio_client_presign()
+        put_url = presign.presigned_put_object(bucket, object_key, expires=timedelta(seconds=expires_in))
     except Exception as exc:
         raise DomainInternalError("INTERNAL_SERVER_ERROR", f"生成上传凭证失败: {exc}") from exc
 
@@ -164,7 +298,7 @@ async def complete_upload(
         await db.commit()
         raise DomainMediaError("MEDIA_UPLOAD_COMPLETE_EXPIRED", "上传会话已过期")
 
-    client = _minio_client()
+    client = _minio_client_internal()
     try:
         stat = client.stat_object(settings.minio_bucket, session.object_key)
     except Exception as exc:
@@ -246,9 +380,9 @@ async def get_download_url(
     if asset.owner_id != current_user.id:
         raise DomainMediaError("MEDIA_PRESIGN_GET_FORBIDDEN", "无权限访问该媒体资源")
 
-    client = _minio_client()
+    presign = _minio_client_presign()
     expires_in = 3600
-    url = client.presigned_get_object(asset.bucket, asset.object_key, expires=timedelta(seconds=expires_in))
+    url = presign.presigned_get_object(asset.bucket, asset.object_key, expires=timedelta(seconds=expires_in))
     return {"get_url": url, "expires_in": expires_in}
 
 
@@ -264,11 +398,11 @@ async def upload_file(
     content_type = file.content_type or "application/octet-stream"
     object_name = f"{current_user.id}/{uuid.uuid4()}"
     try:
-        client = _minio_client()
+        client = _minio_client_internal()
         bucket_name = settings.minio_bucket
         if not client.bucket_exists(bucket_name):
             client.make_bucket(bucket_name)
-        client.put_object(bucket_name, object_name, file.file, len(content), content_type=content_type)
+        client.put_object(bucket_name, object_name, io.BytesIO(content), len(content), content_type=content_type)
         file_url = f"http://{settings.minio_endpoint}/{bucket_name}/{object_name}"
         return {"url": file_url, "object_name": object_name, "content_type": content_type, "size": len(content)}
     except Exception as exc:

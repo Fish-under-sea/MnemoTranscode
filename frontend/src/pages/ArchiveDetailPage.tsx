@@ -24,6 +24,7 @@ import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberStatusBadge from '@/components/member/MemberStatusBadge'
 import MemberStatusInput from '@/components/member/MemberStatusInput'
+import Avatar from '@/components/ui/Avatar'
 
 type NewMemberState = {
   name: string
@@ -287,6 +288,7 @@ export default function ArchiveDetailPage() {
                   birth_year?: number
                   end_year?: number
                   status?: string
+                  avatar_url?: string | null
                 }
                 const rel = m.relationship ?? m.relationship_type ?? ''
                 return (
@@ -296,12 +298,20 @@ export default function ArchiveDetailPage() {
                       className="block no-underline text-inherit"
                     >
                       <Card hoverable className="h-full">
-                        <div className="flex items-center justify-between gap-2 pr-10">
-                          <div className="min-w-0">
-                            <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
-                            {rel && <p className="text-sm text-ink-secondary">{rel}</p>}
+                        <div className="flex items-start justify-between gap-3 pr-10">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <Avatar
+                              src={m.avatar_url ?? undefined}
+                              name={m.name}
+                              size={48}
+                              className="shrink-0 ring-2 ring-border-default"
+                            />
+                            <div className="min-w-0">
+                              <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
+                              {rel && <p className="text-sm text-ink-secondary truncate">{rel}</p>}
+                            </div>
                           </div>
-                          <MessageCircle size={18} className="shrink-0 text-jade-600" aria-hidden />
+                          <MessageCircle size={18} className="shrink-0 text-jade-600 mt-1" aria-hidden />
                         </div>
                         <div className="mt-3">
                           <MemberStatusBadge

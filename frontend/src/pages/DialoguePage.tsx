@@ -1,10 +1,10 @@
 // frontend/src/pages/DialoguePage.tsx
-import { useRef, useEffect, KeyboardEvent } from 'react'
+import { useRef, useEffect, KeyboardEvent, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useQuery, useQueries } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
-import { Trash2, Send, ChevronRight, MessageCircle } from 'lucide-react'
-import { archiveApi } from '@/services/api'
+import { Trash2, Send, ChevronRight, BookmarkPlus } from 'lucide-react'
+import { archiveApi, memoryApi } from '@/services/api'
 import { Button } from '@/components/ui/Button'
 import PageTransition from '@/components/ui/PageTransition'
 import MemberStatusBadge from '@/components/member/MemberStatusBadge'
@@ -13,6 +13,9 @@ import ChatBubble from '@/components/dialogue/ChatBubble'
 import { useDialogue } from '@/hooks/useDialogue'
 import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import Avatar from '@/components/ui/Avatar'
+import toast from 'react-hot-toast'
+import { useApiError } from '@/hooks/useApiError'
 
 const STARTER_PROMPTS = [
   '你最难忘的一件事是什么？',
@@ -23,6 +26,8 @@ const STARTER_PROMPTS = [
 export default function DialoguePage() {
   const { archiveId, memberId } = useParams<{ archiveId?: string; memberId?: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { show: showError } = useApiError()
   const archiveParsed = archiveId ? Number(archiveId) : NaN
   const memberParsed = memberId ? Number(memberId) : NaN
   const hasChatContext =
@@ -32,6 +37,8 @@ export default function DialoguePage() {
     memberParsed > 0
   const archiveIdNum = hasChatContext ? archiveParsed : undefined
   const memberIdNum = hasChatContext ? memberParsed : undefined
+
+  const [extractMemoriesAfter, setExtractMemoriesAfter] = useState(false)
 
   const needsMemberPicker = !hasChatContext
 
@@ -68,9 +75,36 @@ export default function DialoguePage() {
     isSending,
     isTyping,
     displayedContent,
+    graphMemoryActive,
     send,
     clear,
-  } = useDialogue({ archiveId: archiveIdNum, memberId: memberIdNum })
+  } = useDialogue({
+    archiveId: archiveIdNum,
+    memberId: memberIdNum,
+    extractMemoriesAfter,
+  })
+
+  const extractMutation = useMutation({
+    mutationFn: () => {
+      const lines = messages
+        .filter((m) => m.content.trim().length > 0)
+        .slice(-60)
+        .map((m) => ({ role: m.role, content: m.content }))
+      return memoryApi.extractFromConversation({
+        member_id: memberIdNum!,
+        messages: lines,
+        build_graph: true,
+      })
+    },
+    onSuccess: (data) => {
+      toast.success(
+        `已写入 ${data.created_count} 条记忆（时间链 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}）`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['memories'] })
+      void queryClient.invalidateQueries({ queryKey: ['mnemo-graph'] })
+    },
+    onError: (e) => showError(e),
+  })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -87,6 +121,7 @@ export default function DialoguePage() {
   }
 
   const memberName = (member as any)?.name || (archive as any)?.name || 'AI 助手'
+  const memberAvatarUrl = (member as { avatar_url?: string | null } | undefined)?.avatar_url ?? undefined
 
   /** 侧边栏（及移动端）：从档案加载的可选对话成员 */
   const pickerBody = (
@@ -105,7 +140,7 @@ export default function DialoguePage() {
       ) : (
         (archivesForPicker as { id: number; name?: string }[]).map((a, idx) => {
           const mq = memberQueries[idx]
-          const members = (mq?.data ?? []) as { id: number; name?: string }[]
+          const members = (mq?.data ?? []) as { id: number; name?: string; avatar_url?: string | null }[]
           const loadingMembers = mq?.isLoading ?? true
           return (
             <div key={a.id} className="space-y-1.5">
@@ -128,7 +163,12 @@ export default function DialoguePage() {
                         onClick={() => void navigate(`/dialogue/${a.id}/${m.id}`)}
                         className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm text-ink-primary hover:bg-jade-50 hover:text-jade-800 border border-transparent hover:border-jade-200 transition-colors"
                       >
-                        <MessageCircle size={16} className="text-jade-600 shrink-0" />
+                        <Avatar
+                          src={m.avatar_url ?? undefined}
+                          name={m.name ?? `成员 ${m.id}`}
+                          size={28}
+                          className="shrink-0 ring-1 ring-border-default"
+                        />
                         <span className="truncate">{m.name ?? `成员 ${m.id}`}</span>
                       </button>
                     </li>
@@ -181,9 +221,12 @@ export default function DialoguePage() {
               <div className="space-y-4">
                 {/* 成员信息 */}
                 <div className="space-y-2">
-                  <div className="w-12 h-12 rounded-full bg-jade-100 flex items-center justify-center text-jade-700 font-display font-bold text-lg">
-                    {(member as any).name?.charAt(0) || '?'}
-                  </div>
+                  <Avatar
+                    src={memberAvatarUrl}
+                    name={memberName}
+                    size={48}
+                    className="ring-2 ring-border-default"
+                  />
                   <div>
                     <div className="font-medium text-ink-primary">{(member as any).name}</div>
                     <div className="text-caption text-ink-muted">{(member as any).relationship_type}</div>
@@ -238,6 +281,20 @@ export default function DialoguePage() {
                 <p className="text-caption text-ink-muted">{(member as any).relationship_type}</p>
               )}
             </div>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<BookmarkPlus size={14} />}
+              loading={extractMutation.isPending}
+              disabled={
+                !hasChatContext || !messages.some((m) => m.content.trim().length > 0)
+              }
+              onClick={() => extractMutation.mutate()}
+              title="将当前对话窗口中的内容提炼为记忆并入关系网"
+            >
+              写入记忆
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -248,6 +305,22 @@ export default function DialoguePage() {
               清空
             </Button>
           </div>
+          </div>
+
+          {hasChatContext && graphMemoryActive && (
+            <div
+              className="px-4 py-2.5 bg-jade-50/95 border-b border-jade-100/80 text-caption text-jade-900 flex items-center gap-2 shrink-0"
+              role="status"
+            >
+              <span
+                className="inline-flex h-2 w-2 rounded-full bg-jade-500 shrink-0"
+                aria-hidden
+              />
+              <span>
+                图记忆已参与本轮对话：扩散激活 + 意识流上下文已由后端注入（MnemoTranscode）
+              </span>
+            </div>
+          )}
 
           {/* 消息列表 */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -305,6 +378,9 @@ export default function DialoguePage() {
                           role={msg.role}
                           content={msg.content}
                           memberName={msg.role === 'assistant' ? memberName : undefined}
+                          assistantAvatarSrc={
+                            msg.role === 'assistant' ? memberAvatarUrl : undefined
+                          }
                           typingContent={
                             isCurrentlyTyping
                               ? (isTyping ? displayedContent : undefined)
@@ -357,6 +433,17 @@ export default function DialoguePage() {
             <p className="text-caption text-ink-muted mt-1.5 text-center">
               Enter 发送 · Shift + Enter 换行
             </p>
+            {hasChatContext && (
+              <label className="flex items-center justify-center gap-2 mt-2 text-caption text-ink-secondary cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={extractMemoriesAfter}
+                  onChange={(e) => setExtractMemoriesAfter(e.target.checked)}
+                  className="rounded border-border-default text-jade-600 focus:ring-jade-500"
+                />
+                发送后提炼记忆并入关系网（需可用的 LLM，略慢）
+              </label>
+            )}
           </div>
         </div>
       </div>

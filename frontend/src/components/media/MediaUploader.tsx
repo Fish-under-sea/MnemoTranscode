@@ -2,7 +2,7 @@
  * 两阶段直传 + 进度 + 失败重试 1 次
  */
 import { useState, useRef } from 'react'
-import { mediaApi, uploadToPresignedUrl, type MediaAsset, type MediaPurpose } from '@/services/api'
+import { mediaApi, type MediaAsset, type MediaPurpose } from '@/services/api'
 import Button from '@/components/ui/Button'
 import { useApiError } from '@/hooks/useApiError'
 import { Upload, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
@@ -81,36 +81,20 @@ export default function MediaUploader({
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         setItem(item.id, { status: 'putting', progress: 0, error: undefined })
-        const initRes = await mediaApi.initUpload({
-          filename: item.file.name,
-          content_type: item.file.type || 'application/octet-stream',
-          size: item.file.size,
-          purpose: purpose as MediaPurpose,
-          archive_id: archiveId,
-          member_id: memberId,
-        })
-        setItem(item.id, { status: 'putting', progress: 0 })
-        await uploadToPresignedUrl(
-          initRes.put_url,
-          item.file,
-          item.file.type || 'application/octet-stream',
+        const completeRes = await mediaApi.uploadDirect(
+          {
+            file: item.file,
+            purpose: purpose as MediaPurpose,
+            archive_id: archiveId,
+            member_id: memberId,
+          },
           (pct) => setItem(item.id, { progress: pct }),
         )
-        setItem(item.id, { status: 'completing', progress: 100 })
-        const completeRes = await mediaApi.completeUpload({
-          upload_id: initRes.upload_id,
-          object_key: initRes.object_key,
-          size: item.file.size,
-        })
-        if (completeRes.media_id == null) {
-          if (attempt === 0) continue
-          return { ...item, status: 'failed', error: '服务器未返回 media_id' }
-        }
         return {
           ...item,
           status: 'done',
           progress: 100,
-          result: { media_id: completeRes.media_id, object_key: initRes.object_key },
+          result: { media_id: completeRes.media_id, object_key: completeRes.object_key },
         }
       } catch (err) {
         if (attempt === 0) continue

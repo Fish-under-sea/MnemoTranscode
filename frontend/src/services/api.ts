@@ -133,7 +133,7 @@ export const authApi = {
   uploadAvatar: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return api.post('/auth/avatar', form)
+    return api.post('/auth/avatar', form, { timeout: 120_000 })
   },
 
   deleteAvatar: () => api.delete('/auth/avatar'),
@@ -199,6 +199,21 @@ export const archiveApi = {
 
   deleteMember: (archiveId: number, memberId: number) =>
     api.delete(`/archives/${archiveId}/members/${memberId}`),
+
+  uploadMemberAvatar: (archiveId: number, memberId: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >(`/archives/${archiveId}/members/${memberId}/avatar`, form, { timeout: 120_000 })
+  },
+
+  deleteMemberAvatar: (archiveId: number, memberId: number) =>
+    api.delete<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >(`/archives/${archiveId}/members/${memberId}/avatar`),
 }
 
 // ========== 记忆相关 ==========
@@ -229,6 +244,35 @@ export const memoryApi = {
 
   search: (query: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/memories/search', { query, ...params }),
+
+  importChat: (data: {
+    member_id: number
+    raw_text: string
+    source?: 'auto' | 'wechat' | 'plain'
+    build_graph?: boolean
+  }) =>
+    api.post<
+      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number },
+      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number }
+    >('/memories/import-chat', data),
+
+  extractFromConversation: (data: {
+    member_id: number
+    messages: { role: string; content: string }[]
+    build_graph?: boolean
+  }) =>
+    api.post<
+      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number },
+      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number }
+    >('/memories/extract-from-conversation', data),
+
+  mnemoGraph: (memberId: number) =>
+    api.get<
+      { member_id: number; nodes: unknown[]; edges: unknown[] },
+      { member_id: number; nodes: unknown[]; edges: unknown[] }
+    >('/memories/mnemo-graph', {
+      params: { member_id: memberId },
+    }),
 }
 
 // ========== AI 对话相关 ==========
@@ -243,8 +287,15 @@ export const dialogueApi = {
     history_limit?: number
     /** 与模型设置对齐；提供则服务端优先于其 LLM_* 环境变量 */
     client_llm?: ClientLlmPayload | null
+    /** 本轮对话结束后提炼记忆并写入链式图 */
+    extract_memories_after?: boolean
   }) =>
-    api.post('/dialogue/chat', data, {
+    api.post<{
+      reply: string
+      mnemo_mode?: boolean
+      session_id?: string
+      memories_created?: number
+    }>('/dialogue/chat', data, {
       timeout: 90_000,
     }),
 
@@ -408,12 +459,44 @@ export interface UploadCompleteResponse {
   status: string
 }
 
+export interface UploadDirectResponse {
+  media_id: number
+  object_key: string
+  upload_id: string
+  status: string
+}
+
 export const mediaApi = {
   initUpload: (data: UploadInitRequest): Promise<UploadInitResponse> =>
     api.post('/media/uploads/init', data),
 
   completeUpload: (data: UploadCompleteRequest): Promise<UploadCompleteResponse> =>
     api.post('/media/uploads/complete', data),
+
+  /** 经 API 一次 multipart 上传到 MinIO（相册/媒体，避免浏览器直连预签名 URL） */
+  uploadDirect: (
+    data: {
+      file: File
+      purpose: MediaPurpose
+      archive_id?: number
+      member_id?: number
+    },
+    onProgress?: (percent: number) => void,
+  ): Promise<UploadDirectResponse> => {
+    const form = new FormData()
+    form.append('file', data.file)
+    form.append('purpose', data.purpose)
+    if (data.archive_id != null) form.append('archive_id', String(data.archive_id))
+    if (data.member_id != null) form.append('member_id', String(data.member_id))
+    return api.post<UploadDirectResponse, UploadDirectResponse>('/media/uploads/direct', form, {
+      timeout: 300_000,
+      onUploadProgress: (e) => {
+        if (e.total && onProgress) {
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
+      },
+    })
+  },
 
   getDownloadUrl: (mediaId: number): Promise<{ get_url: string; expires_in: number }> =>
     api.get(`/media/${mediaId}/download-url`),
@@ -433,6 +516,7 @@ export async function uploadToPresignedUrl(
 ): Promise<void> {
   await axios.put(putUrl, file, {
     headers: { 'Content-Type': contentType },
+    timeout: 300_000,
     onUploadProgress: (e) => {
       if (e.total && onProgress) {
         onProgress(Math.round((e.loaded / e.total) * 100))

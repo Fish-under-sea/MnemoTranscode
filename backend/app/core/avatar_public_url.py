@@ -68,6 +68,54 @@ def verify_avatar_file_signature(
     return hmac.compare_digest(expected, sig)
 
 
+def _member_avatar_signature(
+    owner_id: int, archive_id: int, member_id: int, object_key: str, exp: int
+) -> str:
+    s = get_settings()
+    msg = f"{owner_id}:{archive_id}:{member_id}:{object_key}:{exp}".encode("utf-8")
+    return hmac.new(s.secret_key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def verify_member_avatar_file_signature(
+    owner_id: int,
+    archive_id: int,
+    member_id: int,
+    stored_url: str | None,
+    exp: int,
+    sig: str,
+) -> bool:
+    key = parse_object_key_from_stored_url(stored_url)
+    if not key:
+        return False
+    if int(time.time()) > exp:
+        return False
+    expected = _member_avatar_signature(owner_id, archive_id, member_id, key, exp)
+    return hmac.compare_digest(expected, sig)
+
+
+def build_member_avatar_display_url(
+    owner_id: int,
+    archive_id: int,
+    member_id: int,
+    stored_avatar_url: str | None,
+) -> str | None:
+    """成员头像：同源 /api 拉流，参数与用户头像一致地依赖 HMAC + 过期时间。"""
+    key = parse_object_key_from_stored_url(stored_avatar_url)
+    if not key:
+        return None
+    s = get_settings()
+    exp = int(time.time()) + int(s.minio_presign_avatar_hours * 3600)
+    sig = _member_avatar_signature(owner_id, archive_id, member_id, key, exp)
+    path = (
+        f"/api/v1/archives/{archive_id}/members/{member_id}/avatar-file"
+        f"?exp={exp}&sig={sig}"
+    )
+    base = (s.app_public_origin or "").strip().rstrip("/")
+    if base:
+        return f"{base}{path}"
+    return path
+
+
 def build_avatar_display_url(user_id: int, stored_avatar_url: str | None) -> str | None:
     """返回可放在 <img src> 的地址：同源 /api 反代，无需浏览器直连 MinIO、不依赖预签名外网。
 

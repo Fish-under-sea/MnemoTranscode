@@ -4,17 +4,18 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FileText, MessageCircle, Plus } from 'lucide-react'
+import { FileText, MessageCircle, Plus, MessageSquareShare } from 'lucide-react'
 import { motion } from 'motion/react'
 import { archiveApi, memoryApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
 import { EMOTION_LABELS, RADIX_SELECT_NONE } from '@/lib/utils'
+import MemoryRelationGraph from '@/components/memory/MemoryRelationGraph'
 import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
 import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -40,6 +41,53 @@ export default function MemberDetailPage() {
     emotion_label: '',
   })
   const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
+
+  const [importChatOpen, setImportChatOpen] = useState(false)
+  const [importRaw, setImportRaw] = useState('')
+  const [importSource, setImportSource] = useState<'auto' | 'wechat' | 'plain'>('auto')
+
+  const avatarFileRef = useRef<HTMLInputElement>(null)
+
+  const uploadMemberAvatarMutation = useMutation({
+    mutationFn: (file: File) =>
+      archiveApi.uploadMemberAvatar(Number(archiveId), Number(memberId), file) as Promise<unknown>,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', archiveId, memberId] })
+      void queryClient.invalidateQueries({ queryKey: ['members', archiveId] })
+      toast.success('头像已更新')
+    },
+    onError: (err) => show(err),
+  })
+
+  const deleteMemberAvatarMutation = useMutation({
+    mutationFn: () => archiveApi.deleteMemberAvatar(Number(archiveId), Number(memberId)) as Promise<unknown>,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', archiveId, memberId] })
+      void queryClient.invalidateQueries({ queryKey: ['members', archiveId] })
+      toast.success('已恢复默认头像')
+    },
+    onError: (err) => show(err),
+  })
+
+  const importChatMutation = useMutation({
+    mutationFn: () =>
+      memoryApi.importChat({
+        member_id: Number(memberId),
+        raw_text: importRaw,
+        source: importSource,
+        build_graph: true,
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+      queryClient.invalidateQueries({ queryKey: ['mnemo-graph', Number(memberId)] })
+      setImportChatOpen(false)
+      setImportRaw('')
+      toast.success(
+        `已导入 ${data.created_count} 条记忆；时间链边 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}`,
+      )
+    },
+    onError: (err) => show(err),
+  })
 
   const EMOTION_OPTIONS = [
     { value: RADIX_SELECT_NONE, label: '（无）' },
@@ -79,6 +127,7 @@ export default function MemberDetailPage() {
       }) as Promise<unknown>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+      queryClient.invalidateQueries({ queryKey: ['mnemo-graph', Number(memberId)] })
       setCreateMemoryModal(false)
       setNewMemory({ title: '', content_text: '', timestamp: '', location: '', emotion_label: '' })
       toast.success('记忆创建成功')
@@ -114,13 +163,58 @@ export default function MemberDetailPage() {
 
       <motion.div variants={fadeUp}>
         <Card variant="plain" className="mb-6">
-          <MemberProfile member={member} />
+          <MemberProfile
+            member={member}
+            actions={
+              <>
+                <input
+                  ref={avatarFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="sr-only"
+                  aria-hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    if (f) uploadMemberAvatarMutation.mutate(f)
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  type="button"
+                  loading={uploadMemberAvatarMutation.isPending}
+                  onClick={() => avatarFileRef.current?.click()}
+                >
+                  更换头像
+                </Button>
+                {Boolean((member as { avatar_url?: string | null }).avatar_url) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    loading={deleteMemberAvatarMutation.isPending}
+                    onClick={() => deleteMemberAvatarMutation.mutate()}
+                  >
+                    移除头像
+                  </Button>
+                )}
+              </>
+            }
+          />
           <div className="mt-4 flex flex-wrap gap-2">
             <Button
               leftIcon={<MessageCircle size={18} />}
               onClick={() => void navigate(`/dialogue/${archiveId}/${memberId}`)}
             >
               与 Ta 对话
+            </Button>
+            <Button
+              variant="secondary"
+              leftIcon={<MessageSquareShare size={18} />}
+              onClick={() => setImportChatOpen(true)}
+            >
+              导入聊天记录
             </Button>
             <span className="text-body-sm text-ink-muted self-center ml-auto">
               {memories.length} 条记忆
@@ -146,6 +240,16 @@ export default function MemberDetailPage() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
+        <Card variant="plain" className="mb-6">
+          <h2 className="text-body-lg font-medium text-ink-primary mb-3">记忆关系网</h2>
+          <p className="text-caption text-ink-muted mb-4">
+            基于 Engram 图：导入聊天或开启对话提炼后，会出现时间链（TEMPORAL_NEXT）与 AI 推断的因果/主题边。
+          </p>
+          <MemoryRelationGraph memberId={Number(memberId)} />
+        </Card>
+      </motion.div>
+
+      <motion.div variants={fadeUp}>
         <Card variant="plain">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-medium text-ink-primary text-body-lg flex items-center gap-2">
@@ -158,12 +262,19 @@ export default function MemberDetailPage() {
           </div>
 
           {memories.length === 0 ? (
-            <EmptyState
-              icon={FileText}
-              title="还没有记忆条目"
-              description="讲述你们的故事吧"
-              action={{ label: '添加记忆', onClick: () => setCreateMemoryModal(true) }}
-            />
+            <div>
+              <EmptyState
+                icon={FileText}
+                title="还没有记忆条目"
+                description="可点击右上角「添加记忆」手写条目；或使用成员卡片上的「导入聊天记录」粘贴导出 txt，系统会解析并生成链式记忆关系网。"
+                action={{ label: '添加记忆', onClick: () => setCreateMemoryModal(true) }}
+              />
+              <div className="flex justify-center -mt-4 mb-4">
+                <Button variant="secondary" size="sm" onClick={() => setImportChatOpen(true)}>
+                  导入聊天记录
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               {memories.map((memory: Record<string, unknown>) => {
@@ -288,6 +399,54 @@ export default function MemberDetailPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={importChatOpen}
+        onClose={() => setImportChatOpen(false)}
+        title="导入聊天记录"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-caption text-ink-muted leading-relaxed">
+            粘贴微信、QQ 等导出的 txt 全文。系统会解析为多段记忆，写入数据库并生成
+            <strong className="font-medium text-ink-secondary"> 时间链 + AI 推断的关联边 </strong>
+           （需在后台配置可用的 LLM）。
+          </p>
+          <Select
+            label="解析模式"
+            options={[
+              { value: 'auto', label: '自动识别（推荐）' },
+              { value: 'wechat', label: '微信风格（日期/昵称行）' },
+              { value: 'plain', label: '纯文本：按空行分段' },
+            ]}
+            value={importSource}
+            onValueChange={(v) => setImportSource(v as 'auto' | 'wechat' | 'plain')}
+            fullWidth
+          />
+          <Textarea
+            label="聊天原文"
+            value={importRaw}
+            onChange={(e) => setImportRaw(e.target.value)}
+            rows={12}
+            placeholder="在此粘贴…"
+            fullWidth
+          />
+          <div className="flex gap-3">
+            <Button variant="ghost" type="button" onClick={() => setImportChatOpen(false)} fullWidth>
+              取消
+            </Button>
+            <Button
+              type="button"
+              loading={importChatMutation.isPending}
+              disabled={!importRaw.trim()}
+              onClick={() => importChatMutation.mutate()}
+              fullWidth
+            >
+              导入并构建关系网
+            </Button>
+          </div>
+        </div>
       </Modal>
     </motion.div>
   )

@@ -205,6 +205,8 @@ class MemberResponse(MemberBase):
     emotion_tags: list[str] = []
     memory_count: int = 0
     created_at: datetime
+    # 展示用签名 URL；无头像时为 None
+    avatar_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -272,3 +274,54 @@ class MemorySearchResponse(BaseModel):
     results: list[MemoryResponse]
     query: str
     total: int
+
+
+# —— 聊天记录导入 / 对话提炼 / 关系网 ——#
+
+class ChatImportRequest(BaseModel):
+    """微信或聊天导出的纯文本导入"""
+    member_id: int = Field(..., ge=1)
+    raw_text: str = Field(..., min_length=1, max_length=500_000)
+    source: Literal["auto", "wechat", "plain"] = "auto"
+    build_graph: bool = True
+
+
+class ChatImportResponse(BaseModel):
+    created_count: int
+    memory_ids: list[int]
+    graph_temporal_edges: int
+    graph_llm_edges: int
+
+
+class ConversationExtractRequest(BaseModel):
+    """从对话消息列表提炼记忆"""
+    member_id: int = Field(..., ge=1)
+    messages: list[dict] = Field(..., min_length=1, max_length=60)
+    build_graph: bool = True
+
+
+class ConversationExtractResponse(BaseModel):
+    created_count: int
+    memory_ids: list[int]
+    graph_temporal_edges: int
+    graph_llm_edges: int
+
+
+class MnemoGraphNode(BaseModel):
+    id: str
+    node_type: str
+    label: str
+    memory_id: int | None = None
+
+
+class MnemoGraphEdge(BaseModel):
+    from_id: str
+    to_id: str
+    edge_type: str
+    weight: float
+
+
+class MnemoGraphResponse(BaseModel):
+    member_id: int
+    nodes: list[MnemoGraphNode]
+    edges: list[MnemoGraphEdge]

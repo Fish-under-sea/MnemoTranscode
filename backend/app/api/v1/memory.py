@@ -2,6 +2,7 @@
 记忆 CRUD API 路由
 """
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, status
@@ -14,15 +15,32 @@ from app.core.exceptions import DomainAuthError, DomainInternalError, DomainReso
 from app.models.user import User
 from app.models.memory import Memory, Member, Archive
 from app.schemas.memory import (
-    MemoryCreate, MemoryUpdate, MemoryResponse,
-    MemorySearchRequest, MemorySearchResponse,
+    MemoryCreate,
+    MemoryUpdate,
+    MemoryResponse,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    ChatImportRequest,
+    ChatImportResponse,
+    ConversationExtractRequest,
+    ConversationExtractResponse,
+    MnemoGraphResponse,
+    MnemoGraphNode,
+    MnemoGraphEdge,
 )
 from app.api.v1.auth import get_current_user
 from app.services.vector_service import VectorService
 from app.core.config import get_settings
+from app.models.engram import EngramNode, EngramEdge
+from app.mnemo.sync_memories import ensure_memory_engram
+from app.mnemo.chain_enricher import enrich_after_memories_created
+from app.services.chat_import_parser import parse_chat_import
+from app.services.conversation_memory_extract import extract_and_save_memories
+from app.services.llm_service import LLMService
 
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def memory_to_response(m: Memory) -> MemoryResponse:
@@ -45,6 +63,138 @@ def memory_to_response(m: Memory) -> MemoryResponse:
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
+
+
+async def _require_member_for_user(db: AsyncSession, current_user: User, member_id: int) -> Member:
+    result = await db.execute(
+        select(Member)
+        .join(Archive, Member.archive_id == Archive.id)
+        .where(Member.id == member_id, Archive.owner_id == current_user.id)
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在或无权访问")
+    return member
+
+
+@router.post("/import-chat", response_model=ChatImportResponse)
+async def import_chat_log(
+    body: ChatImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """导入微信/聊天工具导出的纯文本，批量建记忆并构图。"""
+    await _require_member_for_user(db, current_user, body.member_id)
+    drafts = parse_chat_import(body.raw_text, source=body.source)
+    if not drafts:
+        raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="未能从文本中解析出有效片段")
+
+    created: list[Memory] = []
+    for d in drafts[:500]:
+        ts = d.occurred_at or datetime.now(timezone.utc)
+        memory = Memory(
+            title=d.title[:200],
+            content_text=d.content_text[:20000],
+            member_id=body.member_id,
+            timestamp=ts,
+            emotion_label=None,
+        )
+        db.add(memory)
+        await db.flush()
+        await db.refresh(memory)
+        created.append(memory)
+        try:
+            await ensure_memory_engram(db, memory, current_user.id)
+        except Exception as exc:
+            logger.warning("导入记忆入图失败 id=%s: %s", memory.id, exc)
+
+    llm = LLMService()
+    stats = {"temporal_edges": 0, "llm_edges": 0}
+    if body.build_graph and len(created) >= 2:
+        try:
+            stats = await enrich_after_memories_created(db, current_user.id, created, llm)
+        except Exception as exc:
+            logger.warning("导入后构图失败: %s", exc)
+
+    return ChatImportResponse(
+        created_count=len(created),
+        memory_ids=[m.id for m in created],
+        graph_temporal_edges=int(stats.get("temporal_edges", 0)),
+        graph_llm_edges=int(stats.get("llm_edges", 0)),
+    )
+
+
+@router.post("/extract-from-conversation", response_model=ConversationExtractResponse)
+async def extract_from_conversation(
+    body: ConversationExtractRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """根据多轮对话（user/assistant）提炼记忆并写入链式图。"""
+    await _require_member_for_user(db, current_user, body.member_id)
+    llm = LLMService()
+    created, stats = await extract_and_save_memories(
+        db,
+        user_id=current_user.id,
+        member_id=body.member_id,
+        messages=body.messages,
+        llm=llm,
+        build_graph=body.build_graph,
+    )
+    return ConversationExtractResponse(
+        created_count=len(created),
+        memory_ids=[m.id for m in created],
+        graph_temporal_edges=int(stats.get("temporal_edges", 0)),
+        graph_llm_edges=int(stats.get("llm_edges", 0)),
+    )
+
+
+@router.get("/mnemo-graph", response_model=MnemoGraphResponse)
+async def get_mnemo_graph(
+    member_id: int = Query(..., ge=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """成员名下 Engram 节点与边（用于关系网展示）。"""
+    await _require_member_for_user(db, current_user, member_id)
+    nr = await db.execute(
+        select(EngramNode).where(
+            EngramNode.member_id == member_id,
+            EngramNode.user_id == current_user.id,
+            EngramNode.is_deprecated.is_(False),
+        )
+    )
+    nodes_orm = list(nr.scalars().all())
+    node_ids = {n.id for n in nodes_orm}
+    if not node_ids:
+        return MnemoGraphResponse(member_id=member_id, nodes=[], edges=[])
+
+    er = await db.execute(
+        select(EngramEdge).where(
+            EngramEdge.from_node_id.in_(node_ids),
+            EngramEdge.to_node_id.in_(node_ids),
+        )
+    )
+    edges_orm = list(er.scalars().all())
+    nodes = [
+        MnemoGraphNode(
+            id=n.id,
+            node_type=n.node_type,
+            label=(n.content or "")[:80] + ("…" if len(n.content or "") > 80 else ""),
+            memory_id=n.memory_id,
+        )
+        for n in nodes_orm
+    ]
+    edges = [
+        MnemoGraphEdge(
+            from_id=e.from_node_id,
+            to_id=e.to_node_id,
+            edge_type=e.edge_type,
+            weight=float(e.weight or 0.5),
+        )
+        for e in edges_orm
+    ]
+    return MnemoGraphResponse(member_id=member_id, nodes=nodes, edges=edges)
 
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
@@ -78,6 +228,10 @@ async def create_memory(
     db.add(memory)
     await db.commit()
     await db.refresh(memory)
+    try:
+        await ensure_memory_engram(db, memory, current_user.id)
+    except Exception as exc:
+        logger.warning("记忆入 Engram 图失败（可稍后由对话预热补全）: %s", exc)
 
     return MemoryResponse(
         id=memory.id,

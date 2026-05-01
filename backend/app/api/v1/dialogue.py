@@ -5,8 +5,11 @@ AI 对话 API 路由（整合 KouriChat 核心逻辑）
 1. 原生软件内对话（Web UI 直接对话）
 2. 微信聊天转接（KouriChat 微信消息转发）
 3. QQ 聊天转接（待开发）
+
+MnemoTranscode：指定 member_id 时可走图记忆 + 扩散激活 + 意识召回；失败自动回退传统模式。
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +27,7 @@ from app.schemas.client_llm import ClientLlmOverride
 
 router = APIRouter(prefix="/dialogue", tags=["AI对话"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class DialogueRequest(BaseModel):
@@ -36,6 +40,8 @@ class DialogueRequest(BaseModel):
     history_limit: int = Field(default=10, ge=0, le=50)  # 携带的历史消息条数
     # 与前端「模型设置」一致：附带则优先于服务端 LLM_* 环境变量（OpenAI 兼容网关）
     client_llm: ClientLlmOverride | None = None
+    # 在本轮 user+assistant 写入会话后，用 LLM 提炼记忆并写入链式图（略增加耗时）
+    extract_memories_after: bool = False
 
 
 class DialogueResponse(BaseModel):
@@ -46,6 +52,10 @@ class DialogueResponse(BaseModel):
     member_name: str | None = None
     tts_audio_url: str | None = None
     session_id: str | None = None
+    # 本轮是否走了 MnemoTranscode（图记忆 + 扩散激活 + 意识召回）
+    mnemo_mode: bool = False
+    # extract_memories_after 为 true 时，从本轮对话中新写入的记忆条数
+    memories_created: int = 0
 
 
 class DialogueHistoryRequest(BaseModel):
@@ -66,6 +76,13 @@ class DialogueHistoryResponse(BaseModel):
 _dialogue_sessions: dict[str, list[dict]] = {}
 
 
+def _llm_from_dialogue_request(request: DialogueRequest) -> LLMService:
+    if request.client_llm:
+        ov = request.client_llm
+        return LLMService(api_key=ov.api_key or "", base_url=ov.base_url, model=ov.model)
+    return LLMService()
+
+
 @router.post("/chat", response_model=DialogueResponse)
 async def chat(
     request: DialogueRequest,
@@ -83,10 +100,10 @@ async def chat(
     """
     session_id = request.session_id or f"{current_user.id}_{request.member_id or 'anon'}"
 
-    # 获取成员信息和档案上下文
     member_context = ""
     member_name = "AI 助手"
     member_id = request.member_id
+    member_obj: Member | None = None
 
     if request.member_id:
         result = await db.execute(
@@ -96,21 +113,83 @@ async def chat(
         )
         member = result.scalar_one_or_none()
         if member:
+            member_obj = member
             member_name = member.name
             member_id = member.id
-            member_context = _build_member_context(member, request.archive_id, db)
+            member_context = await _build_member_context(member, request.archive_id, db)
 
-    # 构建 system prompt
+    history = _dialogue_sessions.get(session_id, [])[-request.history_limit:]
+
+    use_mnemo = (
+        settings.mnemo_transcode_enabled
+        and request.member_id
+        and member_obj is not None
+    )
+    reply: str
+    mnemo_mode = False
+    if use_mnemo:
+        try:
+            reply = await _chat_mnemo_pipeline(
+                db=db,
+                current_user=current_user,
+                request=request,
+                member=member_obj,
+                member_name=member_name,
+                history=history,
+            )
+            mnemo_mode = True
+        except Exception as exc:
+            logger.exception("Mnemo 对话管线失败，回退传统模式: %s", exc)
+            reply = await _chat_llm_only(request, member_name, member_context, history)
+    else:
+        reply = await _chat_llm_only(request, member_name, member_context, history)
+
+    if session_id not in _dialogue_sessions:
+        _dialogue_sessions[session_id] = []
+    _dialogue_sessions[session_id].append({"role": "user", "content": request.message})
+    _dialogue_sessions[session_id].append({"role": "assistant", "content": reply})
+
+    memories_created = 0
+    if request.extract_memories_after and member_obj is not None:
+        try:
+            from app.services.conversation_memory_extract import extract_and_save_memories
+
+            full_turns = _dialogue_sessions.get(session_id, [])
+            ex_llm = _llm_from_dialogue_request(request)
+            created, _stats = await extract_and_save_memories(
+                db,
+                user_id=current_user.id,
+                member_id=member_obj.id,
+                messages=full_turns,
+                llm=ex_llm,
+                build_graph=True,
+            )
+            memories_created = len(created)
+        except Exception as exc:
+            logger.exception("对话后提炼记忆失败: %s", exc)
+
+    return DialogueResponse(
+        reply=reply,
+        channel=request.channel,
+        member_id=member_id,
+        member_name=member_name,
+        session_id=session_id,
+        mnemo_mode=mnemo_mode,
+        memories_created=memories_created,
+    )
+
+
+async def _chat_llm_only(
+    request: DialogueRequest,
+    member_name: str,
+    member_context: str,
+    history: list[dict],
+) -> str:
     system_prompt = _build_system_prompt(
         member_name=member_name,
         member_context=member_context,
         channel=request.channel,
     )
-
-    # 获取历史消息
-    history = _dialogue_sessions.get(session_id, [])[-request.history_limit:]
-
-    # 调用 LLM（可选使用浏览器端传来的 OpenAI 兼容端点）
     try:
         if request.client_llm:
             ov = request.client_llm
@@ -121,27 +200,68 @@ async def chat(
             )
         else:
             llm_service = LLMService()
-        reply = await llm_service.get_response(
+        return await llm_service.get_response(
             message=request.message,
             system_prompt=system_prompt,
             history=history,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 服务调用失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI 服务调用失败: {str(e)}") from e
 
-    # 更新对话历史
-    if session_id not in _dialogue_sessions:
-        _dialogue_sessions[session_id] = []
-    _dialogue_sessions[session_id].append({"role": "user", "content": request.message})
-    _dialogue_sessions[session_id].append({"role": "assistant", "content": reply})
 
-    return DialogueResponse(
-        reply=reply,
-        channel=request.channel,
-        member_id=member_id,
-        member_name=member_name,
-        session_id=session_id,
+async def _chat_mnemo_pipeline(
+    *,
+    db: AsyncSession,
+    current_user: User,
+    request: DialogueRequest,
+    member: Member,
+    member_name: str,
+    history: list[dict],
+) -> str:
+    from app.mnemo.graph_sql import SqlAlchemyGraphManager
+    from app.mnemo.activation_engine import ActivationEngine
+    from app.mnemo.conscious_recall import ConsciousRecall, self_core_from_member
+    from app.mnemo.chat_pipeline import ChatPipeline
+    from app.mnemo.sync_memories import bootstrap_member_engrams, ensure_member_person_anchor
+
+    await bootstrap_member_engrams(db, member.id, current_user.id)
+    await ensure_member_person_anchor(db, member, current_user.id)
+
+    graph = SqlAlchemyGraphManager(db, current_user.id)
+    activation = ActivationEngine(graph)
+    vector = VectorService()
+    ov = request.client_llm
+    recall = ConsciousRecall(
+        graph=graph,
+        activation_engine=activation,
+        vector=vector,
+        user_id=current_user.id,
+        member_id=member.id,
+        embedding_api_key=(ov.api_key if ov else None) or None,
+        embedding_base_url=(ov.base_url if ov else None) or None,
     )
+    if request.client_llm:
+        ov2 = request.client_llm
+        llm = LLMService(api_key=ov2.api_key or "", base_url=ov2.base_url, model=ov2.model)
+    else:
+        llm = LLMService()
+
+    base_system = _build_system_prompt_mnemo(
+        member_name=member_name,
+        member_context_slim=await _build_member_context_slim(member, db),
+        channel=request.channel,
+    )
+    pipeline = ChatPipeline(
+        graph=graph,
+        activation=activation,
+        recall=recall,
+        llm=llm,
+        self_core=self_core_from_member(member),
+        base_system_prompt=base_system,
+        member_id=member.id,
+        consolidator=None,
+    )
+    return await pipeline.chat(request.message, history=history)
 
 
 @router.post("/history", response_model=DialogueHistoryResponse)
@@ -193,6 +313,47 @@ def _build_system_prompt(member_name: str, member_context: str, channel: str) ->
 """
 
 
+def _build_system_prompt_mnemo(
+    member_name: str,
+    member_context_slim: str,
+    channel: str,
+) -> str:
+    """Mnemo 路径：具体记忆由意识前置流注入，此处仅保留角色与渠道约束。"""
+    channel_desc = {
+        "app": "在 MTC 应用内直接对话",
+        "wechat": "通过微信消息与你对话",
+        "qq": "通过 QQ 消息与你对话",
+    }
+    return f"""你是数字角色「{member_name}」。
+{member_context_slim}
+
+## 对话规则
+- 用 {member_name} 的口吻回应；下文「意识前置流」中的激活记忆是你此刻可用的内在联想材料
+- 以第一人称自然对话，避免机械罗列
+- 对记忆中不存在的内容诚实、温和
+
+## 当前对话渠道
+{channel_desc.get(channel, "应用内对话")}
+"""
+
+
+async def _build_member_context_slim(member: Member, db: AsyncSession) -> str:
+    """Mnemo 用精简档案（长篇记忆由图激活补充）。"""
+    parts: list[str] = []
+    if member.bio:
+        parts.append(f"人物简介：{member.bio}")
+    if member.relationship_type:
+        parts.append(f"与你的关系：{member.relationship_type}")
+    if member.birth_year:
+        birth_info = f"出生于 {member.birth_year} 年"
+        if member.end_year:
+            birth_info += f"（关系节点至 {member.end_year} 年）"
+        parts.append(birth_info)
+    if member.emotion_tags:
+        parts.append(f"情感标签：{', '.join(member.emotion_tags)}")
+    return "\n".join(parts) if parts else "暂无详细背景信息。"
+
+
 async def _build_member_context(member, archive_id, db: AsyncSession) -> str:
     """从数据库构建成员上下文"""
     context_parts = []
@@ -205,8 +366,8 @@ async def _build_member_context(member, archive_id, db: AsyncSession) -> str:
 
     if member.birth_year:
         birth_info = f"出生于 {member.birth_year} 年"
-        if member.death_year:
-            birth_info += f"，于 {member.death_year} 年去世"
+        if getattr(member, "end_year", None):
+            birth_info += f"（关系节点至 {member.end_year} 年）"
         context_parts.append(birth_info)
 
     if member.emotion_tags:

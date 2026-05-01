@@ -2,11 +2,14 @@
 import { cn } from '@/lib/utils'
 import { User } from 'lucide-react'
 import TypingIndicator from './TypingIndicator'
+import Avatar from '@/components/ui/Avatar'
 
 interface ChatBubbleProps {
   role: 'user' | 'assistant'
   content: string
   memberName?: string
+  /** 助手侧头像（成员自定义头像 URL） */
+  assistantAvatarSrc?: string
   /** 当前正在打字机渲染的内容（仅最后一条 assistant 消息传入） */
   typingContent?: string
   /** 是否显示打字机 loading 状态（content 为空时） */
@@ -17,6 +20,7 @@ export default function ChatBubble({
   role,
   content,
   memberName,
+  assistantAvatarSrc,
   typingContent,
   isTyping,
 }: ChatBubbleProps) {
@@ -26,15 +30,24 @@ export default function ChatBubble({
   return (
     <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
       {/* 头像 */}
-      <div
-        className={cn(
-          'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-medium',
-          isUser
-            ? 'bg-jade-100 text-jade-700'
-            : 'bg-warm-200 text-ink-secondary'
+      <div className="flex-shrink-0">
+        {isUser ? (
+          <div
+            className={cn(
+              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
+              'bg-jade-100 text-jade-700',
+            )}
+          >
+            <User size={16} />
+          </div>
+        ) : (
+          <Avatar
+            src={assistantAvatarSrc}
+            name={memberName || 'AI'}
+            size={32}
+            className="ring-1 ring-border-default"
+          />
         )}
-      >
-        {isUser ? <User size={16} /> : (memberName?.charAt(0) || 'AI')}
       </div>
 
       {/* 消息气泡 */}

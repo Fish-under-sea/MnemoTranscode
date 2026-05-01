@@ -7,3 +7,4 @@ from app.models.memory import Archive, Member, Memory, MemoryCapsule  # noqa: F4
 from app.models.usage import UsageRecord  # noqa: F401
 from app.models.preferences import UserPreferences  # noqa: F401
 from app.models.media import MediaAsset, MediaUploadSession  # noqa: F401
+from app.models.engram import EngramNode, EngramEdge  # noqa: F401
