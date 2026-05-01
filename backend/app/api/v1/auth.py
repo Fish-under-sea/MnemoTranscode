@@ -23,6 +23,8 @@ from app.core.avatar_public_url import (
 from app.core.minio_object_response import raise_if_expired, streaming_response_for_object_key
 from app.models.user import User
 from app.models.preferences import UserPreferences
+from app.services.avatar_image import AVATAR_MAX_RAW_BYTES, pack_avatar_for_storage
+from app.services.upload_bounded import read_upload_file_max
 from app.schemas.memory import (
     UserCreate, UserUpdate, UserResponse,
     TokenResponse
@@ -244,55 +246,18 @@ async def refresh_token(
     )
 
 
-ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
-
-
-def _user_avatar_content_type(filename: str, reported: str | None) -> str:
-    r = (reported or "").strip()
-    if r in ALLOWED_AVATAR_TYPES:
-        return r
-    low = (filename or "").lower()
-    if low.endswith(".png"):
-        return "image/png"
-    if low.endswith((".jpg", ".jpeg")):
-        return "image/jpeg"
-    if low.endswith(".gif"):
-        return "image/gif"
-    if low.endswith(".webp"):
-        return "image/webp"
-    return r or "image/png"
-
-
 @router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """上传用户头像"""
-    content = await file.read()
-
-    if len(content) > MAX_AVATAR_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"头像文件过大（最大 5MB）",
-        )
-
-    content_type = _user_avatar_content_type(file.filename or "", file.content_type)
-    if content_type not in ALLOWED_AVATAR_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="仅支持 JPG、PNG、GIF、WebP 格式",
-        )
-
-    ext_by_type = {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "image/gif": "gif",
-        "image/webp": "webp",
-    }
-    file_ext = ext_by_type[content_type]
+    """上传用户头像（无损重打包为小体积 WebP/PNG）。"""
+    raw = await read_upload_file_max(file, AVATAR_MAX_RAW_BYTES, "头像原图")
+    try:
+        content, content_type, file_ext = pack_avatar_for_storage(raw, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     object_name = f"avatars/{current_user.id}/{uuid.uuid4()}.{file_ext}"
 
     try:
@@ -331,6 +296,8 @@ async def upload_avatar(
             "user": build_user_response(current_user),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

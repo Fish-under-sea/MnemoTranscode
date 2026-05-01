@@ -26,30 +26,12 @@ from app.schemas.memory import (
     MemberCreate, MemberUpdate, MemberResponse,
 )
 from app.api.v1.auth import get_current_user
+from app.services.avatar_image import AVATAR_MAX_RAW_BYTES, pack_avatar_for_storage
+from app.services.upload_bounded import read_upload_file_max
 
 router = APIRouter(prefix="/archives", tags=["档案"])
 
 settings = get_settings()
-
-ALLOWED_MEMBER_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-MAX_MEMBER_AVATAR_SIZE = 5 * 1024 * 1024
-
-
-def _member_avatar_content_type(filename: str, reported: str | None) -> str:
-    """与媒体直传一致：空 file.type 时按扩展名推断，避免 Windows/部分浏览器报 415。"""
-    r = (reported or "").strip()
-    if r in ALLOWED_MEMBER_AVATAR_TYPES:
-        return r
-    low = (filename or "").lower()
-    if low.endswith(".png"):
-        return "image/png"
-    if low.endswith((".jpg", ".jpeg")):
-        return "image/jpeg"
-    if low.endswith(".gif"):
-        return "image/gif"
-    if low.endswith(".webp"):
-        return "image/webp"
-    return r or "image/png"
 
 
 def member_to_response(member: Member, owner_id: int) -> MemberResponse:
@@ -328,25 +310,11 @@ async def upload_member_avatar(
     if not member:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
 
-    content = await file.read()
-    if len(content) > MAX_MEMBER_AVATAR_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="头像文件过大（最大 5MB）",
-        )
-    content_type = _member_avatar_content_type(file.filename or "", file.content_type)
-    if content_type not in ALLOWED_MEMBER_AVATAR_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="仅支持 JPG、PNG、GIF、WebP 格式",
-        )
-    ext_by_type = {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "image/gif": "gif",
-        "image/webp": "webp",
-    }
-    file_ext = ext_by_type[content_type]
+    raw = await read_upload_file_max(file, AVATAR_MAX_RAW_BYTES, "头像原图")
+    try:
+        content, content_type, file_ext = pack_avatar_for_storage(raw, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     object_name = f"avatars/members/{member_id}/{uuid.uuid4()}.{file_ext}"
 
     try:
@@ -373,6 +341,8 @@ async def upload_member_avatar(
         member.avatar_url = file_url
         await db.commit()
         await db.refresh(member)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -245,16 +245,31 @@ export const memoryApi = {
   search: (query: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/memories/search', { query, ...params }),
 
-  importChat: (data: {
+  importChat: async (data: {
     member_id: number
     raw_text: string
     source?: 'auto' | 'wechat' | 'plain'
     build_graph?: boolean
-  }) =>
-    api.post<
-      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number },
-      { created_count: number; memory_ids: number[]; graph_temporal_edges: number; graph_llm_edges: number }
-    >('/memories/import-chat', data),
+  }) => {
+    type ImportChatRes = {
+      created_count: number
+      memory_ids: number[]
+      graph_temporal_edges: number
+      graph_llm_edges: number
+    }
+    const paths = ['/memories/chat-import', '/memories/import-chat'] as const
+    let last: unknown
+    for (const path of paths) {
+      try {
+        return await api.post<ImportChatRes, ImportChatRes>(path, data)
+      } catch (e: unknown) {
+        last = e
+        if (isApiError(e) && e.http_status === 405) continue
+        throw e
+      }
+    }
+    throw last
+  },
 
   extractFromConversation: (data: {
     member_id: number
@@ -474,7 +489,7 @@ export const mediaApi = {
     api.post('/media/uploads/complete', data),
 
   /** 经 API 一次 multipart 上传到 MinIO（相册/媒体，避免浏览器直连预签名 URL） */
-  uploadDirect: (
+   uploadDirect: async (
     data: {
       file: File
       purpose: MediaPurpose
@@ -483,19 +498,30 @@ export const mediaApi = {
     },
     onProgress?: (percent: number) => void,
   ): Promise<UploadDirectResponse> => {
-    const form = new FormData()
-    form.append('file', data.file)
-    form.append('purpose', data.purpose)
-    if (data.archive_id != null) form.append('archive_id', String(data.archive_id))
-    if (data.member_id != null) form.append('member_id', String(data.member_id))
-    return api.post<UploadDirectResponse, UploadDirectResponse>('/media/uploads/direct', form, {
-      timeout: 300_000,
-      onUploadProgress: (e) => {
-        if (e.total && onProgress) {
-          onProgress(Math.round((e.loaded / e.total) * 100))
-        }
-      },
-    })
+    const paths = ['/media/uploads/direct', '/media/uploads/commit'] as const
+    let last: unknown
+    for (const path of paths) {
+      const form = new FormData()
+      form.append('file', data.file)
+      form.append('purpose', data.purpose)
+      if (data.archive_id != null) form.append('archive_id', String(data.archive_id))
+      if (data.member_id != null) form.append('member_id', String(data.member_id))
+      try {
+        return await api.post<UploadDirectResponse, UploadDirectResponse>(path, form, {
+          timeout: 300_000,
+          onUploadProgress: (e) => {
+            if (e.total && onProgress) {
+              onProgress(Math.round((e.loaded / e.total) * 100))
+            }
+          },
+        })
+      } catch (e: unknown) {
+        last = e
+        if (isApiError(e) && e.http_status === 405) continue
+        throw e
+      }
+    }
+    throw last
   },
 
   getDownloadUrl: (mediaId: number): Promise<{ get_url: string; expires_in: number }> =>

@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import io
+import os
+import tempfile
 import uuid
 
 from fastapi import APIRouter, Depends, File, UploadFile, Form
@@ -18,6 +20,7 @@ from app.core.database import get_db
 from app.core.exceptions import DomainInternalError, DomainMediaError, DomainResourceError
 from app.models.media import MediaAsset, MediaUploadSession
 from app.models.user import User
+from app.services.avatar_image import AVATAR_MAX_RAW_BYTES
 
 router = APIRouter(prefix="/media", tags=["多媒体"])
 settings = get_settings()
@@ -41,8 +44,8 @@ PURPOSE_CONTENT_TYPES = {
 }
 
 MAX_SIZE_BYTES = {
-    UploadPurpose.AVATAR: 5 * 1024 * 1024,
-    UploadPurpose.ARCHIVE_PHOTO: 20 * 1024 * 1024,
+    UploadPurpose.AVATAR: AVATAR_MAX_RAW_BYTES,
+    UploadPurpose.ARCHIVE_PHOTO: 100 * 1024 * 1024,
     UploadPurpose.ARCHIVE_AUDIO: 100 * 1024 * 1024,
     UploadPurpose.VOICE_SAMPLE: 100 * 1024 * 1024,
     UploadPurpose.ARCHIVE_VIDEO: 500 * 1024 * 1024,
@@ -134,6 +137,7 @@ def _sniff_content_type(filename: str, reported: str) -> str:
 
 
 @router.post("/uploads/direct")
+@router.post("/uploads/commit")
 async def upload_direct(
     file: UploadFile = File(...),
     purpose: str = Form(...),
@@ -152,36 +156,64 @@ async def upload_direct(
     if not raw_name:
         raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_FILENAME", "文件名不能为空")
 
-    content = await file.read()
-    size = len(content)
-    if size <= 0:
-        raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_SIZE", "文件大小不合法")
-
-    content_type = _sniff_content_type(raw_name, file.content_type or "")
-
-    pseudo = UploadInitRequest(
-        filename=raw_name,
-        content_type=content_type,
-        size=size,
-        purpose=p,
-        archive_id=archive_id,
-        member_id=member_id,
-    )
-    _validate_upload_request(pseudo)
-
-    upload_id = str(uuid.uuid4())
-    object_key = f"{current_user.id}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{raw_name}"
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=3600)
-    now = datetime.now(timezone.utc)
-
+    max_b = MAX_SIZE_BYTES[p]
+    tmp_path: str | None = None
+    tmp_file = None
+    closed = False
     try:
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, prefix="mtc-direct-")
+        tmp_path = tmp_file.name
+        size = 0
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_b:
+                raise DomainMediaError("MEDIA_UPLOAD_INIT_FILE_TOO_LARGE", "文件大小超过限制")
+            tmp_file.write(chunk)
+        tmp_file.flush()
+        tmp_file.close()
+        closed = True
+        if size <= 0:
+            raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_SIZE", "文件大小不合法")
+
+        content_type = _sniff_content_type(raw_name, file.content_type or "")
+        pseudo = UploadInitRequest(
+            filename=raw_name,
+            content_type=content_type,
+            size=size,
+            purpose=p,
+            archive_id=archive_id,
+            member_id=member_id,
+        )
+        _validate_upload_request(pseudo)
+
+        upload_id = str(uuid.uuid4())
+        object_key = f"{current_user.id}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{raw_name}"
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=3600)
+        now = datetime.now(timezone.utc)
+
         internal = _minio_client_internal()
         bucket = settings.minio_bucket
         if not internal.bucket_exists(bucket):
             internal.make_bucket(bucket)
-        internal.put_object(bucket, object_key, io.BytesIO(content), size, content_type=content_type)
+        internal.fput_object(bucket, object_key, tmp_path, content_type=content_type)
+    except DomainMediaError:
+        raise
     except Exception as exc:
         raise DomainInternalError("INTERNAL_SERVER_ERROR", f"对象存储写入失败: {exc}") from exc
+    finally:
+        if tmp_file is not None and not closed:
+            try:
+                tmp_file.close()
+            except Exception:
+                pass
+        if tmp_path and os.path.isfile(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     session = MediaUploadSession(
         upload_id=upload_id,

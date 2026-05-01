@@ -4,18 +4,17 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FileText, MessageCircle, Plus, MessageSquareShare } from 'lucide-react'
+import { FileText, MessageCircle, Plus, MessageSquareShare, Upload } from 'lucide-react'
 import { motion } from 'motion/react'
+import { lazy, Suspense, useState, useRef } from 'react'
 import { archiveApi, memoryApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
 import { EMOTION_LABELS, RADIX_SELECT_NONE } from '@/lib/utils'
-import MemoryRelationGraph from '@/components/memory/MemoryRelationGraph'
 import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
 import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
-import { useState, useRef } from 'react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -25,6 +24,9 @@ import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberProfile from '@/components/member/MemberProfile'
 import { fadeUp, staggerContainer } from '@/lib/motion'
+import { cn } from '@/lib/utils'
+
+const MemoryRelationGraph = lazy(() => import('@/components/memory/MemoryRelationGraph'))
 
 export default function MemberDetailPage() {
   const { archiveId, memberId } = useParams<{ archiveId: string; memberId: string }>()
@@ -45,8 +47,58 @@ export default function MemberDetailPage() {
   const [importChatOpen, setImportChatOpen] = useState(false)
   const [importRaw, setImportRaw] = useState('')
   const [importSource, setImportSource] = useState<'auto' | 'wechat' | 'plain'>('auto')
+  const [importTxtName, setImportTxtName] = useState<string | null>(null)
+  const [importDropActive, setImportDropActive] = useState(false)
 
   const avatarFileRef = useRef<HTMLInputElement>(null)
+  const importTxtRef = useRef<HTMLInputElement>(null)
+
+  /** 与后端 ChatImportRequest.raw_text max_length 对齐 */
+  const CHAT_IMPORT_MAX_CHARS = 500_000
+
+  const applyImportedTxt = (text: string, filename: string | null) => {
+    if (text.length > CHAT_IMPORT_MAX_CHARS) {
+      toast.error(`文本过长（>${CHAT_IMPORT_MAX_CHARS} 字），请删减或分批导入`)
+      return
+    }
+    setImportRaw(text)
+    setImportTxtName(filename)
+  }
+
+  const readTxtFile = (file: File) => {
+    const maxBytes = 12 * 1024 * 1024
+    if (file.size > maxBytes) {
+      toast.error('文件过大（建议 ≤12MB），请分批导入')
+      return
+    }
+    const lower = file.name.toLowerCase()
+    const isTxtName = lower.endsWith('.txt')
+    const isTextLike =
+      !file.type ||
+      file.type === 'text/plain' ||
+      file.type.startsWith('text/') ||
+      file.type === 'application/octet-stream'
+    if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')) {
+      toast.error('请使用聊天记录导出的 .txt 文本')
+      return
+    }
+    if (!isTxtName && !isTextLike) {
+      toast.error('请使用 .txt 或使用「粘贴」导入其他纯文本')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : ''
+      if (!text.trim()) {
+        toast.error('文件为空或无法解码为文本')
+        return
+      }
+      applyImportedTxt(text, file.name)
+      toast.success(`已载入 ${file.name}（${text.length.toLocaleString()} 字）`)
+    }
+    reader.onerror = () => toast.error('读取文件失败')
+    reader.readAsText(file, 'UTF-8')
+  }
 
   const uploadMemberAvatarMutation = useMutation({
     mutationFn: (file: File) =>
@@ -82,6 +134,7 @@ export default function MemberDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['mnemo-graph', Number(memberId)] })
       setImportChatOpen(false)
       setImportRaw('')
+      setImportTxtName(null)
       toast.success(
         `已导入 ${data.created_count} 条记忆；时间链边 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}`,
       )
@@ -241,11 +294,13 @@ export default function MemberDetailPage() {
 
       <motion.div variants={fadeUp}>
         <Card variant="plain" className="mb-6">
-          <h2 className="text-body-lg font-medium text-ink-primary mb-3">记忆关系网</h2>
+          <h2 className="text-body-lg font-medium text-ink-primary mb-3">记忆神经网络</h2>
           <p className="text-caption text-ink-muted mb-4">
-            基于 Engram 图：导入聊天或开启对话提炼后，会出现时间链（TEMPORAL_NEXT）与 AI 推断的因果/主题边。
+            导入 txt 或粘贴记录后，系统写入记忆并由 AI 推断联结；下图按力导向排布，边的颜色表示关系类型（时间链 / 因果 / 主题等）。
           </p>
-          <MemoryRelationGraph memberId={Number(memberId)} />
+          <Suspense fallback={<LoadingState message="载入记忆网络…" />}>
+            <MemoryRelationGraph memberId={Number(memberId)} />
+          </Suspense>
         </Card>
       </motion.div>
 
@@ -266,7 +321,7 @@ export default function MemberDetailPage() {
               <EmptyState
                 icon={FileText}
                 title="还没有记忆条目"
-                description="可点击右上角「添加记忆」手写条目；或使用成员卡片上的「导入聊天记录」粘贴导出 txt，系统会解析并生成链式记忆关系网。"
+                description="可「添加记忆」手写；或「导入聊天记录」拖拽/选择 .txt 或粘贴全文，解析后由 AI 绘制记忆网络。"
                 action={{ label: '添加记忆', onClick: () => setCreateMemoryModal(true) }}
               />
               <div className="flex justify-center -mt-4 mb-4">
@@ -403,16 +458,84 @@ export default function MemberDetailPage() {
 
       <Modal
         open={importChatOpen}
-        onClose={() => setImportChatOpen(false)}
+        onClose={() => {
+          setImportChatOpen(false)
+          setImportDropActive(false)
+        }}
         title="导入聊天记录"
         size="lg"
       >
         <div className="space-y-4">
+          <input
+            ref={importTxtRef}
+            type="file"
+            accept=".txt,text/plain"
+            className="sr-only"
+            aria-hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) readTxtFile(f)
+            }}
+          />
           <p className="text-caption text-ink-muted leading-relaxed">
-            粘贴微信、QQ 等导出的 txt 全文。系统会解析为多段记忆，写入数据库并生成
-            <strong className="font-medium text-ink-secondary"> 时间链 + AI 推断的关联边 </strong>
-           （需在后台配置可用的 LLM）。
+            可<strong className="font-medium text-ink-secondary"> 拖拽或选择 .txt </strong>
+            （微信/QQ 导出），也可在下方粘贴全文。解析为多段记忆后，由 AI 构建
+            <strong className="font-medium text-ink-secondary"> 记忆关系网 </strong>
+            （需后台配置可用 LLM；单篇文本上限 {CHAT_IMPORT_MAX_CHARS.toLocaleString()} 字）。
           </p>
+          <div
+            role="button"
+            tabIndex={0}
+            className={cn(
+              'rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-jade-500/40',
+              importDropActive
+                ? 'border-jade-500 bg-jade-500/10'
+                : 'border-border-default bg-subtle/50 hover:border-jade-400/60',
+            )}
+            onDragEnter={(e) => {
+              e.preventDefault()
+              setImportDropActive(true)
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setImportDropActive(true)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setImportDropActive(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setImportDropActive(false)
+              const f = e.dataTransfer.files?.[0]
+              if (f) readTxtFile(f)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                importTxtRef.current?.click()
+              }
+            }}
+          >
+            <Upload className="mx-auto mb-2 h-8 w-8 text-ink-muted" aria-hidden />
+            <p className="text-body-sm text-ink-secondary">
+              将聊天记录 .txt 拖到此处
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              onClick={() => importTxtRef.current?.click()}
+            >
+              选择 txt 文件
+            </Button>
+            {importTxtName ? (
+              <p className="text-caption text-jade-700 dark:text-jade-400 mt-2">
+                已载入文件：{importTxtName}
+              </p>
+            ) : null}
+          </div>
           <Select
             label="解析模式"
             options={[
@@ -425,11 +548,14 @@ export default function MemberDetailPage() {
             fullWidth
           />
           <Textarea
-            label="聊天原文"
+            label="聊天原文（可编辑）"
             value={importRaw}
-            onChange={(e) => setImportRaw(e.target.value)}
+            onChange={(e) => {
+              setImportRaw(e.target.value)
+              setImportTxtName(null)
+            }}
             rows={12}
-            placeholder="在此粘贴…"
+            placeholder="粘贴全文，或从上方载入 txt…"
             fullWidth
           />
           <div className="flex gap-3">

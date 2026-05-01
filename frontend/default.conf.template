@@ -8,14 +8,16 @@ server {
     index index.html;
 
     resolver 127.0.0.11 valid=10s ipv6=off;
-    set $api_origin http://${API_UPSTREAM};
 
     include /etc/nginx/snippets/spa-tryfiles.conf;
 
+    # 仅用 scheme+host+port（不含 URI 路径），由 Nginx 原样转发完整 $request_uri + 方法体；
+    # 避免「变量 + $request_uri」组合在个别环境下对 POST/multipart 表现为 405。
     location /api/ {
-        proxy_pass $api_origin$request_uri;
+        proxy_pass http://${API_UPSTREAM};
         include /etc/nginx/snippets/api-proxy-common.conf;
-        proxy_connect_timeout 60s;
-        proxy_read_timeout 60s;
+        proxy_connect_timeout 600s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
     }
 }

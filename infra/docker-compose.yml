@@ -12,6 +12,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # 覆盖 backend/.env 里的 UVICORN_EXTRA_ARGS：Windows 绑定挂载 + --reload 易触发 WatchFiles 风暴，进程会频繁退出并被 unless-stopped 拉起
+      - UVICORN_EXTRA_ARGS=
       - DATABASE_URL=postgresql+asyncpg://mtc:mtc_password@postgres:5432/mtc_db
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333

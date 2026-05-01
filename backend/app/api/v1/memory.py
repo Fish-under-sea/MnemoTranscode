@@ -78,6 +78,7 @@ async def _require_member_for_user(db: AsyncSession, current_user: User, member_
 
 
 @router.post("/import-chat", response_model=ChatImportResponse)
+@router.post("/chat-import", response_model=ChatImportResponse)
 async def import_chat_log(
     body: ChatImportRequest,
     current_user: User = Depends(get_current_user),
@@ -195,6 +196,54 @@ async def get_mnemo_graph(
         for e in edges_orm
     ]
     return MnemoGraphResponse(member_id=member_id, nodes=nodes, edges=edges)
+
+
+@router.post("/search", response_model=MemorySearchResponse)
+async def search_memories(
+    search_request: MemorySearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """语义搜索记忆（基于向量检索）。固定路径须排在 /{memory_id} 之前，避免旧版路由匹配异常。"""
+    try:
+        vector_service = VectorService()
+        raw = await vector_service.search_memories(
+            query=search_request.query,
+            user_id=current_user.id,
+            archive_id=search_request.archive_id,
+            member_id=search_request.member_id,
+            limit=search_request.limit,
+        )
+        mem_ids: list[int] = []
+        for item in raw:
+            pl = item.get("payload") if isinstance(item, dict) else None
+            if not isinstance(pl, dict):
+                continue
+            mid = pl.get("memory_id")
+            if mid is not None:
+                try:
+                    mem_ids.append(int(mid))
+                except (TypeError, ValueError):
+                    pass
+        if not mem_ids:
+            return MemorySearchResponse(results=[], query=search_request.query, total=0)
+        stmt = (
+            select(Memory)
+            .options(selectinload(Memory.member))
+            .join(Member, Memory.member_id == Member.id)
+            .join(Archive, Member.archive_id == Archive.id)
+            .where(Memory.id.in_(mem_ids), Archive.owner_id == current_user.id)
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+        by_id = {m.id: m for m in rows}
+        ordered = [by_id[i] for i in mem_ids if i in by_id]
+        return MemorySearchResponse(
+            results=[memory_to_response(m) for m in ordered],
+            query=search_request.query,
+            total=len(ordered),
+        )
+    except Exception as e:
+        raise DomainInternalError(error_code="INTERNAL_SERVER_ERROR", message=f"搜索失败: {str(e)}")
 
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
@@ -359,51 +408,3 @@ async def delete_memory(
 
     await db.delete(memory)
     await db.commit()
-
-
-@router.post("/search", response_model=MemorySearchResponse)
-async def search_memories(
-    search_request: MemorySearchRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """语义搜索记忆（基于向量检索）"""
-    try:
-        vector_service = VectorService()
-        raw = await vector_service.search_memories(
-            query=search_request.query,
-            user_id=current_user.id,
-            archive_id=search_request.archive_id,
-            member_id=search_request.member_id,
-            limit=search_request.limit,
-        )
-        mem_ids: list[int] = []
-        for item in raw:
-            pl = item.get("payload") if isinstance(item, dict) else None
-            if not isinstance(pl, dict):
-                continue
-            mid = pl.get("memory_id")
-            if mid is not None:
-                try:
-                    mem_ids.append(int(mid))
-                except (TypeError, ValueError):
-                    pass
-        if not mem_ids:
-            return MemorySearchResponse(results=[], query=search_request.query, total=0)
-        stmt = (
-            select(Memory)
-            .options(selectinload(Memory.member))
-            .join(Member, Memory.member_id == Member.id)
-            .join(Archive, Member.archive_id == Archive.id)
-            .where(Memory.id.in_(mem_ids), Archive.owner_id == current_user.id)
-        )
-        rows = (await db.execute(stmt)).scalars().all()
-        by_id = {m.id: m for m in rows}
-        ordered = [by_id[i] for i in mem_ids if i in by_id]
-        return MemorySearchResponse(
-            results=[memory_to_response(m) for m in ordered],
-            query=search_request.query,
-            total=len(ordered),
-        )
-    except Exception as e:
-        raise DomainInternalError(error_code="INTERNAL_SERVER_ERROR", message=f"搜索失败: {str(e)}")

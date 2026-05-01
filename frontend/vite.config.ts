@@ -20,6 +20,9 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        // 大文件经 Vite 转发时避免默认超时导致浏览器 Network Error
+        timeout: 600_000,
+        proxyTimeout: 600_000,
       },
       '/kourichat-proxy': {
         target: 'http://localhost:8502',

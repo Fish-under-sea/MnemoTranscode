@@ -36,6 +36,8 @@ redis>=5.0.0
 # Storage
 boto3>=1.34.0
 minio>=7.2.0
+# 头像无损重打包（WebP lossless / PNG optimize）
+Pillow>=10.2.0
 
 # Utilities
 python-dateutil>=2.8.0
