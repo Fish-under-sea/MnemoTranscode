@@ -260,7 +260,7 @@ async def get_mnemo_graph(
         )
     )
     nodes_orm = list(nr.scalars().all())
-    # 仅展示仍有一条业务记忆支撑的事件节点；Person/Emotion 等可为 memory_id 空
+    # 事件节点必须与 memories 对齐；Person 为锚点可常驻；Ev/情感等挂载记忆的结点须带仍在库中的 memory_id
     mem_ids_r = await db.execute(select(Memory.id).where(Memory.member_id == member_id))
     valid_memory_ids = {row[0] for row in mem_ids_r.all()}
     filtered: list[EngramNode] = []
@@ -285,6 +285,29 @@ async def get_mnemo_graph(
         )
     )
     edges_orm = list(er.scalars().all())
+
+    # 去掉历史上因 memory_id 为空的孤儿 Emotion/Event 片段：不参与任何联结且非 Person、无现存记忆支撑
+    endpoint_ids: set[str] = set()
+    for e in edges_orm:
+        endpoint_ids.add(e.from_node_id)
+        endpoint_ids.add(e.to_node_id)
+    pruned_nodes: list[EngramNode] = []
+    for n in nodes_orm:
+        if n.node_type == "Person":
+            pruned_nodes.append(n)
+            continue
+        if n.memory_id is not None and n.memory_id in valid_memory_ids:
+            pruned_nodes.append(n)
+            continue
+        if n.id in endpoint_ids:
+            pruned_nodes.append(n)
+        # 其余结点（多为旧版未绑 memory_id 的情感结点）不落图
+    nodes_orm = pruned_nodes
+    node_ids = {n.id for n in nodes_orm}
+    if not node_ids:
+        return MnemoGraphResponse(member_id=member_id, nodes=[], edges=[])
+    edges_orm = [e for e in edges_orm if e.from_node_id in node_ids and e.to_node_id in node_ids]
+
     nodes = [
         MnemoGraphNode(
             id=n.id,

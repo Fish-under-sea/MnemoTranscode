@@ -136,7 +136,7 @@ type FGNodeObj = NodeObject<FgNode>
 type FGLinkObj = LinkObject<FgNode, FgLink>
 
 export default function MemoryRelationGraph({ memberId }: { memberId: number }) {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, dataUpdatedAt } = useQuery({
     queryKey: ['mnemo-graph', memberId],
     queryFn: () => memoryApi.mnemoGraph(memberId) as Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }>,
     enabled: Number.isFinite(memberId) && memberId > 0,
@@ -654,6 +654,7 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
 
         <div ref={graphBoxRef} className="flex-1 min-h-0 min-w-0 w-full">
           <ForceGraph2D<FgNode, FgLink>
+            key={`mnemo-${memberId}-${dataUpdatedAt}`}
             ref={fgRef}
             graphData={graphData}
             width={Math.max(320, dims.w)}

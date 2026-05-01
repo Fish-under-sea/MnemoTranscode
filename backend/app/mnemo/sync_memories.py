@@ -113,10 +113,12 @@ async def ensure_memory_engram(
     )
     await graph.create_edge(ev_id, person_id, "RELATED_TO", weight=0.85)
     if emotion:
+        # 必须与 memory_id 绑定，否则删记忆后 Emotion 成孤儿结点，关系网无法「跟着清空」
         em_id = await graph.create_node(
             "Emotion",
             emotion,
             member_id=member.id,
+            memory_id=memory.id,
             importance=0.4,
         )
         await graph.create_edge(ev_id, em_id, "EMOTIONALLY_LINKED", weight=0.7)
