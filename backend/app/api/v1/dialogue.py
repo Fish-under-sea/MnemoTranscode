@@ -28,6 +28,7 @@ from app.services.llm_service import LLMService
 from app.services.vector_service import VectorService
 from app.core.config import get_settings
 from app.schemas.client_llm import ClientLlmOverride
+from app.services.usage_metering import record_token_usage
 
 router = APIRouter(prefix="/dialogue", tags=["AI对话"])
 settings = get_settings()
@@ -363,6 +364,7 @@ async def chat(
         _dialogue_sessions[session_id].append({"role": "assistant", "content": reply})
 
     memories_created = 0
+    extract_usage: dict = {}
     if request.extract_memories_after and member_obj is not None:
         try:
             from app.services.conversation_memory_extract import extract_and_save_memories
@@ -378,7 +380,7 @@ async def chat(
             else:
                 full_turns = _dialogue_sessions.get(session_id, [])
             ex_llm = _llm_from_dialogue_request(request)
-            created, _stats = await extract_and_save_memories(
+            created, _stats, extract_usage = await extract_and_save_memories(
                 db,
                 user_id=current_user.id,
                 member_id=member_obj.id,
@@ -387,8 +389,25 @@ async def chat(
                 build_graph=True,
             )
             memories_created = len(created)
+            await record_token_usage(
+                db,
+                user_id=current_user.id,
+                action_type="memory_extract",
+                usage_bundle=extract_usage,
+                client_llm=request.client_llm,
+                session_id=session_id,
+            )
         except Exception as exc:
             logger.exception("对话后提炼记忆失败: %s", exc)
+
+    await record_token_usage(
+        db,
+        user_id=current_user.id,
+        action_type="dialogue",
+        usage_bundle=usage_bundle,
+        client_llm=request.client_llm,
+        session_id=session_id,
+    )
 
     ct = usage_bundle.get("completion_tokens")
     pc = usage_bundle.get("prompt_tokens")

@@ -21,6 +21,12 @@ interface MemoryItem {
 interface UsageStats {
   storage_used?: number
   storage_quota?: number
+  storage_usage_percent?: number
+  /** 与 storage 无关：本月订阅口径 token（计入限额） */
+  monthly_used?: number
+  /** 自备 API Key / 网关消耗，不计入订阅限额 */
+  monthly_used_user_key?: number
+  monthly_limit?: number
   ai_tokens_this_month?: number
   ai_tokens_quota?: number
 }

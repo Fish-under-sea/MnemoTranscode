@@ -16,6 +16,8 @@ class UsageRecord(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     action_type = Column(String(50), nullable=False)
     token_count = Column(BigInteger, default=0)
+    # subscription=走平台订阅配额；user_key=用户自备网关/API Key，不计入限额
+    metering_channel = Column(String(32), nullable=True)
     cost = Column(Integer, default=0)
     model_name = Column(String(100), nullable=True)
     session_id = Column(String(100), nullable=True, index=True)

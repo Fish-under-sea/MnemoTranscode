@@ -126,12 +126,13 @@ class LLMService:
         """单轮补全（整段提示作为 user 消息）。"""
         return await self.chat([{"role": "user", "content": prompt}], **kwargs)
 
-    async def json_complete(self, prompt: str, **kwargs: Any) -> dict:
+    async def json_complete(self, prompt: str, usage_out: dict | None = None, **kwargs: Any) -> dict:
         """LLM 只输出 JSON 对象时的解析（用于冲突裁决、结构化抽取）。"""
         temp = kwargs.pop("temperature", 0.2)
         text = await self.complete(
             prompt + "\n只输出一个 JSON 对象，不要 Markdown、不要其它说明文字。",
             temperature=temp,
+            usage_out=usage_out,
             **kwargs,
         )
         text = self._filter_thinking_content(text)
@@ -148,6 +149,7 @@ class LLMService:
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
         """直接传入消息列表进行对话。可传 timeout= 秒数（默认 60），用于长提示或 JSON 抽取。"""
+        usage_out = kwargs.pop("usage_out", None)
         timeout_sec = float(kwargs.pop("timeout", 60.0))
         use_model = kwargs.pop("model", self.model)
         temperature = kwargs.pop("temperature", self.temperature)
@@ -174,4 +176,10 @@ class LLMService:
             content = msg.get("content") if isinstance(msg, dict) else None
             if not isinstance(content, str):
                 raise Exception(f"LLM 响应无有效 content: {str(data)[:800]}")
+            if usage_out is not None:
+                u = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                usage_out["model"] = data.get("model") or use_model
+                usage_out["prompt_tokens"] = u.get("prompt_tokens")
+                usage_out["completion_tokens"] = u.get("completion_tokens")
+                usage_out["total_tokens"] = u.get("total_tokens")
             return content

@@ -13,24 +13,44 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import { compressImageFileForAvatar } from '@/lib/compressImage'
 import { bumpSubscriptionSyncGen, getSubscriptionSyncGen } from '@/lib/subscriptionSyncGen'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  normalizeTierId,
+  tierBadgeClass,
+  tierDisplayName,
+  tierMonthlyTokenLimit,
+  tierRankOrder,
+  type SubscriptionTierId,
+} from '@/lib/subscriptionTier'
+import { formatStoragePrimaryLine, storageProgressPercent } from '@/lib/formatBytes'
 import {
   User, CreditCard, Palette, Cloud, BarChart3,
   Check, RefreshCw, Download, Upload, Trash2, Moon, Sun, Monitor,
   AlertTriangle, Eye, EyeOff, Image,
+  HardDrive,
 } from 'lucide-react'
 type TabId = 'overview' | 'subscription' | 'account' | 'appearance' | 'cloud'
 
 const VALID_TAB_IDS: TabId[] = ['overview', 'subscription', 'account', 'appearance', 'cloud']
 
-type SubscriptionTierId = 'free' | 'pro' | 'enterprise'
-
-function normalizeSubTier(
+function resolveCurrentTier(
   sub: { tier?: string } | null | undefined,
-  user: { subscription_tier?: string } | null | undefined
+  user: { subscription_tier?: string } | null | undefined,
 ): SubscriptionTierId {
-  const raw = (sub?.tier ?? user?.subscription_tier ?? 'free').toString().trim().toLowerCase()
-  if (raw === 'pro' || raw === 'enterprise' || raw === 'free') return raw
-  return 'free'
+  return normalizeTierId(sub?.tier ?? user?.subscription_tier)
+}
+
+function subscriptionPlanButtonLabel(
+  currentTier: SubscriptionTierId,
+  planId: SubscriptionTierId,
+  switching: boolean,
+): string {
+  if (currentTier === planId) return '当前方案'
+  if (switching) return '切换中…'
+  const d = tierRankOrder(planId) - tierRankOrder(currentTier)
+  if (d < 0) return '降级'
+  if (d > 0) return '升级'
+  return '切换'
 }
 
 function parseTabParam(params: URLSearchParams): TabId {
@@ -50,7 +70,8 @@ const tabs = [
 
 /** 用量环形图 */
 function UsageRing({ used, limit, color }: { used: number; limit: number; color: string }) {
-  const percent = Math.min(100, (used / limit) * 100)
+  const safeLimit = Math.max(limit, 1)
+  const percent = Math.min(100, (used / safeLimit) * 100)
   const radius = 48
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - percent / 100)
@@ -71,29 +92,47 @@ function UsageRing({ used, limit, color }: { used: number; limit: number; color:
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-bold text-slate-900">{percent.toFixed(0)}%</span>
-        <span className="text-xs text-slate-500">已使用</span>
+        <span className="text-xs text-slate-500">订阅配额</span>
       </div>
     </div>
   )
 }
 
+type OverviewUsageSnapshot = {
+  monthly_used?: number
+  monthly_used_user_key?: number
+  monthly_limit?: number
+  usage_by_type?: Record<string, number>
+  storage_used?: number
+  storage_quota?: number
+  storage_usage_percent?: number
+}
+
 /** 概览面板 */
 function OverviewPanel() {
   const { user } = useAuthStore()
-  const [stats, setStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: stats, isLoading: loading } = useQuery({
+    queryKey: ['dashboard', 'usage'],
+    queryFn: async () => (await usageApi.getStats()) as OverviewUsageSnapshot,
+    staleTime: 30_000,
+  })
 
-  useEffect(() => {
-    setLoading(true)
-    usageApi.getStats().then((res: any) => {
-      setStats(res)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [user?.monthly_token_limit, user?.subscription_tier])
+  const overviewTier = normalizeTierId(user?.subscription_tier)
+  // 限额以后端 stats（与档位一致）为准；避免仅更新 tier 但 store 里 monthly_token_limit 滞后
+  const limit =
+    stats?.monthly_limit != null && stats.monthly_limit > 0
+      ? stats.monthly_limit
+      : user?.monthly_token_limit != null && user.monthly_token_limit > 0
+        ? user.monthly_token_limit
+        : tierMonthlyTokenLimit(overviewTier)
+  const usedSub =
+    stats?.monthly_used !== undefined ? stats.monthly_used : user?.monthly_token_used ?? 0
+  const usedOwn = stats?.monthly_used_user_key ?? 0
 
-  const limit = user?.monthly_token_limit || 100000
-  const used = stats?.monthly_used ?? user?.monthly_token_used ?? 0
-  const isUnlimitedTier = user?.subscription_tier === 'enterprise'
+  const storagePct = storageProgressPercent(stats ?? null, loading)
+  const storageBarWidth =
+    storagePct != null ? Math.min(100, Math.max(0, storagePct)) : null
+  const storageOverCap = storagePct != null && storagePct > 100
 
   return (
     <div className="space-y-6">
@@ -111,14 +150,13 @@ function OverviewPanel() {
           <div className="min-w-0 flex-1 self-center">
             <h2 className="text-xl font-bold text-slate-900">{user?.username}</h2>
             <p className="text-slate-500 text-sm">{user?.email}</p>
-            <span className={cn(
-              'inline-block mt-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium',
-              user?.subscription_tier === 'pro' ? 'bg-jade-200 text-jade-800' :
-              user?.subscription_tier === 'enterprise' ? 'bg-amber-200 text-amber-800' :
-              'bg-slate-200 text-slate-600'
-            )}>
-              {user?.subscription_tier === 'pro' ? 'Pro 会员' :
-               user?.subscription_tier === 'enterprise' ? 'Enterprise' : 'Free'}
+            <span
+              className={cn(
+                'inline-block mt-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium',
+                tierBadgeClass(overviewTier),
+              )}
+            >
+              {tierDisplayName(overviewTier)}
             </span>
           </div>
         </div>
@@ -137,37 +175,111 @@ function OverviewPanel() {
           </div>
         ) : (
           <div className="flex items-center gap-6">
-            <UsageRing used={used} limit={limit} color="#10B981" />
+            <UsageRing used={usedSub} limit={limit} color="#10B981" />
             <div className="space-y-3 flex-1">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">已使用</span>
-                <span className="font-semibold text-slate-900">{used.toLocaleString()} tokens</span>
+                <span className="text-slate-600">订阅用量（计入限额）</span>
+                <span className="font-semibold text-slate-900">{usedSub.toLocaleString()} tokens</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">自备模型网关</span>
+                <span className="font-semibold text-slate-900">{usedOwn.toLocaleString()} tokens</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">限额</span>
-                <span className="font-semibold text-slate-900">
-                  {isUnlimitedTier ? '无限制' : `${limit.toLocaleString()} tokens`}
-                </span>
+                <span className="font-semibold text-slate-900">{`${limit.toLocaleString()} tokens`}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">剩余</span>
+                <span className="text-slate-600">剩余（订阅）</span>
                 <span className="font-semibold text-jade-600">
-                  {isUnlimitedTier ? '—' : `${Math.max(0, limit - used).toLocaleString()} tokens`}
+                  {`${Math.max(0, limit - usedSub).toLocaleString()} tokens`}
                 </span>
               </div>
               {/* 用量类型分布 */}
-              {stats?.usage_by_type && Object.keys(stats.usage_by_type).length > 0 && (
+              {stats?.usage_by_type &&
+                Object.keys(stats.usage_by_type).length > 0 && (
                 <div className="pt-2 border-t border-warm-100 space-y-1.5">
                   {Object.entries(stats.usage_by_type).map(([type, count]) => (
                     <div key={type} className="flex justify-between text-xs text-slate-500">
-                      <span>{type === 'dialogue' ? 'AI 对话' : type === 'storybook' ? '故事书' : type === 'search' ? '语义搜索' : type}</span>
-                      <span>{(count as number).toLocaleString()} tokens</span>
+                      <span>
+                        {type === 'dialogue'
+                          ? 'AI 对话'
+                          : type === 'storybook'
+                            ? '故事书'
+                            : type === 'search'
+                              ? '语义搜索'
+                              : type === 'memory_extract'
+                                ? '对话提炼记忆'
+                                : type}
+                      </span>
+                      <span>{Number(count).toLocaleString()} tokens</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* 云存储用量：与仪表盘同源 GET /usage/stats */}
+      <div className="bg-white rounded-2xl border border-warm-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-9 h-9 rounded-full bg-jade-50 flex items-center justify-center shrink-0">
+            <HardDrive className="w-4 h-4 text-jade-600" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-slate-900">存储用量</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              按当前订阅档位云空间配额统计媒体与上传文件占用
+            </p>
+          </div>
+          <Link
+            to="/personal-center?tab=cloud"
+            className="text-xs text-jade-600 hover:text-jade-700 shrink-0"
+          >
+            云端详情
+          </Link>
+        </div>
+        {loading ? (
+          <div className="space-y-3">
+            <div className="h-9 bg-slate-100 rounded animate-pulse w-2/3" />
+            <div className="h-2 bg-slate-100 rounded-full animate-pulse" />
+            <div className="h-4 bg-slate-100 rounded animate-pulse w-24" />
+          </div>
+        ) : (
+          <>
+            <div className="font-serif text-2xl text-slate-900 tabular-nums tracking-tight">
+              {formatStoragePrimaryLine(stats ?? null, false)}
+            </div>
+            <div className="mt-4 space-y-1.5">
+              {storageBarWidth != null ? (
+                <>
+                  <div className="h-2 w-full rounded-full bg-warm-100 overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all duration-500',
+                        storageOverCap ? 'bg-amber-500' : 'bg-jade-500',
+                      )}
+                      style={{ width: `${storageBarWidth}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between gap-2 text-xs text-slate-500 tabular-nums">
+                    <span>
+                      {storagePct != null
+                        ? `已用 ${storagePct.toFixed(1)}%`
+                        : null}
+                    </span>
+                    {storageOverCap && (
+                      <span className="text-amber-700 shrink-0">已超出档位配额</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">暂时无法读取存储配额，请稍后重试。</p>
+              )}
+            </div>
+          </>
         )}
       </div>
 
@@ -194,6 +306,7 @@ function OverviewPanel() {
 /** 订阅管理面板 */
 function SubscriptionPanel() {
   const { user, updateUser } = useAuthStore()
+  const queryClient = useQueryClient()
   const [sub, setSub] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
@@ -218,40 +331,36 @@ function SubscriptionPanel() {
       .finally(() => setLoading(false))
   }, [])
 
-  const handleSelectPlan = async (planId: 'free' | 'pro' | 'enterprise') => {
-    if (planId === normalizeSubTier(sub, user) || switching) return
+  const handleSelectPlan = async (planId: SubscriptionTierId) => {
+    if (planId === resolveCurrentTier(sub, user) || switching) return
     bumpSubscriptionSyncGen()
     setSwitching(true)
     try {
-      const res = (await subscriptionApi.updateTier(planId)) as any
-      const tier = ((res?.tier as string) || planId).toString().trim().toLowerCase() as
-        'free' | 'pro' | 'enterprise'
+      const res = (await subscriptionApi.updateTier(planId)) as Record<string, unknown>
+      const tierNorm = normalizeTierId(String(res?.tier ?? planId))
       setSub(
         res && typeof res === 'object'
-          ? { ...res, tier: tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId }
+          ? { ...res, tier: tierNorm }
           : res,
       )
       updateUser({
-        subscription_tier: tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId,
-        monthly_token_limit: res?.monthly_limit,
-        monthly_token_used: res?.monthly_used,
+        subscription_tier: tierNorm,
+        monthly_token_limit: res?.monthly_limit as number | undefined,
+        monthly_token_used: res?.monthly_used as number | undefined,
       })
-      // 把服务器可能晚到、gen 仍为 0 的 in-flight getMe 全部作废，再对账
       bumpSubscriptionSyncGen()
       try {
-        // 对账用 GET /me 拉齐头像等；订阅档位以「本请求已成功」的 res / planId 为准，勿用 getMe
-        //（部分环境下 getMe 会短暂滞后为 free，且 "free" 为真会错误覆盖 planId||）
         const me = (await authApi.getMe()) as {
           email?: string
           username?: string
           is_active?: boolean
           created_at?: string
           avatar_url?: string | null
+          subscription_tier?: string
           monthly_token_limit?: number
           monthly_token_used?: number
         }
-        const resolvedTier: 'free' | 'pro' | 'enterprise' =
-          tier === 'pro' || tier === 'enterprise' || tier === 'free' ? tier : planId
+        const resolvedTier = normalizeTierId(me.subscription_tier ?? tierNorm)
         updateUser({
           email: me.email,
           username: me.username,
@@ -259,21 +368,20 @@ function SubscriptionPanel() {
           created_at: me.created_at,
           avatar_url: me.avatar_url ?? undefined,
           subscription_tier: resolvedTier,
-          monthly_token_limit: me.monthly_token_limit ?? res?.monthly_limit,
-          monthly_token_used: me.monthly_token_used ?? res?.monthly_used,
+          monthly_token_limit: me.monthly_token_limit ?? (res.monthly_limit as number | undefined),
+          monthly_token_used: me.monthly_token_used ?? (res.monthly_used as number | undefined),
         })
-        setSub((prev: any) =>
-          prev && typeof prev === 'object' ? { ...prev, tier: resolvedTier } : prev,
+        setSub((prev: unknown) =>
+          prev && typeof prev === 'object' ? { ...(prev as object), tier: resolvedTier } : prev,
         )
       } catch {
-        // 以 subscription 与 planId 为准
-        updateUser({ subscription_tier: planId })
-        setSub((prev: any) =>
-          prev && typeof prev === 'object' ? { ...prev, tier: planId } : prev,
+        updateUser({ subscription_tier: tierNorm })
+        setSub((prev: unknown) =>
+          prev && typeof prev === 'object' ? { ...(prev as object), tier: tierNorm } : prev,
         )
       }
-      const label = planId === 'free' ? 'Free' : planId === 'pro' ? 'Pro' : 'Enterprise'
-      toast.success(`已切换至 ${label} 方案（演示环境无需支付）`)
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
+      toast.success(`已切换至 ${tierDisplayName(planId)} 方案（演示环境无需支付）`)
     } catch (e) {
       const msg = isApiError(e) ? mapErrorToMessage(e) : '切换方案失败，请稍后重试'
       toast.error(msg, { id: 'subscription-tier-switch' })
@@ -282,44 +390,83 @@ function SubscriptionPanel() {
     }
   }
 
-  const plans = [
+  const plans: {
+    id: SubscriptionTierId
+    name: string
+    price: string
+    priceTail: string
+    tokenLine: string
+    color: 'slate' | 'sky' | 'jade' | 'amber'
+    features: string[]
+    popular?: boolean
+  }[] = [
     {
       id: 'free',
       name: 'Free',
       price: '¥0',
-      period: '永久',
-      tokens: '100K',
+      priceTail: '永久',
+      tokenLine: '每月 5 千万 · 订阅 tokens',
       color: 'slate',
-      features: ['基础 AI 对话', '档案管理', '记忆录入', '语义搜索'],
+      features: [
+        '基础 AI（订阅 tokens）',
+        '档案与成员管理',
+        '记忆录入与语义搜索',
+        '存储方案 · 云空间 1GB',
+      ],
+    },
+    {
+      id: 'lite',
+      name: 'Lite',
+      price: '¥39',
+      priceTail: '/月',
+      tokenLine: '每月 1 亿 · 订阅 tokens',
+      color: 'sky',
+      features: [
+        '包含 Free 全部能力',
+        '故事书生成',
+        '记忆胶囊',
+        '存储方案 · 云空间 3GB',
+      ],
     },
     {
       id: 'pro',
       name: 'Pro',
-      price: '¥29',
-      period: '/月',
-      tokens: '2M',
+      price: '¥99',
+      priceTail: '/月',
+      tokenLine: '每月 3 亿 · 订阅 tokens',
       color: 'jade',
-      features: ['全部 Free 功能', '故事书生成', '记忆胶囊', '优先队列', '5x 用量限额', '邮件支持'],
+      features: [
+        '包含 Lite 全部能力',
+        '优先队列体验',
+        '存储方案 · 云空间 10GB',
+        '邮件支持',
+      ],
       popular: true,
     },
     {
-      id: 'enterprise',
-      name: 'Enterprise',
+      id: 'max',
+      name: 'Max',
       price: '¥199',
-      period: '/月',
-      tokens: '无限制',
+      priceTail: '/月',
+      tokenLine: '每月 8 亿 · 订阅 tokens',
       color: 'amber',
-      features: ['全部 Pro 功能', '无限用量', '自定义模型', 'API 访问', '专属支持', '多用户协作'],
+      features: [
+        '包含 Pro 全部能力',
+        '最高档订阅 tokens',
+        '自定义模型 / 网关（自备 Key 另计）',
+        '存储方案 · 云空间 50GB',
+        '专属支持',
+      ],
     },
   ]
 
-  const currentTier = normalizeSubTier(sub, user)
+  const currentTier = resolveCurrentTier(sub, user)
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="h-48 bg-slate-100 rounded-2xl animate-pulse" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-56 rounded-2xl bg-slate-100 animate-pulse md:min-h-[22rem]" />
         ))}
       </div>
     )
@@ -329,21 +476,27 @@ function SubscriptionPanel() {
     <div className="space-y-6">
       <div>
         <h3 className="font-semibold text-slate-900 mb-1">订阅方案</h3>
-        <p className="text-sm text-slate-500">选择适合你的用量方案</p>
+        <p className="text-sm text-slate-500">
+          所列 tokens 均为订阅配额；自备 API Key 用量在个人中心另行统计。
+        </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {plans.map(plan => (
           <div
             key={plan.id}
             className={cn(
-              'relative rounded-2xl border-2 p-5 transition-all',
+              'relative flex flex-col rounded-2xl border-2 p-5 transition-all h-full min-h-[22rem]',
               currentTier === plan.id
-                ? plan.color === 'jade' ? 'border-jade-400 bg-jade-50 shadow-jade' :
-                  plan.color === 'amber' ? 'border-amber-400 bg-amber-50 shadow-amber' :
-                  'border-slate-400 bg-slate-50'
+                ? plan.color === 'jade'
+                  ? 'border-jade-400 bg-jade-50 shadow-jade'
+                  : plan.color === 'amber'
+                    ? 'border-amber-400 bg-amber-50 shadow-amber'
+                    : plan.color === 'sky'
+                      ? 'border-sky-400 bg-sky-50'
+                      : 'border-slate-400 bg-slate-50'
                 : 'border-warm-200 bg-white hover:border-jade-200',
-              plan.popular && 'md:scale-105'
+              plan.popular && 'md:scale-[1.02] z-[1]',
             )}
           >
             {plan.popular && (
@@ -356,20 +509,31 @@ function SubscriptionPanel() {
 
             <div className="text-center mb-4">
               <h4 className="font-bold text-slate-900">{plan.name}</h4>
-              <div className="mt-2">
+              <div className="mt-2 flex items-baseline justify-center gap-0.5 flex-wrap">
                 <span className="text-2xl font-bold text-slate-900">{plan.price}</span>
-                <span className="text-slate-500 text-sm">/{plan.period}</span>
+                <span className="text-slate-500 text-sm">{plan.priceTail}</span>
               </div>
-              <div className="mt-1 text-xs text-slate-500">每月 {plan.tokens} tokens</div>
+              <div className="mt-1 text-xs text-slate-500">{plan.tokenLine}</div>
             </div>
 
-            <ul className="space-y-2 mb-4">
+            <ul className="space-y-2 mb-4 flex-1 min-h-0">
               {plan.features.map(f => (
-                <li key={f} className="flex items-center gap-2 text-sm text-slate-600">
-                  <Check size={14} className={cn(
-                    'flex-shrink-0',
-                    currentTier === plan.id ? 'text-jade-500' : 'text-slate-400'
-                  )} />
+                <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
+                  <Check
+                    size={14}
+                    className={cn(
+                      'flex-shrink-0 mt-0.5',
+                      currentTier === plan.id
+                        ? plan.color === 'amber'
+                          ? 'text-amber-600'
+                          : plan.color === 'jade'
+                            ? 'text-jade-500'
+                            : plan.color === 'sky'
+                              ? 'text-sky-600'
+                              : 'text-slate-500'
+                        : 'text-slate-400',
+                    )}
+                  />
                   {f}
                 </li>
               ))}
@@ -378,17 +542,21 @@ function SubscriptionPanel() {
             <button
               type="button"
               disabled={currentTier === plan.id || switching}
-              onClick={() => void handleSelectPlan(plan.id as 'free' | 'pro' | 'enterprise')}
+              onClick={() => void handleSelectPlan(plan.id)}
               className={cn(
-                'w-full py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer',
+                'w-full shrink-0 min-h-[2.5rem] py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer mt-auto',
                 currentTier === plan.id || switching
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                   : plan.color === 'jade'
-                  ? 'bg-jade-500 text-white hover:bg-jade-600 shadow-jade'
-                  : 'bg-slate-900 text-white hover:bg-slate-800'
+                    ? 'bg-jade-500 text-white hover:bg-jade-600 shadow-jade'
+                    : plan.color === 'amber'
+                      ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber'
+                      : plan.color === 'sky'
+                        ? 'bg-sky-600 text-white hover:bg-sky-700'
+                        : 'bg-slate-900 text-white hover:bg-slate-800',
               )}
             >
-              {currentTier === plan.id ? '当前方案' : switching ? '切换中…' : plan.id === 'free' ? '降级' : '升级'}
+              {subscriptionPlanButtonLabel(currentTier, plan.id, switching)}
             </button>
           </div>
         ))}
@@ -401,7 +569,7 @@ function SubscriptionPanel() {
           <div>
             <div className="font-medium text-amber-800 text-sm">用量即将达到上限</div>
             <div className="text-amber-700 text-xs mt-1">
-              已使用 {sub.usage_percent.toFixed(1)}%，建议升级到 Pro 方案获得更多用量。
+              已使用 {sub.usage_percent.toFixed(1)}%，建议升级到更高订阅方案以获得更多订阅 tokens。
             </div>
           </div>
         </div>

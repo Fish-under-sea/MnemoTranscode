@@ -76,6 +76,27 @@ function mapServerRowToMessage(m: {
   }
 }
 
+/** 兼容拦截器 unwrap 后与偶发双层 data 包裹 */
+function normalizeListMessagesPayload(data: unknown): {
+  messages: Array<{
+    id: number
+    role: string
+    content: string
+    created_at?: string | null
+  }>
+} {
+  if (!data || typeof data !== 'object') return { messages: [] }
+  const top = data as Record<string, unknown>
+  let rows = top.messages
+  if (!Array.isArray(rows)) {
+    const inner = top.data
+    if (inner && typeof inner === 'object' && Array.isArray((inner as Record<string, unknown>).messages)) {
+      rows = (inner as Record<string, unknown>).messages
+    }
+  }
+  return { messages: Array.isArray(rows) ? (rows as never) : [] }
+}
+
 function parseStoredMessages(raw: string): ChatMessage[] {
   const arr = JSON.parse(raw) as Array<{
     id: string
@@ -112,6 +133,16 @@ export function useDialogue({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { show: showError } = useApiError()
 
+  /** 打断打字机动效，避免 listMessages 再次补水时 isTyping 悬挂导致「只显示半截 + 光标」 */
+  const stopTypewriter = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    setIsTyping(false)
+    setDisplayedContent('')
+  }, [])
+
   const persistContext = Boolean(
     archiveId && memberId && Number(archiveId) > 0 && Number(memberId) > 0,
   )
@@ -138,14 +169,17 @@ export function useDialogue({
   useEffect(() => {
     bootstrapAttemptedRef.current = ''
     if (!persistContext) return
+    stopTypewriter()
     setHydrated(false)
     setMessages([])
-  }, [persistContext, remoteCtxKey])
+  }, [persistContext, remoteCtxKey, stopTypewriter])
 
   const messagesQuery = useQuery({
     queryKey: ['dialogue-messages', archiveId, memberId],
-    queryFn: ({ signal }) =>
-      dialogueApi.listMessages(Number(archiveId), Number(memberId), { signal }),
+    queryFn: async ({ signal }) => {
+      const raw = await dialogueApi.listMessages(Number(archiveId), Number(memberId), { signal })
+      return normalizeListMessagesPayload(raw)
+    },
     enabled: persistContext,
     staleTime: 60_000,
     retry: 1,
@@ -193,6 +227,7 @@ export function useDialogue({
           fallback = []
         }
       }
+      stopTypewriter()
       setMessages(fallback)
       setHydrated(true)
       return
@@ -205,6 +240,7 @@ export function useDialogue({
       const rows = messagesQuery.data?.messages ?? []
       if (rows.length > 0) {
         if (cancelled) return
+        stopTypewriter()
         setMessages(rows.map(mapServerRowToMessage))
         setHydrated(true)
         if (storageKey) {
@@ -228,7 +264,15 @@ export function useDialogue({
       }
 
       if (lsPersisted.length === 0) {
+        // bootstrap 后 invalidate 会触发 refetch；在结果回来前勿把「缓存仍为空」当成无历史，否则先结束加载再闪空列表
+        if (
+          messagesQuery.isFetching &&
+          bootstrapAttemptedRef.current === remoteCtxKey
+        ) {
+          return
+        }
         if (!cancelled) {
+          stopTypewriter()
           setMessages([])
           setHydrated(true)
         }
@@ -244,19 +288,23 @@ export function useDialogue({
             member_id: memberId,
             messages: lsPersisted.map((m) => ({ role: m.role, content: m.content })),
           })
-          if (cancelled) return
+          // 必须执行：StrictMode / 路由切换若在 await 后把本 effect cleanup，旧逻辑会跳过 invalidate，
+          // 缓存仍为空且 bootstrapAttempted 已标记 → 永远不拉库中已写入的记录。
           await queryClient.invalidateQueries({ queryKey: ['dialogue-messages', archiveId, memberId] })
         } catch {
           bootstrapAttemptedRef.current = ''
           if (!cancelled) {
+            stopTypewriter()
             setMessages(lsPersisted)
             setHydrated(true)
           }
         }
+        if (cancelled) return
         return
       }
 
       if (!cancelled) {
+        stopTypewriter()
         setMessages(lsPersisted)
         setHydrated(true)
         try {
@@ -279,9 +327,11 @@ export function useDialogue({
     remoteCtxKey,
     messagesQuery.isError,
     messagesQuery.isFetched,
+    messagesQuery.isFetching,
     messagesQuery.dataUpdatedAt,
     messagesQuery.data,
     queryClient,
+    stopTypewriter,
   ])
 
   // 无前缀会话：仅存 localStorage
@@ -309,19 +359,30 @@ export function useDialogue({
 
   useEffect(() => {
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
     }
   }, [])
 
   const startTypewriter = useCallback((fullContent: string, onDone: () => void) => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
     setIsTyping(true)
     setDisplayedContent('')
+    const codeUnits = fullContent.length
     let i = 0
     intervalRef.current = setInterval(() => {
-      i++
+      i += 1
       setDisplayedContent(fullContent.slice(0, i))
-      if (i >= fullContent.length) {
-        if (intervalRef.current) clearInterval(intervalRef.current)
+      if (i >= codeUnits) {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
         setIsTyping(false)
         onDone()
       }
@@ -388,6 +449,7 @@ export function useDialogue({
         void queryClient.invalidateQueries({ queryKey: ['memories', 'member'] })
         void queryClient.invalidateQueries({ queryKey: ['mnemo-graph'] })
       }
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
       setIsSending(false)
 
       const assistantMsgId = `assistant_${Date.now()}`
@@ -426,11 +488,9 @@ export function useDialogue({
 
   const clear = useCallback(async () => {
     setMessages([])
-    setDisplayedContent('')
     setGraphMemoryActive(false)
     setLastInference(null)
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    setIsTyping(false)
+    stopTypewriter()
     if (storageKey) {
       try {
         localStorage.removeItem(storageKey)
@@ -449,7 +509,7 @@ export function useDialogue({
     } catch {
       // 忽略清除历史失败
     }
-  }, [sessionId, storageKey, persistContext, archiveId, memberId, queryClient])
+  }, [sessionId, storageKey, persistContext, archiveId, memberId, queryClient, stopTypewriter])
 
   /** 模型设置里当前选用的模型名（用于尚未收到本轮响应时的展示） */
   const configuredModelLabel = useMemo(() => {

@@ -77,6 +77,9 @@ flowchart TB
 - Zustand 轻量级状态管理
 - React Router v6 客户端路由
 - 交互式可视化：成员 **记忆关系网**（Mnemo），依赖 `TanStack Query` 拉取 `mnemo-graph` 与画布库 `react-force-graph-2d`；专题说明见 **[memory-relation-network.md](./memory-relation-network.md)**
+- **用量与订阅**：`GET /usage/stats` 经 `usageApi` 进入 **`queryKey: ['dashboard', 'usage']`**，个人中心概览与仪表盘存储卡片同源；档位与上限真源见 **[USAGE_AND_SUBSCRIPTION.md](./USAGE_AND_SUBSCRIPTION.md)**。
+- **Axios 全局 401**：拦截器仅 **`clearAuth()`**，未再强制 **`window.location`** 整页跳转，由 React Router 处理未登录视图，减少与 SPA 导航的竞态。
+- **AI 对话页打字机**：服务端一次返回完整 `reply`；`listMessages` 在窗口聚焦等时会 refetch，若在补水前未停止打字机动效，可能出现「半截正文 + 伪光标」——实现上在服务端覆盖 `messages` 前须 **`stopTypewriter()`**。
 
 **目录结构：**
 

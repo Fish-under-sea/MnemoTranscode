@@ -5,6 +5,7 @@ import axios, { type AxiosError } from 'axios'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import type { ClientLlmPayload } from '@/lib/buildClientLlmPayload'
 import { inferFromStatus, isApiError, type ApiError } from './errors'
+import type { SubscriptionTierId } from '@/lib/subscriptionTier'
 
 // ========== 认证响应类型（供 useAuthForm / 页面使用）==========
 
@@ -98,14 +99,10 @@ api.interceptors.response.use(
       detail: (typeof body.detail === 'string' && body.detail) || message,
     }
 
+    // 仅凭状态码清空登录态；勿整页跳转。硬刷新曾与 React Router / 并行请求竞态，
+    // 表现为「刚进某页就立刻回落地页且像被登出」（实际已 clearAuth）。
     if (status === 401) {
-      const store = useAuthStore.getState()
-      store.clearAuth()
-      const path = window.location.pathname
-      const isWhitelisted = path === '/' || path.includes('/login') || path.includes('/register')
-      if (!isWhitelisted) {
-        window.location.href = '/'
-      }
+      useAuthStore.getState().clearAuth()
     }
 
     return Promise.reject(apiError)
@@ -127,7 +124,7 @@ export const authApi = {
 
   updateMe: (data: {
     username?: string
-    subscription_tier?: 'free' | 'pro' | 'enterprise'
+    subscription_tier?: SubscriptionTierId
   }) => api.patch('/auth/me', data),
 
   uploadAvatar: (file: File) => {
@@ -454,7 +451,7 @@ export const subscriptionApi = {
    * 故优先：PATCH /auth/me 写 subscription_tier → 再 GET /auth/subscription 拉齐用量；
    * 回退：POST /auth/billing/apply-tier（路径不含 subscription）；再旧链路与 /usage/…。
    */
-  updateTier: async (tier: 'free' | 'pro' | 'enterprise') => {
+  updateTier: async (tier: SubscriptionTierId) => {
     const body = { tier }
     const afterPatchMe = async () => {
       await api.patch('/auth/me', { subscription_tier: tier })

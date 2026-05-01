@@ -13,6 +13,8 @@ interface ChatBubbleProps {
   userAvatarSrc?: string
   /** 用户侧：用于头像落款 / 无图时的首字母 */
   userName?: string
+  /** 当前正在打字机逐字输出（为 true 时显示尾光标；勿与 isTyping 加载态混淆） */
+  showTypingCaret?: boolean
   /** 当前正在打字机渲染的内容（仅最后一条 assistant 消息传入） */
   typingContent?: string
   /** 是否显示打字机 loading 状态（content 为空时） */
@@ -26,6 +28,7 @@ export default function ChatBubble({
   assistantAvatarSrc,
   userAvatarSrc,
   userName,
+  showTypingCaret = false,
   typingContent,
   isTyping,
 }: ChatBubbleProps) {
@@ -73,8 +76,8 @@ export default function ChatBubble({
           <div className="whitespace-pre-wrap">{displayContent}</div>
         )}
 
-        {/* 打字机进行中时显示光标 */}
-        {!isUser && typingContent !== undefined && (
+        {/* 仅在逐字输出阶段显示尾光标，避免 typingContent 与 content 不同步时误显 */}
+        {!isUser && showTypingCaret && (
           <span className="inline-block w-0.5 h-4 bg-ink-muted ml-0.5 animate-pulse align-text-bottom" />
         )}
       </div>

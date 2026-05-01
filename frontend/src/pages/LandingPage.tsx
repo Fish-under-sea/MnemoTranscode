@@ -604,14 +604,14 @@ export default function LandingPage() {
           <p className="text-xs font-medium uppercase tracking-widest text-jade-600/90 mb-3">标准定价</p>
           <h2 className="font-serif text-2xl sm:text-3xl text-ink-primary mb-4">简单透明，从免费到专业</h2>
           <p className="text-ink-secondary text-sm sm:text-base leading-relaxed mb-8">
-            免费版支持日常记忆整理与对话；Pro / 企业版提供更高模型与用量。可在
+            Free / Lite / Pro / Max 四档定价：订阅 tokens（平台配额）与自备 API Key 用量分开展示，每档含对应存储方案。
             <Link
               to="/personal-center?tab=subscription"
               className="text-jade-700 font-medium hover:underline mx-0.5"
             >
               个人中心
             </Link>
-            中随时调整订阅与用量。
+            可查看细则并切换档位。
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Button variant="primary" size="md" onClick={() => navigate('/register')}>

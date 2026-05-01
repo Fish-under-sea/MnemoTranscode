@@ -72,10 +72,10 @@ async def extract_and_save_memories(
     messages: list[dict[str, Any]],
     llm: LLMService,
     build_graph: bool = True,
-) -> tuple[list[Memory], dict[str, int]]:
+) -> tuple[list[Memory], dict[str, int], dict]:
     """
     messages: [{"role":"user"|"assistant","content":"..."}, ...]
-    返回新建 Memory 列表与图统计。
+    返回新建 Memory 列表与图统计、以及本条提炼 LLM 的 usage 占位（为空 dict 表示无调用或解析失败）。
     """
     lines: list[str] = []
     for m in messages[-30:]:
@@ -87,7 +87,7 @@ async def extract_and_save_memories(
         lines.append(f"{who}: {content[:2000]}")
     transcript = "\n".join(lines)
     if len(transcript) < 8:
-        return [], {"temporal_edges": 0, "llm_edges": 0}
+        return [], {"temporal_edges": 0, "llm_edges": 0}, {}
 
     prompt = f"""你是关系档案助手。从下列对话中提炼 1～8 条**可独立保存的记忆**（具体事件、约定、情感时刻、共同回忆），JSON：
 {{
@@ -105,15 +105,16 @@ async def extract_and_save_memories(
 对话：
 {transcript[:24000]}
 """
+    usage_after_extract: dict = {}
     try:
-        data = await llm.json_complete(prompt, temperature=0.2)
+        data = await llm.json_complete(prompt, temperature=0.2, usage_out=usage_after_extract)
     except Exception as exc:
         logger.warning("对话提炼记忆 LLM 失败: %s", exc)
-        return [], {"temporal_edges": 0, "llm_edges": 0}
+        return [], {"temporal_edges": 0, "llm_edges": 0}, {}
 
     mem_list = data.get("memories") if isinstance(data, dict) else None
     if not isinstance(mem_list, list) or not mem_list:
-        return [], {"temporal_edges": 0, "llm_edges": 0}
+        return [], {"temporal_edges": 0, "llm_edges": 0}, usage_after_extract
 
     links_raw = data.get("links") if isinstance(data, dict) else None
     if not isinstance(links_raw, list):
@@ -147,7 +148,7 @@ async def extract_and_save_memories(
             logger.debug("engram sync: %s", exc)
 
     if not created:
-        return [], {"temporal_edges": 0, "llm_edges": 0}
+        return [], {"temporal_edges": 0, "llm_edges": 0}, usage_after_extract
 
     ordered = sort_memories_by_time(created)
     stats = {"temporal_edges": 0, "llm_edges": 0}
@@ -157,4 +158,4 @@ async def extract_and_save_memories(
         if llm is not None:
             stats["llm_edges"] += await llm_enrich_cross_links(session, user_id, ordered, llm)
 
-    return created, stats
+    return created, stats, usage_after_extract

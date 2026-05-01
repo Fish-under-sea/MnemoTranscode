@@ -568,7 +568,46 @@ Authorization: Bearer <token>
 
 ---
 
-## 六、通用响应格式
+## 六、用量与订阅接口
+
+与 **订阅档位**、**本月 tokens 计量**、**云存储配额**相关的只读或切换接口（前缀仍为 `/api/v1`）。
+
+### 6.1 用量统计（仪表盘 / 个人中心同源）
+
+**GET** `/api/v1/usage/stats`
+
+需认证。聚合 **当月**订阅口径与用户自备 Key 口径（若有）、分项统计及 **存储**用量。
+
+**响应主要字段（节选）：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| monthly_used | int | 本月计入「订阅限额」的 tokens（`metering_channel=subscription` 等口径，以后端为准） |
+| monthly_used_user_key | int | 本月自备 API Key / 网关消耗（一般不计入订阅限额） |
+| monthly_limit | int | **当前 `subscription_tier` 对应的月度订阅 tokens 上限**（与 `subscription.py` 中档位一致） |
+| usage_percent | float | `monthly_used / monthly_limit`（limit>0） |
+| remaining | int | 订阅限额剩余 tokens |
+| storage_used | int | 当前用户 `MediaAsset.size` 聚合（字节） |
+| storage_quota | int | 当前档位云存储配额（字节） |
+| storage_usage_percent | float | 占用百分比 |
+| usage_by_type | object | 按 `action_type` 聚合的 tokens |
+| usage_by_day | array | 按日的 tokens |
+
+### 6.2 配额摘要
+
+**GET** `/api/v1/usage/quota`
+
+需认证。返回 **`subscription_tier`（规范化后）**、**monthly_limit**、已用与剩余等；**限额含义与 `/usage/stats` 对齐**（以档位为准）。
+
+### 6.3 切换订阅档位（别名路径）
+
+**POST** `/api/v1/usage/subscription-tier`
+
+请求体：`{ "tier": "free" | "lite" | "pro" | "max" }`（与 schema 一致）。与 **`PATCH /auth/me` 写 `subscription_tier`** 等路径语义等价，便于在部分反代环境下避开 `405`。
+
+---
+
+## 七、通用响应格式
 
 ### 成功响应
 
@@ -603,7 +642,7 @@ Authorization: Bearer <token>
 
 ---
 
-## 七、认证说明
+## 八、认证说明
 
 除注册和登录接口外，所有接口均需要认证。
 

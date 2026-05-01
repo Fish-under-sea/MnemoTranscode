@@ -3,7 +3,7 @@ import { useRef, useEffect, KeyboardEvent, useState, type CSSProperties } from '
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
-import { Trash2, Send, ChevronRight, BookmarkPlus } from 'lucide-react'
+import { Trash2, Send, ChevronRight, BookmarkPlus, UserMinus } from 'lucide-react'
 import { archiveApi, memoryApi } from '@/services/api'
 import { Button } from '@/components/ui/Button'
 import PageTransition from '@/components/ui/PageTransition'
@@ -17,7 +17,7 @@ import Avatar from '@/components/ui/Avatar'
 import toast from 'react-hot-toast'
 import { useApiError } from '@/hooks/useApiError'
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { rememberDialogueRoute } from '@/lib/dialogueStorage'
+import { rememberDialogueRoute, clearRememberedDialogueRoute } from '@/lib/dialogueStorage'
 
 const STARTER_PROMPTS = [
   '你最难忘的一件事是什么？',
@@ -145,6 +145,12 @@ export default function DialoguePage() {
       e.preventDefault()
       send()
     }
+  }
+
+  /** 回到成员选择并重置顶栏「AI 对话」记忆，便于换角色 */
+  const handleExitCurrentRole = () => {
+    clearRememberedDialogueRoute()
+    void navigate('/dialogue')
   }
 
   const memberName = (member as any)?.name || (archive as any)?.name || 'AI 助手'
@@ -290,6 +296,21 @@ export default function DialoguePage() {
               </div>
             )}
           </div>
+
+          {hasChatContext && (
+            <div className="p-4 border-t border-border-default bg-surface/90 backdrop-blur-sm shrink-0">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                leftIcon={<UserMinus size={14} aria-hidden />}
+                onClick={handleExitCurrentRole}
+              >
+                退出当前角色
+              </Button>
+            </div>
+          )}
         </aside>
 
         {/* 对话主区 */}
@@ -312,6 +333,18 @@ export default function DialoguePage() {
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end sm:justify-end">
+                {hasChatContext && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="md:hidden shrink-0"
+                    leftIcon={<UserMinus size={14} aria-hidden />}
+                    onClick={handleExitCurrentRole}
+                  >
+                    退出当前角色
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -420,6 +453,7 @@ export default function DialoguePage() {
                           }
                           userAvatarSrc={userAvatarUrl}
                           userName={userBubbleName}
+                          showTypingCaret={isLastAssistant && isTyping}
                           typingContent={
                             isCurrentlyTyping
                               ? (isTyping ? displayedContent : undefined)

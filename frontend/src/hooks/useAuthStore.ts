@@ -11,7 +11,7 @@ export interface AuthUser {
   is_active: boolean
   created_at: string
   avatar_url?: string
-  subscription_tier?: 'free' | 'pro' | 'enterprise'
+  subscription_tier?: string
   monthly_token_limit?: number
   monthly_token_used?: number
 }

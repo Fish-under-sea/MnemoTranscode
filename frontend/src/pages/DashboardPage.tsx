@@ -15,7 +15,9 @@ import Badge from '@/components/ui/Badge'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui'
 import ScrollReveal, { ScrollRevealGroup } from '@/components/ui/ScrollReveal'
 import { fadeUp, staggerContainer } from '@/lib/motion'
+import { cn } from '@/lib/utils'
 import { getResumeDialoguePath } from '@/lib/dialogueStorage'
+import { formatStoragePrimaryLine, storageProgressPercent } from '@/lib/formatBytes'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -70,7 +72,7 @@ export default function DashboardPage() {
 
       {!isEmpty && (
         <>
-          <ScrollRevealGroup stagger={0.06} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <ScrollRevealGroup stagger={0.06} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 items-stretch">
             <KPICard
               icon={Archive}
               label="关系档案"
@@ -100,7 +102,8 @@ export default function DashboardPage() {
             <KPICard
               icon={HardDrive}
               label="存储用量"
-              value={formatStorageUsage(stats.usage)}
+              value={formatStoragePrimaryLine(stats.usage, stats.isLoading)}
+              progressPercent={storageProgressPercent(stats.usage, stats.isLoading)}
               loading={stats.isLoading}
               error={stats.errors.usage}
               onRetry={stats.refetchAll}
@@ -221,6 +224,8 @@ function KPICard(props: {
   label: string
   value: string | number
   suffix?: string
+  /** 0–100+，用于进度条宽度（可超过 100 表示超配额，条仅 cap 在 100%） */
+  progressPercent?: number
   loading?: boolean
   error?: unknown
   onRetry?: () => void
@@ -228,23 +233,54 @@ function KPICard(props: {
   const Icon = props.icon
   if (props.error && !props.loading) {
     return (
-      <Card variant="plain" padding="md">
-        <ErrorState size="sm" error={props.error as Error} onRetry={props.onRetry} />
-      </Card>
+      <motion.div variants={fadeUp} className="h-full">
+        <Card variant="plain" padding="sm" className="h-full flex flex-col">
+          <ErrorState size="sm" error={props.error as Error} onRetry={props.onRetry} />
+        </Card>
+      </motion.div>
     )
   }
+  const barWidth = props.progressPercent != null && !props.loading
+    ? Math.min(100, Math.max(0, props.progressPercent))
+    : null
+  const overCap = props.progressPercent != null && props.progressPercent > 100
   return (
-    <motion.div variants={fadeUp}>
-      <Card variant="plain" padding="md" hoverable>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-full bg-jade-50 flex items-center justify-center">
-            <Icon className="w-5 h-5 text-jade-600" />
+    <motion.div variants={fadeUp} className="h-full">
+      <Card variant="plain" padding="sm" hoverable className="h-full flex flex-col">
+        <div className="flex items-center gap-2 mb-2 shrink-0">
+          <div className="w-8 h-8 rounded-full bg-jade-50 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-jade-600" />
           </div>
           <span className="text-ink-secondary text-sm">{props.label}</span>
         </div>
-        <div className="font-serif text-2xl text-ink-primary tabular-nums">
+        <div className="font-serif text-2xl text-ink-primary tabular-nums shrink-0">
           {props.loading ? '—' : props.value}
           {props.suffix && <span className="text-base text-ink-muted ml-1">{props.suffix}</span>}
+        </div>
+        {/* 与「存储用量」进度条+文案区同高，保证四卡底边对齐（整体略压缩高度） */}
+        <div className="mt-auto pt-2 min-h-[3rem] flex flex-col justify-end gap-0.5 shrink-0">
+          {barWidth != null ? (
+            <>
+              <div className="h-1 w-full rounded-full bg-warm-200/90 overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all',
+                    overCap ? 'bg-amber-500' : 'bg-jade-500',
+                  )}
+                  style={{ width: `${barWidth}%` }}
+                />
+              </div>
+              <div className="text-caption text-ink-muted tabular-nums flex justify-between gap-2 min-h-[1.25rem]">
+                <span>{props.progressPercent != null ? `已用 ${props.progressPercent.toFixed(1)}%` : null}</span>
+                {overCap && <span className="text-amber-700 shrink-0">已超出档位配额</span>}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="h-1 w-full rounded-full bg-transparent shrink-0" aria-hidden />
+              <div className="text-caption tabular-nums min-h-[1.25rem]" aria-hidden />
+            </>
+          )}
         </div>
       </Card>
     </motion.div>
@@ -267,16 +303,3 @@ function QuickAction(props: { icon: LucideIcon; label: string; onClick: () => vo
   )
 }
 
-function formatStorageUsage(usage: { storage_used?: number; storage_quota?: number } | null): string {
-  if (!usage || usage.storage_used === undefined || usage.storage_quota === undefined) return '—'
-  const used = formatBytes(usage.storage_used)
-  const quota = formatBytes(usage.storage_quota)
-  return `${used} / ${quota}`
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}

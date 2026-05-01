@@ -12,6 +12,14 @@ from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.user import User
 from app.models.usage import UsageRecord
+from app.models.media import MediaAsset
+from app.services.subscription import (
+    apply_tier_to_user,
+    build_subscription_response_from_usage_records,
+    normalize_tier,
+    storage_quota_bytes_for_tier,
+    tier_monthly_token_limit,
+)
 from app.schemas.user_center import (
     UsageStatsResponse,
     UsageHistoryResponse,
@@ -20,7 +28,7 @@ from app.schemas.user_center import (
     SubscriptionResponse,
     SubscriptionTierUpdate,
 )
-from app.services.subscription import apply_tier_to_user, build_subscription_response
+from app.services.usage_metering import sum_monthly_tokens_by_channel
 
 router = APIRouter(prefix="/usage", tags=["用量统计"])
 
@@ -41,7 +49,7 @@ async def set_subscription_tier_alias(
     apply_tier_to_user(user, body.tier)
     await db.commit()
     await db.refresh(user)
-    return build_subscription_response(user)
+    return await build_subscription_response_from_usage_records(db, user)
 
 
 @router.get("/stats", response_model=UsageStatsResponse)
@@ -53,6 +61,8 @@ async def get_usage_stats(
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
+    sub_used, uk_used = await sum_monthly_tokens_by_channel(db, current_user.id)
+
     result = await db.execute(
         select(UsageRecord)
         .where(UsageRecord.user_id == current_user.id)
@@ -62,12 +72,10 @@ async def get_usage_stats(
 
     usage_by_type: dict[str, int] = {}
     usage_by_day: dict[str, int] = {}
-    total_used = 0
 
     for r in records:
         action = r.action_type or "other"
         tokens = r.token_count or 0
-        total_used += tokens
         usage_by_type[action] = usage_by_type.get(action, 0) + tokens
         day_key = r.created_at.strftime("%Y-%m-%d")
         usage_by_day[day_key] = usage_by_day.get(day_key, 0) + tokens
@@ -76,13 +84,32 @@ async def get_usage_stats(
         {"date": k, "tokens": v} for k, v in sorted(usage_by_day.items())
     ]
 
+    sum_storage = await db.execute(
+        select(func.coalesce(func.sum(MediaAsset.size), 0)).where(
+            MediaAsset.owner_id == current_user.id
+        )
+    )
+    storage_used = int(sum_storage.scalar() or 0)
+    tier = normalize_tier(current_user.subscription_tier)
+    storage_quota = storage_quota_bytes_for_tier(tier)
+    storage_pct = (
+        round(storage_used / storage_quota * 100, 2) if storage_quota > 0 else 0.0
+    )
+
+    # tokens 月度上限与 storage 一致：均以当前订阅档位为准（与 /auth/subscription、产品描述对齐）
+    limit = tier_monthly_token_limit(current_user)
+
     return UsageStatsResponse(
-        monthly_used=total_used,
-        monthly_limit=current_user.monthly_token_limit,
+        monthly_used=sub_used,
+        monthly_used_user_key=uk_used,
+        monthly_limit=limit,
         usage_by_type=usage_by_type,
         usage_by_day=usage_by_day_list,
-        remaining=max(0, current_user.monthly_token_limit - total_used),
-        usage_percent=round(total_used / current_user.monthly_token_limit * 100, 2) if current_user.monthly_token_limit > 0 else 0,
+        remaining=max(0, limit - sub_used),
+        usage_percent=round(sub_used / limit * 100, 2) if limit > 0 else 0,
+        storage_used=storage_used,
+        storage_quota=storage_quota,
+        storage_usage_percent=storage_pct,
     )
 
 
@@ -128,21 +155,18 @@ async def get_quota(
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    result = await db.execute(
-        select(func.coalesce(func.sum(UsageRecord.token_count), 0))
-        .where(UsageRecord.user_id == current_user.id)
-        .where(UsageRecord.created_at >= month_start)
-    )
-    monthly_used = result.scalar() or 0
+    sub_used, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
+    monthly_used = sub_used
 
     next_month = month_start + timedelta(days=32)
     next_month = next_month.replace(day=1)
 
+    tier_limit = tier_monthly_token_limit(current_user)
     return QuotaResponse(
-        subscription_tier=current_user.subscription_tier or "free",
-        monthly_limit=current_user.monthly_token_limit,
+        subscription_tier=normalize_tier(current_user.subscription_tier),
+        monthly_limit=tier_limit,
         monthly_used=monthly_used,
-        remaining=max(0, current_user.monthly_token_limit - monthly_used),
-        usage_percent=round(monthly_used / current_user.monthly_token_limit * 100, 2) if current_user.monthly_token_limit > 0 else 0,
+        remaining=max(0, tier_limit - monthly_used),
+        usage_percent=round(monthly_used / tier_limit * 100, 2) if tier_limit > 0 else 0,
         reset_at=next_month,
     )

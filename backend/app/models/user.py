@@ -23,7 +23,7 @@ class User(Base):
     # 订阅信息
     subscription_tier = Column(String(20), default="free")
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
-    monthly_token_limit = Column(BigInteger, default=100000)
+    monthly_token_limit = Column(BigInteger, default=50_000_000)
     monthly_token_used = Column(BigInteger, default=0)
 
     # AI 记忆上下文（JSON 格式，存储跨会话对话摘要）

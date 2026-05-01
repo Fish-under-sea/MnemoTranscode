@@ -11,6 +11,7 @@ import {
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import Avatar from '@/components/ui/Avatar'
+import { normalizeTierId, tierBadgeClass, tierDisplayName } from '@/lib/subscriptionTier'
 
 const navItems = [
   { path: 'dashboard', label: '首页', icon: Home },
@@ -51,7 +52,8 @@ export default function Layout() {
     const norm = (raw.startsWith('/dashboard') ? raw.replace(/^\/dashboard(\/|$)/, '/') : raw) || '/'
     if (path === 'dashboard') return norm === '/' || norm === '/dashboard'
     const target = `/${path}`
-    if (path === 'dialogue') return norm === '/dialogue' || /^\/dialogue\/\d+\/\d+$/.test(norm)
+    if (path === 'dialogue')
+      return norm === '/dialogue' || /^\/dialogue\/[1-9]\d*\/[1-9]\d*$/.test(norm)
     if (path === 'archives') return norm === '/archives' || norm.startsWith('/archives/')
     return norm === target
   }
@@ -152,14 +154,13 @@ export default function Layout() {
                         <div className="text-xs text-slate-500 truncate mt-0.5">{user?.email}</div>
                         {user?.subscription_tier && (
                           <div className="mt-1.5">
-                            <span className={cn(
-                              'text-xs px-2 py-0.5 rounded-full font-medium',
-                              user.subscription_tier === 'pro' ? 'bg-jade-100 text-jade-700' :
-                              user.subscription_tier === 'enterprise' ? 'bg-amber-100 text-amber-700' :
-                              'bg-slate-100 text-slate-600'
-                            )}>
-                              {user.subscription_tier === 'pro' ? 'Pro' :
-                               user.subscription_tier === 'enterprise' ? 'Enterprise' : 'Free'}
+                            <span
+                              className={cn(
+                                'text-xs px-2 py-0.5 rounded-full font-medium',
+                                tierBadgeClass(normalizeTierId(user.subscription_tier)),
+                              )}
+                            >
+                              {tierDisplayName(normalizeTierId(user.subscription_tier))}
                             </span>
                           </div>
                         )}

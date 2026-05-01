@@ -42,6 +42,7 @@ from app.services.chat_import_parser import parse_chat_import
 from app.services.chat_import_ai import stream_chat_import
 from app.services.conversation_memory_extract import extract_and_save_memories
 from app.services.llm_service import LLMService
+from app.services.usage_metering import record_token_usage
 
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
@@ -213,14 +214,27 @@ async def extract_from_conversation(
 ):
     """根据多轮对话（user/assistant）提炼记忆并写入链式图。"""
     await _require_member_for_user(db, current_user, body.member_id)
-    llm = LLMService()
-    created, stats = await extract_and_save_memories(
+    if body.client_llm:
+        ov = body.client_llm
+        llm = LLMService(api_key=ov.api_key or "", base_url=ov.base_url, model=ov.model)
+    else:
+        llm = LLMService()
+    created, stats, extract_ub = await extract_and_save_memories(
         db,
         user_id=current_user.id,
         member_id=body.member_id,
         messages=body.messages,
         llm=llm,
         build_graph=body.build_graph,
+    )
+
+    await record_token_usage(
+        db,
+        user_id=current_user.id,
+        action_type="memory_extract",
+        usage_bundle=extract_ub,
+        client_llm=body.client_llm,
+        session_id=None,
     )
     return ConversationExtractResponse(
         created_count=len(created),

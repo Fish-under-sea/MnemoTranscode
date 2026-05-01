@@ -2,9 +2,8 @@
 用量和偏好相关 Pydantic Schema
 """
 from datetime import datetime
-from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 
@@ -22,6 +21,7 @@ class UsageRecordResponse(BaseModel):
     user_id: int
     action_type: str
     token_count: int
+    metering_channel: str | None = None
     cost: int = 0
     model_name: str | None = None
     session_id: str | None = None
@@ -32,12 +32,18 @@ class UsageRecordResponse(BaseModel):
 
 
 class UsageStatsResponse(BaseModel):
+    """monthly_used：订阅口径（计入本月限额）；monthly_used_user_key：自备 Key 消耗（不计限额）。"""
     monthly_used: int
+    monthly_used_user_key: int = 0
     monthly_limit: int
     usage_by_type: dict[str, int]
     usage_by_day: list[dict]
     remaining: int
     usage_percent: float
+    # 媒体对象（media_assets）按 owner 聚合的实际占用；配额随 subscription_tier
+    storage_used: int = 0
+    storage_quota: int = 0
+    storage_usage_percent: float = 0.0
 
 
 class UsageHistoryResponse(BaseModel):
@@ -123,6 +129,7 @@ class SubscriptionResponse(BaseModel):
     tier: str
     monthly_limit: int
     monthly_used: int
+    monthly_used_user_key: int = 0
     remaining: int
     usage_percent: float
     expires_at: datetime | None = None
@@ -130,9 +137,20 @@ class SubscriptionResponse(BaseModel):
 
 
 class SubscriptionTierUpdate(BaseModel):
-    """切换订阅档位（演示环境免支付）。"""
+    """切换订阅档位（演示环境免支付）。兼容请求体带 `enterprise`，视为 max。"""
 
-    tier: Literal["free", "pro", "enterprise"]
+    tier: str
+
+    @field_validator("tier")
+    @classmethod
+    def normalize_tier_slug(cls, v: str) -> str:
+        t = str(v).strip().lower()
+        if t == "enterprise":
+            t = "max"
+        allowed = frozenset({"free", "lite", "pro", "max"})
+        if t not in allowed:
+            raise ValueError("tier 须为 free、lite、pro、max（legacy: enterprise 会自动映射为 max）")
+        return t
 
 
 # ==== AI 记忆 ====

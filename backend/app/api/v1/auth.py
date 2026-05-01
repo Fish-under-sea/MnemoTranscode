@@ -30,7 +30,15 @@ from app.schemas.memory import (
     TokenResponse
 )
 from app.schemas.user_center import SubscriptionResponse, SubscriptionTierUpdate
-from app.services.subscription import apply_tier_to_user, build_subscription_response
+from app.services.subscription import (
+    apply_tier_to_user,
+    build_subscription_response_from_usage_records,
+    TIER_TOKEN_LIMITS,
+    tier_monthly_token_limit,
+    normalize_tier,
+)
+from app.services.usage_metering import sum_monthly_tokens_by_channel
+
 
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -67,7 +75,11 @@ async def get_current_user(
     return user
 
 
-def build_user_response(user: User) -> UserResponse:
+def build_user_response(
+    user: User,
+    *,
+    monthly_subscription_used: int | None = None,
+) -> UserResponse:
     # UserResponse.username 要求 min_length=2；历史或异常数据可能为 NULL / 空 / 单字符，避免登录序列化报错 500
     raw_name = (user.username or "").strip()
     if len(raw_name) < 2:
@@ -80,6 +92,13 @@ def build_user_response(user: User) -> UserResponse:
     if created is None:
         created = datetime.now(timezone.utc)
 
+    used = (
+        int(monthly_subscription_used)
+        if monthly_subscription_used is not None
+        else int(user.monthly_token_used or 0)
+    )
+
+    sub_tier = normalize_tier(user.subscription_tier)
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -87,9 +106,9 @@ def build_user_response(user: User) -> UserResponse:
         is_active=user.is_active,
         created_at=created,
         avatar_url=build_avatar_display_url(user.id, user.avatar_url),
-        subscription_tier=user.subscription_tier or "free",
-        monthly_token_limit=user.monthly_token_limit or 100000,
-        monthly_token_used=user.monthly_token_used or 0,
+        subscription_tier=sub_tier,
+        monthly_token_limit=tier_monthly_token_limit(user),
+        monthly_token_used=used,
     )
 
 
@@ -130,7 +149,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
         email=user_data.email,
         username=user_data.username,
         hashed_password=hash_password(user_data.password),
-        monthly_token_limit=100000,
+        monthly_token_limit=TIER_TOKEN_LIMITS["free"],
         monthly_token_used=0,
         subscription_tier="free",
     )
@@ -162,16 +181,21 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     await db.commit()
 
     token = create_access_token({"sub": str(user.id)})
+    sub_used, _ = await sum_monthly_tokens_by_channel(db, user.id)
     return TokenResponse(
         access_token=token,
-        user=build_user_response(user),
+        user=build_user_response(user, monthly_subscription_used=sub_used),
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """获取当前用户信息"""
-    return build_user_response(current_user)
+    sub, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
+    return build_user_response(current_user, monthly_subscription_used=sub)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -187,7 +211,8 @@ async def update_me(
         apply_tier_to_user(current_user, update_data.subscription_tier)
     await db.commit()
     await db.refresh(current_user)
-    return build_user_response(current_user)
+    sub, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
+    return build_user_response(current_user, monthly_subscription_used=sub)
 
 
 @router.post("/billing/apply-tier", response_model=SubscriptionResponse)
@@ -204,7 +229,7 @@ async def apply_tier_billing(
     apply_tier_to_user(user, body.tier)
     await db.commit()
     await db.refresh(user)
-    return build_subscription_response(user)
+    return await build_subscription_response_from_usage_records(db, user)
 
 
 @router.post("/subscription", response_model=SubscriptionResponse)
@@ -221,28 +246,31 @@ async def update_subscription_tier(
     apply_tier_to_user(user, body.tier)
     await db.commit()
     await db.refresh(user)
-    return build_subscription_response(user)
+    return await build_subscription_response_from_usage_records(db, user)
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)
 async def get_subscription(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取订阅信息"""
-    return build_subscription_response(current_user)
+    return await build_subscription_response_from_usage_records(db, current_user)
 
 
 @router.post("/refresh-token", response_model=TokenResponse)
 async def refresh_token(
     remember: bool = Query(False),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """刷新 Token"""
     expires_delta = timedelta(days=7) if remember else timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token({"sub": str(current_user.id)}, expires_delta=expires_delta)
+    sub_used, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
     return TokenResponse(
         access_token=token,
-        user=build_user_response(current_user),
+        user=build_user_response(current_user, monthly_subscription_used=sub_used),
     )
 
 
@@ -290,10 +318,10 @@ async def upload_avatar(
         current_user.avatar_url = file_url
         await db.commit()
         await db.refresh(current_user)
-
+        sub, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
         return {
             "url": build_avatar_display_url(current_user.id, current_user.avatar_url),
-            "user": build_user_response(current_user),
+            "user": build_user_response(current_user, monthly_subscription_used=sub),
         }
 
     except HTTPException:
@@ -314,4 +342,5 @@ async def delete_avatar(
     current_user.avatar_url = None
     await db.commit()
     await db.refresh(current_user)
-    return build_user_response(current_user)
+    sub, _ = await sum_monthly_tokens_by_channel(db, current_user.id)
+    return build_user_response(current_user, monthly_subscription_used=sub)

@@ -63,7 +63,7 @@ export default function App() {
         if (at !== getSubscriptionSyncGen()) return
         const r = res as { tier: string; monthly_limit: number; monthly_used: number }
         useAuthStore.getState().updateUser({
-          subscription_tier: r.tier as 'free' | 'pro' | 'enterprise',
+          subscription_tier: String(r.tier ?? 'free').toLowerCase(),
           monthly_token_limit: r.monthly_limit,
           monthly_token_used: r.monthly_used,
         })

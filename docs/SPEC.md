@@ -143,6 +143,12 @@
 - 定时推送（邮件/微信/应用内）
 - 跨代传承设计
 
+#### 2.4.6 订阅与用量（Web）
+
+- **档位**：`free` / `lite` / `pro` / `max`（legacy `enterprise` 等在后端归一为 `max` 等，见 `normalize_tier`）。
+- **月度「订阅 tokens」上限**与 **云存储配额** 均由当前 **`subscription_tier`** 推导，与产品页文案一致；详情与接口字段见 **[USAGE_AND_SUBSCRIPTION.md](./USAGE_AND_SUBSCRIPTION.md)** 与 [API.md](./API.md) 第六节。
+- **个人中心 / 仪表盘**：展示数据以 **`GET /usage/stats`** 为主；上传媒体后可通过 **`invalidateQueries(['dashboard', 'usage'])`** 刷新存储占用。
+
 ---
 
 ## 三、多渠道接入规格
@@ -151,7 +157,7 @@
 
 - Web 应用内直接对话
 - React 前端 + FastAPI 后端
-- 实时流式响应
+- LLM 输出：当前 Web 对话接口为 **完整 JSON 一次返回**，前端可作打字机模拟；真正意义上的 **SSE/流式** 为路线图项（参见各期 completed/spec）
 - 语音播报（可选）
 
 ### 3.2 微信聊天转接

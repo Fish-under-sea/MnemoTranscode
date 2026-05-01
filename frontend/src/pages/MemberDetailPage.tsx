@@ -403,9 +403,10 @@ export default function MemberDetailPage() {
             <MediaUploader
               memberId={Number(memberId)}
               purpose="archive_photo"
-              onComplete={() =>
-                queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
-              }
+              onComplete={() => {
+                void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+                void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
+              }}
             />
           </div>
           <MediaGallery memberId={Number(memberId)} memberName={member.name} />

@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_serializer, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_serializer, model_validator
 from enum import Enum
 
 from app.schemas.client_llm import ClientLlmOverride
@@ -40,8 +40,21 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     """更新用户"""
     username: str | None = Field(None, min_length=2, max_length=50)
-    # 与独立订阅接口等效，供环境对 /auth/subscription 仅放行 GET 时经 PATCH /me 切换档
-    subscription_tier: Literal["free", "pro", "enterprise"] | None = None
+    # 与独立订阅接口等效；enterprise 视为 max
+    subscription_tier: str | None = None
+
+    @field_validator("subscription_tier")
+    @classmethod
+    def normalize_subscription_tier(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        t = str(v).strip().lower()
+        if t == "enterprise":
+            t = "max"
+        allowed = frozenset({"free", "lite", "pro", "max"})
+        if t not in allowed:
+            raise ValueError("subscription_tier 须为 free、lite、pro、max")
+        return t
 
 
 class UserResponse(UserBase):
@@ -51,7 +64,7 @@ class UserResponse(UserBase):
     created_at: datetime
     avatar_url: str | None = None
     subscription_tier: str = "free"
-    monthly_token_limit: int = 100000
+    monthly_token_limit: int = 50_000_000
     monthly_token_used: int = 0
 
     class Config:
@@ -325,6 +338,7 @@ class ConversationExtractRequest(BaseModel):
     member_id: int = Field(..., ge=1)
     messages: list[dict] = Field(..., min_length=1, max_length=60)
     build_graph: bool = True
+    client_llm: ClientLlmOverride | None = None
 
 
 class ConversationExtractResponse(BaseModel):

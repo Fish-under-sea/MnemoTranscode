@@ -18,7 +18,7 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 
 **当前阶段**：Web 全栈与基础设施已跑通；在档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊之上，持续迭代 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、成员头像与受控上传等能力。**桌面级客户端应用** 列为下一步方向。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
 
-LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架构总览见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)、规格摘要见 [docs/SPEC.md](./docs/SPEC.md)、REST 摘录见 [docs/API.md](./docs/API.md)。
+LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架构总览见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)、规格摘要见 [docs/SPEC.md](./docs/SPEC.md)、REST 摘录见 [docs/API.md](./docs/API.md)。**用量、订阅档位、对话页打字机与前端缓存** 的维护说明见 **[docs/USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**。
 
 ---
 
@@ -31,7 +31,7 @@ LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架
 | **媒体存档** | 照片、视频、音频两阶段预签名上传，私有桶安全存储（MinIO） |
 | **Mnemo / 记忆图谱** | 后端 `app/mnemo/`：对话巩固、Engram 关系、有意识召回（conscious recall）等；前端成员详情 **记忆关系图**（`MemoryRelationGraph` + `react-force-graph-2d`）。**技术说明**： [docs/memory-relation-network.md](./docs/memory-relation-network.md)（含图谱 API、`client_llm` 流式导入衔接、力导向开启后停表锚点对齐） |
 | **成员头像** | MinIO 存储 + 预签名；受控尺寸/类型（`avatar_image` / `upload_bounded`）；详情见 API 与 `Member.avatar_url` |
-| **AI 对话** | 与档案中的成员进行 AI 角色扮演对话，前端打字机效果，记忆上下文注入；可选承接 Mnemo 管线巩固记忆 |
+| **AI 对话** | 与档案成员角色对话；服务端一次返回完整 `reply`，前端打字机为本地模拟。**对话列表** `GET /dialogue/messages` 在窗口聚焦等场景会 refetch，与打字机状态需协调（见 **[USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**） |
 | **故事书生成** | 基于记忆条目 AI 自动生成生命故事，支持怀旧温情、文学风格等四种写作风格，可导出 PDF |
 | **交互时间线** | 按年份聚合的可视化记忆时间线，支持情感/成员/时间范围三维筛选 |
 | **记忆胶囊** | 创建定时解封的加密信件，锁定期内内容加密保护，到期自动解封 |
@@ -39,7 +39,7 @@ LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架
 | **多渠道对话** | 原生 Web 应用内对话；微信侧通过 KouriChat 目录挂载与 API 转接（`kourichat/` + `/api/v1/kourichat`） |
 | **语义检索** | 向量数据库支撑的自然语言记忆搜索（Qdrant） |
 | **模型设置** | 登录后「模型设置」：厂商 Base URL 预设、API Key、模型名与列表探测；后端 `POST /api/v1/llm-probe/check` 校验连通性（详见 [docs/LLM.txt](./docs/LLM.txt)） |
-| **个人中心** | 头像、资料、订阅/用量与主题偏好（含应用背景等用户偏好，同步后端） |
+| **个人中心** | 头像、资料、**订阅档位切换**、**本月 AI 用量**（订阅口径 + 自备 Key 分计）、**云存储用量**（与 `GET /usage/stats` 同源）、DIY 主题与偏好（含应用背景） |
 
 ---
 
@@ -209,7 +209,7 @@ npm run dev
 
 **行为**：选定档案成员后的 Web 对话会写入 Postgres 表 `dialogue_chat_messages`（按用户 + 档案 + 成员），换浏览器/设备同一账号仍可看到。**首次上线或拉代码含新迁移**要让数据库追到最新 revision。
 
-**相关迁移**：Alembic revision **`a1b2c3d4e5f7`**（`dialogue_chat_messages`）。
+**相关迁移**：主链含 **`a1b2c3d4e5f7`**（表 `dialogue_chat_messages`）、**`f0a1b2c3d4e5`**（订阅档位数据修复）等；上述两线曾分叉，已用 **合并 revision `e3887247034b`** 收束为 **单 head**。若其它环境仍报 `Multiple head revisions`，在 `backend/` 执行 **`alembic heads`** 并按需 **`alembic merge`**。
 
 **何时不必手动**：**Docker `backend`** 镜像入口 `backend/entrypoint.sh` 在每次容器启动时已执行 **`alembic upgrade head`**，Compose 拉起后端一般会自动建好表。
 
@@ -225,7 +225,7 @@ npm run dev
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\alembic-upgrade.ps1
 ```
 
-只跑本机 Python（不切 Docker）可加 **`-LocalOnly`**。可选 **`-DockerExePath "..."`** 指定 `docker.exe`（与同目录 `rebuild-backend-docker.ps1` 一致）。
+只跑本机 Python（不切 Docker）可加 **`-LocalOnly`**。可选 **`-DockerExePath "..."`** 指定 `docker.exe`（与 **`scripts/rebuild-backend-docker.ps1`** 一致；该脚本为 **`backend` + `celery-worker`** 无缓存重建并 `up -d`，见脚本内说明）。
 
 **冒烟建议**：同一账号在 A 浏览器发两条 → B 无痕打开同成员对话页应可见；清空会话后两端均为空。（若只开单标签，`useDialogue` 已开启 **`refetchOnWindowFocus`**，切回浏览器标签也会拉服务端列表。）
 
@@ -278,7 +278,7 @@ MTC/
 │   ├── docker-compose.yml     # 全栈 + PG / Qdrant / MinIO / Redis
 │   └── docker-compose.hybrid-frontend.example.yml
 │
-├── scripts/                   # 运维脚本：`start-services.sh`、`start-stable.ps1`、Docker 上下文修复等
+├── scripts/                   # 运维脚本：`start-services.sh`、`start-stable.ps1`、`rebuild-backend-docker.ps1`、Docker 上下文修复等
 │
 └── docs/
     ├── MnemoTranscode.txt      # 项目文字宣言
@@ -288,6 +288,7 @@ MTC/
     ├── API.md                  # 主要 REST 摘录
     ├── memory-relation-network.md  # 记忆关系网（Engram）前后端契约与交互
     ├── stable-dev-windows.md   # Windows + Docker 稳定性
+    ├── USAGE_AND_SUBSCRIPTION.md  # 用量 / 订阅档位 / 前端缓存与对话打字机
     ├── design-system.md        # A 基座设计系统
     └── superpowers/
         ├── specs/             # 各子项目设计规格文档
@@ -325,6 +326,8 @@ npm run dev          # 启动开发服务器
 npm run type-check   # TypeScript 类型检查
 npm run build        # 生产构建
 ```
+
+**补充**：`axios` 遇到 **401** 会 **`clearAuth()`** 并交由路由层跳转，**不**再强制 `window.location` 整页刷新。用量/存储卡片与 **`GET /usage/stats`** 对齐，TanStack Query 键为 **`['dashboard', 'usage']`**；详见 [docs/USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)。
 
 ---
 
