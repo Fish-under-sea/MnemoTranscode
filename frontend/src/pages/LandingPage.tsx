@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/hooks/useAuthStore'
+import { authApi } from '@/services/api'
+import { getSubscriptionSyncGen } from '@/lib/subscriptionSyncGen'
 import Avatar from '@/components/ui/Avatar'
 import LoginModal from '@/components/LoginModal'
 import KouriChatLaunchModal from '@/components/kourichat/KouriChatLaunchModal'
@@ -219,10 +221,29 @@ export default function LandingPage() {
   const { isAuthenticated, checkAuth, user } = useAuthStore()
   const accountLabel = user?.username?.trim() || '用户'
 
-  // 每次落地页挂载时同步认证状态
+  // 落地页挂载时同步本地 token；checkAuth 会去掉本地 avatar_url（预签名易过期），故需再拉 /auth/me 补全头像。
+  // App 内首次 getMe 被 subscriptionSyncedRef 挡在仅一次，从应用路由回 /welcome 时 App 不重挂载，若不此处补拉则一直显示首字母。
   useEffect(() => {
     checkAuth()
-  }, [])
+    const { isAuthenticated: authed, user: u } = useAuthStore.getState()
+    if (!authed || !u) return
+    const at = getSubscriptionSyncGen()
+    void authApi
+      .getMe()
+      .then((raw: unknown) => {
+        if (at !== getSubscriptionSyncGen()) return
+        if (!raw || typeof raw !== 'object' || raw === null) return
+        const me = raw as Record<string, unknown>
+        useAuthStore.getState().updateUser({
+          email: me.email as string,
+          username: me.username as string,
+          is_active: me.is_active as boolean,
+          created_at: me.created_at as string,
+          avatar_url: (me.avatar_url as string | null | undefined) ?? undefined,
+        })
+      })
+      .catch(() => {})
+  }, [checkAuth])
 
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
@@ -856,7 +877,7 @@ export default function LandingPage() {
 
           <div className="mt-8 pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
             <span>© 2026 MTC — Memory To Code. 用 AI 守护每一段珍贵的记忆。</span>
-            <span>MIT License · Open Source · v1.0.1</span>
+            <span>MIT License · Open Source · v4</span>
           </div>
         </div>
       </footer>
