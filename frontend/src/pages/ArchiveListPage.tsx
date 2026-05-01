@@ -25,6 +25,7 @@ export default function ArchiveListPage() {
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<string>('')
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [archiveToDelete, setArchiveToDelete] = useState<{ id: number; name: string } | null>(null)
   const [newArchive, setNewArchive] = useState({
     name: '',
     description: '',
@@ -43,6 +44,16 @@ export default function ArchiveListPage() {
       setCreateModalOpen(false)
       setNewArchive({ name: '', description: '', archive_type: 'family' })
       toast.success('档案创建成功')
+    },
+    onError: (err) => show(err),
+  })
+
+  const deleteArchiveMutation = useMutation({
+    mutationFn: (archiveId: number) => archiveApi.delete(archiveId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] })
+      setArchiveToDelete(null)
+      toast.success('档案已删除')
     },
     onError: (err) => show(err),
   })
@@ -129,11 +140,42 @@ export default function ArchiveListPage() {
                 archive_type={String(archive.archive_type ?? 'family')}
                 member_count={Number(archive.member_count ?? 0)}
                 memory_count={Number(archive.memory_count ?? 0)}
+                onDelete={() =>
+                  setArchiveToDelete({
+                    id: Number(archive.id),
+                    name: String(archive.name ?? ''),
+                  })
+                }
               />
             </motion.div>
           ))}
         </motion.div>
       )}
+
+      <Modal open={archiveToDelete != null} onClose={() => setArchiveToDelete(null)} title="删除档案">
+        {archiveToDelete ? (
+          <div className="space-y-4">
+            <p className="text-body-sm text-ink-secondary">
+              确定删除「{archiveToDelete.name}」？将一并移除其成员与记忆等数据（不可撤销）。
+            </p>
+            <div className="flex gap-3 pt-2">
+              <Button variant="ghost" type="button" onClick={() => setArchiveToDelete(null)} fullWidth>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                type="button"
+                fullWidth
+                className="!bg-red-600 hover:!bg-red-700"
+                loading={deleteArchiveMutation.isPending}
+                onClick={() => deleteArchiveMutation.mutate(archiveToDelete.id)}
+              >
+                删除
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal open={createModalOpen} onClose={() => setCreateModalOpen(false)} title="新建档案">
         <form

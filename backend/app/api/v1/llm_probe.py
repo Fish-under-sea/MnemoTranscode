@@ -76,6 +76,28 @@ def _assert_safe_url(url: str) -> str:
     return u.rstrip("/")
 
 
+def _openai_compat_models_url(base: str) -> str:
+    """
+    OpenAI 兼容「模型列表」地址：若用户已填 …/v1 根，则应为 {base}/models，避免 …/v1/v1/models。
+    """
+    b = base.rstrip("/")
+    if b.lower().endswith("/v1"):
+        return f"{b}/models"
+    return f"{b}/v1/models"
+
+
+def _format_upstream_error(status: int, text: str, max_len: int = 280) -> str:
+    """将网关返回的 HTML（如 openresty/nginx 404 页）收成可读说明，避免整块 HTML 进 toast。"""
+    snippet = (text or "").strip()
+    low = snippet[:500].lower()
+    if "<html" in low or low.startswith("<!doctype"):
+        return (
+            f"HTTP {status}：上游返回网页而非 API JSON（多为 Base URL 路径错误、或网关 404）。"
+            "请按服务商文档填写 OpenAI 兼容根地址：若文档要求填到 /v1，则 Base 应以 /v1 结尾，且勿再重复 /v1。"
+        )
+    return f"HTTP {status}：{snippet[:max_len]}"
+
+
 class LlmCheckRequest(BaseModel):
     mode: Literal["openai", "ollama", "google", "anthropic", "zhipu"] = "openai"
     base_url: str = Field(..., min_length=1)
@@ -93,7 +115,7 @@ class LlmCheckResponse(BaseModel):
 
 
 async def _fetch_openai_models(base: str, api_key: str | None) -> tuple[bool, str | None, list[str], int | None]:
-    url = f"{base}/v1/models"
+    url = _openai_compat_models_url(base)
     headers: dict[str, str] = {}
     if api_key and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
@@ -105,7 +127,7 @@ async def _fetch_openai_models(base: str, api_key: str | None) -> tuple[bool, st
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, f"HTTP {r.status_code}：{r.text[:200]}", [], ms
+        return False, _format_upstream_error(r.status_code, r.text), [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:
@@ -131,7 +153,7 @@ async def _fetch_ollama_tags(base: str) -> tuple[bool, str | None, list[str], in
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, f"HTTP {r.status_code}：{r.text[:200]}", [], ms
+        return False, _format_upstream_error(r.status_code, r.text), [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:
@@ -161,7 +183,7 @@ async def _fetch_google_models(base: str, api_key: str | None) -> tuple[bool, st
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, f"HTTP {r.status_code}：{r.text[:200]}", [], ms
+        return False, _format_upstream_error(r.status_code, r.text), [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:
@@ -200,7 +222,7 @@ async def _fetch_anthropic_models(base: str, api_key: str | None) -> tuple[bool,
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, f"HTTP {r.status_code}：{r.text[:200]}", [], ms
+        return False, _format_upstream_error(r.status_code, r.text), [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:
@@ -231,7 +253,7 @@ async def _fetch_zhipu_openai_style_models(base: str, api_key: str | None) -> tu
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, f"HTTP {r.status_code}：{r.text[:200]}", [], ms
+        return False, _format_upstream_error(r.status_code, r.text), [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:

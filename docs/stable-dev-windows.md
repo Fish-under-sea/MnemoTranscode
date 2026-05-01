@@ -16,6 +16,45 @@ Compose 内的 `backend` 镜像已改用 **`postgresql+asyncpg://...@postgres:54
 
 ❌ **不要**再单独执行本机 **`uvicorn ... --port 8000`**（会与容器争抢 8000，且仍会连宿主 `localhost:5432`）。
 
+## 全栈一键启动（与 Docker Desktop「infra」一致）
+
+当你在 Desktop 里习惯看到 **`mtc-backend` / `mtc-frontend` / `mtc-celery-worker`** 等 **全部在 Compose 内 Running**（对应仓库根下 **`infra/docker-compose.yml`** 默认服务）时，在项目根目录 PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1 -FullStack
+```
+
+- **等价别名**：`-All`
+- **镜像有改动需重建**：`-FullStack -Build`
+- **Make（Windows）**：`make stable-full`
+
+脚本会 **`docker compose up -d`**（优先带 **`--wait`**，失败则自动改为不带 **`--wait`** 重试），轮询 **`http://127.0.0.1:8000/healthz`**，并在全栈模式下探测 **`http://127.0.0.1:5173/`**（容器内 Nginx，映射 **`5173:80`**）。**不会**再在本机新开 **`npm run dev`**，避免与本机进程争抢 **`5173`**。
+
+**请勿**与 **`-KillPort8000` / `-KillPort5173`** 同时使用（脚本检测到后会自动忽略这两项），以免误结束 Docker 端口转发相关进程。
+
+`start-stable.ps1` 参数补充：
+
+- **`-DockerPipeWaitSeconds`**：等待 Docker Engine 就绪的上限秒数（默认 **90**，冷启动过短易误判）。
+- **`-TryDockerContextDefaultFirst:$false`**：关闭脚本在首轮探测 daemon 失败时自动执行的 **`docker context use default`**（默认**开启**：用于缓解 `desktop-linux` 上下文下 `dockerDesktopLinuxEngine` 管道尚未就绪时 CLI 一直失败）。
+- **`-SkipDockerReadyWait`**：跳过 daemon / 命名管道就绪轮询（你确认 Engine 已 running 却仍被脚本误判时使用）。
+
+## 日常使用：要不要每次执行启动脚本？
+
+- 若 Compose 栈**未被** **`docker compose down`** 拆掉，一般 **只需打开 Docker Desktop** 等到 **Engine running**；镜像内服务多为 **`restart: unless-stopped`**，容器会跟引擎一并恢复。**不必**每次都跑脚本。
+- 若执行过 **`down`** / 换新环境 / **`docker ps` 里已无 mtc-* 容器**，再在 **`infra`** 下 **`docker compose up -d`**，或执行 **`start-stable.ps1`** / **`make stable-full`**。脚本价值在于 **`--wait`、`/healthz` 探测**，以及混合模式下自动开一个本机 **Vite** 窗口。
+- **自检**：`docker ps` 能列出 **`mtc-backend`**（且状态正常）后再访问 http://127.0.0.1:8000/healthz 与前端端口。
+
+## Docker CLI：`docker compose` / `docker ps` 报管道错误或 protocol
+
+典型报错：`cannot find dockerDesktopLinuxEngine` / `docker_engine`、`Failed to initialize: protocol not available`。
+
+处理顺序：
+
+1. 确认 Docker Desktop **Engine running**，必要时 **Quit Docker Desktop** → **`wsl --shutdown`**（管理员 PowerShell）→ 重新打开 Desktop。
+2. **`docker context use default`** → **`docker ps`**。若恢复正常，可先固定使用 **`default`** 上下文开发。
+3. 若配置文件里混入 **`unix:///var/run/docker.sock`**（常见于从 WSL 拷配置）：运行仓库 **`scripts/fix-docker-desktop-windows-context.ps1`**（会备份 `~\.docker`），再重启 Docker Desktop。
+4. 仍失败：Docker Desktop → **Troubleshoot**，或重装 / 修复安装；详见根目录 **README**「Windows：docker compose / docker ps …」小节。
+
 ## 一键启动（后端 Docker + `/healthz` + 前端 Vite）
 
 在项目根目录 PowerShell（**建议使用 `-NoProfile`**，避免配置文件里把 `docker` 重定向到 `wsl` 时与 `docker compose` 冲突）：

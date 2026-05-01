@@ -2,6 +2,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { dialogueApi } from '@/services/api'
 import { useApiError } from '@/hooks/useApiError'
+import { buildClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import { readStoredLlmUserConfig } from '@/hooks/useLlmUserConfig'
 
 export interface ChatMessage {
   id: string
@@ -62,6 +64,7 @@ export function useDialogue({ archiveId, memberId }: UseDialogueOptions = {}) {
     setIsSending(true)
 
     try {
+      const snapshot = buildClientLlmPayload(readStoredLlmUserConfig())
       const response = await dialogueApi.chat({
         message: text,
         archive_id: archiveId,
@@ -69,6 +72,7 @@ export function useDialogue({ archiveId, memberId }: UseDialogueOptions = {}) {
         channel: 'app',
         session_id: sessionId,
         history_limit: 10,
+        ...(snapshot ? { client_llm: snapshot } : {}),
       }) as any
 
       const replyText: string = response.reply || '...'

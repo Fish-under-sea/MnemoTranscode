@@ -3,6 +3,7 @@
  */
 import axios, { type AxiosError } from 'axios'
 import { useAuthStore } from '@/hooks/useAuthStore'
+import type { ClientLlmPayload } from '@/lib/buildClientLlmPayload'
 import { inferFromStatus, isApiError, type ApiError } from './errors'
 
 // ========== 认证响应类型（供 useAuthForm / 页面使用）==========
@@ -240,7 +241,12 @@ export const dialogueApi = {
     channel?: 'app' | 'wechat' | 'qq'
     session_id?: string
     history_limit?: number
-  }) => api.post('/dialogue/chat', data),
+    /** 与模型设置对齐；提供则服务端优先于其 LLM_* 环境变量 */
+    client_llm?: ClientLlmPayload | null
+  }) =>
+    api.post('/dialogue/chat', data, {
+      timeout: 90_000,
+    }),
 
   getHistory: (sessionId: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/dialogue/history', { session_id: sessionId, ...params }),
@@ -439,12 +445,13 @@ export async function uploadToPresignedUrl(
 
 export interface CapsuleItem {
   id: number
-  member_id: number
+  member_id?: number
   title: string
   unlock_date: string
   status: 'locked' | 'delivered'
-  created_at: string
+  created_at?: string
   content?: string
+  message?: string
 }
 
 export const capsuleApi = {
@@ -468,6 +475,10 @@ export const capsuleApi = {
         unlock_date: data.unlock_date,
       },
     }),
+
+  /** 使用当前账号登录密码未到时间也能解封 */
+  forceUnlock: (id: number, password: string): Promise<CapsuleItem> =>
+    api.post(`/capsules/${id}/force-unlock`, { password }),
 }
 
 // ========== 故事书 ==========
@@ -485,13 +496,10 @@ export const storybookApi = {
     archive_id: number
     member_id?: number
     style?: string
+    client_llm?: ClientLlmPayload | null
   }): Promise<StorybookResult> =>
-    api.post('/storybook/generate', null, {
-      params: {
-        archive_id: data.archive_id,
-        ...(data.member_id !== undefined && { member_id: data.member_id }),
-        ...(data.style !== undefined && { style: data.style }),
-      },
+    api.post('/storybook/generate', data, {
+      timeout: 120_000,
     }),
 }
 

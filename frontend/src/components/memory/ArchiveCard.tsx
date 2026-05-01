@@ -17,6 +17,7 @@ interface ArchiveCardProps {
 
 export default function ArchiveCard({
   id, name, description, archive_type, member_count, memory_count,
+  onDelete,
 }: ArchiveCardProps) {
   const typeInfo = ARCHIVE_TYPE_OPTIONS.find((t) => t.value === archive_type)
   const icon = typeInfo?.icon || '📁'
@@ -55,13 +56,22 @@ export default function ArchiveCard({
         </span>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-warm-100">
+      <div className="mt-4 pt-4 border-t border-warm-100 space-y-1">
         <Link
           to={`/archives/${id}`}
           className="block w-full text-center py-2 text-sm text-jade-600 hover:bg-jade-50 rounded-xl transition-colors font-medium cursor-pointer"
         >
           查看详情
         </Link>
+        {onDelete ? (
+          <button
+            type="button"
+            className="block w-full text-center py-2 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            onClick={onDelete}
+          >
+            删除档案
+          </button>
+        ) : null}
       </div>
     </div>
   )

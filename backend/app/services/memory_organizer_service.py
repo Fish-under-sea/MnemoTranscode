@@ -4,11 +4,22 @@
 LLM 自动总结、归类、时间线排序
 """
 
+import json
 import httpx
-from datetime import datetime
+
 from app.core.config import get_settings
+from app.schemas.client_llm import ClientLlmOverride
 
 settings = get_settings()
+
+
+def _openai_compat_headers(api_key: str | None) -> dict[str, str]:
+    """无密钥时不带 Authorization"""
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    key = (api_key or "").strip()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 
 class MemoryOrganizerService:
@@ -41,7 +52,7 @@ class MemoryOrganizerService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.base_url.rstrip('/')}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=_openai_compat_headers(self.api_key),
                     json={
                         "model": settings.llm_model,
                         "messages": [{"role": "user", "content": prompt}],
@@ -49,10 +60,9 @@ class MemoryOrganizerService:
                         "temperature": 0.3,
                     },
                 )
-                import json
                 result = response.json()
-                content = result["choices"][0]["message"]["content"]
-                return json.loads(content)
+                parsed = result["choices"][0]["message"]["content"]
+                return json.loads(parsed)
         except Exception:
             return {"summary": content[:50], "keywords": [], "time_clue": None, "people": [], "location": None}
 
@@ -79,7 +89,7 @@ class MemoryOrganizerService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.base_url.rstrip('/')}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=_openai_compat_headers(self.api_key),
                     json={
                         "model": settings.llm_model,
                         "messages": [{"role": "user", "content": prompt}],
@@ -87,10 +97,9 @@ class MemoryOrganizerService:
                         "temperature": 0.5,
                     },
                 )
-                import json
                 result = response.json()
-                content = result["choices"][0]["message"]["content"]
-                return json.loads(content)
+                parsed = result["choices"][0]["message"]["content"]
+                return json.loads(parsed)
         except Exception:
             return []
 
@@ -99,6 +108,7 @@ class MemoryOrganizerService:
         memories: list[dict],
         member_name: str,
         style: str = "nostalgic",
+        llm_override: ClientLlmOverride | None = None,
     ) -> str:
         """
         根据记忆生成故事文本
@@ -106,8 +116,10 @@ class MemoryOrganizerService:
         用于家族故事书等功能
         """
         memory_texts = "\n".join(
-            [f"- {m.get('title', '')}: {m.get('content_text', m.get('content', ''))}"
-             for m in memories]
+            [
+                f"- {m.get('title', '')}: {m.get('content_text', m.get('content', ''))}"
+                for m in memories
+            ]
         )
 
         style_desc = {
@@ -132,16 +144,26 @@ class MemoryOrganizerService:
 - 不要虚构记忆中没有的内容
 - 故事要有人情味，不要写成履历表"""
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        base = (llm_override.base_url if llm_override else self.base_url).rstrip("/")
+        model = llm_override.model if llm_override else settings.llm_model
+        ak = llm_override.api_key if llm_override is not None else self.api_key
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                f"{self.base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                f"{base}/chat/completions",
+                headers=_openai_compat_headers(ak),
                 json={
-                    "model": settings.llm_model,
+                    "model": model,
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 3000,
                     "temperature": 0.7,
                 },
             )
+            if response.status_code >= 400:
+                raise RuntimeError(response.text[:2000])
+
             result = response.json()
-            return result["choices"][0]["message"]["content"]
+            try:
+                return result["choices"][0]["message"]["content"]
+            except (KeyError, IndexError) as exc:
+                raise RuntimeError(f"上游返回格式异常：{json.dumps(result)[:1200]}") from exc

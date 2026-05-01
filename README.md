@@ -101,8 +101,8 @@ cp backend/.env.example backend/.env
 
 | 场景 | 建议 |
 |------|------|
-| **日常开发（推荐）**：依赖与后端在 Docker，本机 **Vite 热重载**（`npm run dev`） | 在项目根执行 **`scripts/start-stable.ps1`**（务必带 **`-NoProfile`**），见下方「#### Windows 稳定开发」。 |
-| **全栈都在容器里**：含 Nginx 前端、Celery 等 | 安装 **Git for Windows** 后在 **Git Bash** 中执行 **`./scripts/start-services.sh`**，或使用 **WSL**，或在 **`infra`** 目录执行 **`docker compose up -d`**（与全栈一键等价）。 |
+| **日常开发（推荐）**：依赖与后端在 Docker，本机 **Vite 热重载**（`npm run dev`） | 在项目根 PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1 -KillPort8000`（详见「#### Windows 稳定开发」）。 |
+| **全栈都在容器里**：含 Nginx 前端、Celery 等 | PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1 -FullStack`；或 `make stable-full`；或 **`infra`** 下 **`docker compose up -d`**；亦可用 Git Bash **`./scripts/start-services.sh`**。 |
 | **只起基础设施**，再本机 `make backend` + `make frontend` | **`./scripts/start-services.sh --infra-only`**（需 Bash） |
 
 详细原因与故障排查见 [docs/stable-dev-windows.md](./docs/stable-dev-windows.md)。
@@ -146,6 +146,20 @@ docker compose -f infra/docker-compose.yml up -d
 ```
 
 Compose 中 backend 会只读挂载仓库内 `kourichat/`，供微信/机器人相关能力使用；**若前端需连宿主机上的后端** 而非同 compose 中的 `backend` 服务，见 `infra/docker-compose.hybrid-frontend.example.yml`。
+
+#### 日常：`docker compose down`、仅开 Docker Desktop 与是否要跑脚本
+
+- `infra/docker-compose.yml` 中主要服务配置了 **`restart: unless-stopped`**。若你从**没有**执行过 **`docker compose down`**（或等价地拆掉整个栈），一般 **只打开 Docker Desktop 并等到 Engine running**，之前的容器会自动被拉起——**不一定要**每次再执行 `start-stable.ps1`。
+- 若你执行过 **`docker compose down`**、在新机器克隆仓库、或容器已被删掉，则需重新起栈：在项目根 **`cd infra && docker compose up -d`**，或再跑上方的 **`start-stable.ps1`** / **`start-services.sh`**（脚本会顺带做 `/healthz` 等就绪检查）。
+- 快速自检：**`docker ps`** 能看见 **`mtc-backend`** / **`mtc-frontend`** 等则说明栈已在跑。
+
+#### Windows：`docker compose` / `docker ps` 报错「protocol not available」或「找不到 naming pipe」（如 `dockerDesktopLinuxEngine`）
+
+多为 **Docker Desktop 的 CLI 上下文**与实际引擎管道不一致。可按顺序尝试：
+
+1. **`docker context use default`**，再 **`docker ps`**（许多环境下 `default` 走 `docker_engine` 管道即可恢复）。
+2. 运行 **`scripts/fix-docker-desktop-windows-context.ps1`**（会备份 `%USERPROFILE%\.docker` 并把错误的 `unix://...` 等改为 **`npipe://...`**），然后**完全退出并重开 Docker Desktop**。
+3. **`start-stable.ps1`**：在检测到 daemon 暂未响应时会**默认自动执行一次** `docker context use default`；若你不想自动切换上下文，可加 **`-TryDockerContextDefaultFirst:$false`**。详见 [docs/stable-dev-windows.md](./docs/stable-dev-windows.md)。
 
 ### 4. 启动后端（本机开发，可选）
 

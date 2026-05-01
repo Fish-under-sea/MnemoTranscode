@@ -30,6 +30,14 @@ class LLMService:
         self.max_tokens = settings.llm_max_tokens
         self.temperature = settings.llm_temperature
 
+    def _request_headers(self) -> dict[str, str]:
+        """无密钥时跳过 Authorization（兼容本地 Ollama 等）"""
+        h = {"Content-Type": "application/json"}
+        key = (self.api_key or "").strip()
+        if key:
+            h["Authorization"] = f"Bearer {key}"
+        return h
+
     def _build_messages(
         self,
         message: str,
@@ -67,10 +75,7 @@ class LLMService:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._request_headers(),
                 json={
                     "model": model or self.model,
                     "messages": self._build_messages(message, system_prompt, history),
@@ -104,10 +109,7 @@ class LLMService:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._request_headers(),
                 json={
                     "model": kwargs.get("model", self.model),
                     "messages": messages,

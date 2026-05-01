@@ -18,6 +18,18 @@ export function useCapsuleDetail(id: number | null) {
   })
 }
 
+export function useForceUnlockCapsule() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      capsuleApi.forceUnlock(id, password),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['capsules'] })
+      queryClient.invalidateQueries({ queryKey: ['capsule', vars.id] })
+    },
+  })
+}
+
 export function useCreateCapsule() {
   const queryClient = useQueryClient()
   return useMutation({

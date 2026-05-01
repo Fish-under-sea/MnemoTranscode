@@ -1,11 +1,11 @@
 /**
  * 档案详情页
  */
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { motion } from 'motion/react'
-import { Plus, MessageCircle, Clock, BookOpen, Users, FileText } from 'lucide-react'
+import { Plus, MessageCircle, Clock, BookOpen, Users, FileText, Trash2 } from 'lucide-react'
 import { archiveApi, memoryApi } from '@/services/api'
 import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import type { MemberStatus } from '@/lib/memberStatus'
@@ -38,6 +38,7 @@ export default function ArchiveDetailPage() {
   const { id } = useParams<{ id: string }>()
   const archiveId = id != null && id !== '' ? Number(id) : NaN
   const archiveIdValid = Number.isInteger(archiveId) && archiveId > 0
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { show } = useApiError()
 
@@ -51,6 +52,9 @@ export default function ArchiveDetailPage() {
     bio: '',
   })
   const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
+  const [confirmDeleteArchive, setConfirmDeleteArchive] = useState(false)
+  /** 二次确认删除成员（档案下的角色卡片） */
+  const [confirmDeleteMember, setConfirmDeleteMember] = useState<{ id: number; name: string } | null>(null)
 
   const { data: archive, isLoading, error, refetch } = useQuery({
     queryKey: ['archive', id],
@@ -114,6 +118,42 @@ export default function ArchiveDetailPage() {
     },
   })
 
+  const deleteMemberMutation = useMutation({
+    mutationFn: (memberId: number) =>
+      archiveIdValid ? archiveApi.deleteMember(archiveId, memberId) : Promise.reject(new Error('ARCHIVE_ID_INVALID')),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['members', id] })
+      queryClient.invalidateQueries({ queryKey: ['memories', 'archive', id] })
+      setConfirmDeleteMember(null)
+      toast.success('成员已删除')
+    },
+    onError: (err: unknown) => {
+      if (err instanceof Error && err.message === 'ARCHIVE_ID_INVALID') {
+        toast.error('档案无效，无法删除')
+        return
+      }
+      show(err as Error)
+    },
+  })
+
+  const deleteArchiveMutation = useMutation({
+    mutationFn: () =>
+      archiveIdValid ? archiveApi.delete(archiveId) : Promise.reject(new Error('ARCHIVE_ID_INVALID')),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] })
+      setConfirmDeleteArchive(false)
+      toast.success('档案已删除')
+      navigate('/archives')
+    },
+    onError: (err: unknown) => {
+      if (err instanceof Error && err.message === 'ARCHIVE_ID_INVALID') {
+        toast.error('档案无效，无法删除')
+        return
+      }
+      show(err as Error)
+    },
+  })
+
   if (!archiveIdValid) {
     return <EmptyState title="无效的档案链接" description="请从档案库重新进入" />
   }
@@ -150,8 +190,8 @@ export default function ArchiveDetailPage() {
 
       <motion.div variants={fadeUp}>
         <Card variant="plain">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
               <span className="text-4xl">{typeInfo?.icon ?? '📁'}</span>
               <div>
                 <h1 className="text-2xl font-display text-ink-primary">{String(archive.name)}</h1>
@@ -163,6 +203,16 @@ export default function ArchiveDetailPage() {
                 ) : null}
               </div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="shrink-0 text-red-600 hover:bg-red-50"
+              leftIcon={<Trash2 size={16} />}
+              onClick={() => setConfirmDeleteArchive(true)}
+            >
+              删除档案
+            </Button>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
@@ -240,28 +290,40 @@ export default function ArchiveDetailPage() {
                 }
                 const rel = m.relationship ?? m.relationship_type ?? ''
                 return (
-                  <Link
-                    key={m.id}
-                    to={`/archives/${id}/members/${m.id}`}
-                    className="block no-underline text-inherit"
-                  >
-                    <Card hoverable className="h-full">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
-                          {rel && <p className="text-sm text-ink-secondary">{rel}</p>}
+                  <div key={m.id} className="relative">
+                    <Link
+                      to={`/archives/${id}/members/${m.id}`}
+                      className="block no-underline text-inherit"
+                    >
+                      <Card hoverable className="h-full">
+                        <div className="flex items-center justify-between gap-2 pr-10">
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
+                            {rel && <p className="text-sm text-ink-secondary">{rel}</p>}
+                          </div>
+                          <MessageCircle size={18} className="shrink-0 text-jade-600" aria-hidden />
                         </div>
-                        <MessageCircle size={18} className="shrink-0 text-jade-600" aria-hidden />
-                      </div>
-                      <div className="mt-3">
-                        <MemberStatusBadge
-                          status={m.status}
-                          birthYear={m.birth_year}
-                          endYear={m.end_year}
-                        />
-                      </div>
-                    </Card>
-                  </Link>
+                        <div className="mt-3">
+                          <MemberStatusBadge
+                            status={m.status}
+                            birthYear={m.birth_year}
+                            endYear={m.end_year}
+                          />
+                        </div>
+                      </Card>
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={`删除成员 ${m.name}`}
+                      className="absolute top-3 right-3 z-10 p-2 rounded-lg text-ink-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setConfirmDeleteMember({ id: m.id, name: m.name })
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -334,6 +396,64 @@ export default function ArchiveDetailPage() {
             : undefined
         }
       />
+
+      <Modal
+        open={confirmDeleteArchive}
+        onClose={() => setConfirmDeleteArchive(false)}
+        title="删除档案"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-body-sm text-ink-secondary">
+            确定删除「{String(archive.name)}」？其成员、记忆与媒体等将一并移除（不可撤销）。
+          </p>
+          <div className="flex gap-3 pt-2">
+            <Button variant="ghost" type="button" onClick={() => setConfirmDeleteArchive(false)} fullWidth>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              fullWidth
+              className="!bg-red-600 hover:!bg-red-700"
+              loading={deleteArchiveMutation.isPending}
+              onClick={() => deleteArchiveMutation.mutate()}
+            >
+              删除
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirmDeleteMember != null}
+        onClose={() => setConfirmDeleteMember(null)}
+        title="删除成员"
+        size="md"
+      >
+        {confirmDeleteMember ? (
+          <div className="space-y-4">
+            <p className="text-body-sm text-ink-secondary">
+              确定删除「{confirmDeleteMember.name}」及其关联条目吗？此操作不可撤销。
+            </p>
+            <div className="flex gap-3 pt-2">
+              <Button variant="ghost" type="button" onClick={() => setConfirmDeleteMember(null)} fullWidth>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                type="button"
+                fullWidth
+                className="!bg-red-600 hover:!bg-red-700"
+                loading={deleteMemberMutation.isPending}
+                onClick={() => deleteMemberMutation.mutate(confirmDeleteMember.id)}
+              >
+                删除
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal open={createMemberModal} onClose={() => setCreateMemberModal(false)} title="添加成员" size="lg">
         <form

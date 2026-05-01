@@ -172,8 +172,9 @@ export default function ModelSettingsPage() {
   }
 
   const handleSave = () => {
-    // 已实时写入 localStorage；此处给用户确认
-    toast.success('已保存到本机（对话仍走服务端配置时可继续用本页作密钥备忘）')
+    toast.success(
+      '已保存到本机。AI 对话与故事书在发送时会自动带上此处配置（OpenAI 兼容端）；未填完整时回退服务端环境变量。',
+    )
   }
 
   return (

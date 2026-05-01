@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const STORAGE_KEY = 'mtc-llm-user-config'
+/** localStorage key，供构建 LLM 请求负载等非 Hook 代码读取 */
+export const LLM_USER_CONFIG_STORAGE_KEY = 'mtc-llm-user-config'
 
 export type LlmConfigMode = 'preset' | 'custom' | 'ollama'
 
@@ -44,9 +45,9 @@ const defaultConfig: LlmUserConfig = {
   lastProbe: null,
 }
 
-function readStored(): LlmUserConfig {
+export function readStoredLlmUserConfig(): LlmUserConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(LLM_USER_CONFIG_STORAGE_KEY)
     if (!raw) return { ...defaultConfig }
     const p = JSON.parse(raw) as Partial<LlmUserConfig>
     return {
@@ -69,11 +70,11 @@ function readStored(): LlmUserConfig {
 }
 
 export function useLlmUserConfig() {
-  const [config, setConfig] = useState<LlmUserConfig>(readStored)
+  const [config, setConfig] = useState<LlmUserConfig>(readStoredLlmUserConfig)
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+      localStorage.setItem(LLM_USER_CONFIG_STORAGE_KEY, JSON.stringify(config))
     } catch {
       // ignore
     }

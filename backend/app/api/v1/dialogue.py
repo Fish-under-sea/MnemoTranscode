@@ -20,6 +20,7 @@ from app.api.v1.auth import get_current_user
 from app.services.llm_service import LLMService
 from app.services.vector_service import VectorService
 from app.core.config import get_settings
+from app.schemas.client_llm import ClientLlmOverride
 
 router = APIRouter(prefix="/dialogue", tags=["AI对话"])
 settings = get_settings()
@@ -33,6 +34,8 @@ class DialogueRequest(BaseModel):
     channel: Literal["app", "wechat", "qq"] = "app"  # 对话渠道
     session_id: str | None = None  # 用于跨请求的会话上下文追踪
     history_limit: int = Field(default=10, ge=0, le=50)  # 携带的历史消息条数
+    # 与前端「模型设置」一致：附带则优先于服务端 LLM_* 环境变量（OpenAI 兼容网关）
+    client_llm: ClientLlmOverride | None = None
 
 
 class DialogueResponse(BaseModel):
@@ -107,9 +110,17 @@ async def chat(
     # 获取历史消息
     history = _dialogue_sessions.get(session_id, [])[-request.history_limit:]
 
-    # 调用 LLM
+    # 调用 LLM（可选使用浏览器端传来的 OpenAI 兼容端点）
     try:
-        llm_service = LLMService()
+        if request.client_llm:
+            ov = request.client_llm
+            llm_service = LLMService(
+                api_key=ov.api_key or "",
+                base_url=ov.base_url,
+                model=ov.model,
+            )
+        else:
+            llm_service = LLMService()
         reply = await llm_service.get_response(
             message=request.message,
             system_prompt=system_prompt,

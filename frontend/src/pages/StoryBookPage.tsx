@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
 import { BookOpen, Loader2 } from 'lucide-react'
 import { archiveApi, memoryApi, storybookApi } from '@/services/api'
+import { buildClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import { readStoredLlmUserConfig } from '@/hooks/useLlmUserConfig'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import Badge from '@/components/ui/Badge'
@@ -62,6 +64,13 @@ export default function StoryBookPage() {
 
   const memories = Array.isArray(memoriesRaw) ? memoriesRaw : (memoriesRaw?.items ?? [])
 
+  const archiveMemoryCount =
+    typeof (archive as { memory_count?: unknown } | null)?.memory_count === 'number'
+      ? (archive as { memory_count: number }).memory_count
+      : null
+  const likelyHasMemories =
+    memories.length > 0 || (archiveMemoryCount !== null && archiveMemoryCount > 0)
+
   // 进度文案循环
   useEffect(() => {
     if (generating) {
@@ -83,18 +92,20 @@ export default function StoryBookPage() {
   ]
 
   const handleGenerate = async () => {
-    if (memories.length === 0) {
-      showError(new Error('暂无记忆数据，无法生成故事'), '暂无记忆数据')
+    if (!likelyHasMemories) {
+      showError(new Error('暂无记忆数据，无法生成故事'), '暂无记忆数据，请先在档案下添加记忆')
       return
     }
     setGenerating(true)
     setStory(null)
     try {
       const memberIdNum = selectedMemberId !== 'all' ? Number(selectedMemberId) : undefined
+      const snapshot = buildClientLlmPayload(readStoredLlmUserConfig())
       const result = await storybookApi.generate({
         archive_id: archiveIdNum,
         member_id: memberIdNum,
         style,
+        ...(snapshot ? { client_llm: snapshot } : {}),
       })
       const selectedMember = memberIdNum
         ? (members as any[]).find((m: any) => m.id === memberIdNum)
@@ -179,7 +190,9 @@ export default function StoryBookPage() {
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-caption text-ink-secondary">记忆数</span>
-                  <Badge tone="amber" size="sm">{memories.length}</Badge>
+                  <Badge tone="amber" size="sm">
+                    {archiveMemoryCount != null ? archiveMemoryCount : memories.length}
+                  </Badge>
                 </div>
               </Card>
             </motion.div>
@@ -191,10 +204,15 @@ export default function StoryBookPage() {
                 fullWidth
                 leftIcon={generating ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
                 onClick={handleGenerate}
-                disabled={generating || memories.length === 0}
+                disabled={generating}
               >
                 {generating ? 'AI 正在创作中…' : '生成故事书'}
               </Button>
+              {!likelyHasMemories && !generating ? (
+                <p className="mt-2 text-caption text-amber-800/90">
+                  当前档案下暂无记忆，请添加记忆后再生成；若已有记忆但仍显示为 0，请刷新页面。
+                </p>
+              ) : null}
             </motion.div>
           </motion.div>
 
