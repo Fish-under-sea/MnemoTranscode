@@ -2,6 +2,7 @@
  * 页面布局组件 — 顶部导航 + 侧边栏
  */
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+import { getResumeDialoguePath } from '@/lib/dialogueStorage'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import {
   Home, FolderOpen, MessageCircle, LogOut, Menu, X,
@@ -46,9 +47,13 @@ export default function Layout() {
   }
 
   const getActive = (path: string) => {
-    const current = location.pathname.replace('/dashboard', '') || '/'
-    const target = path === 'dashboard' ? '/' : `/${path}`
-    return current === target
+    const raw = location.pathname
+    const norm = (raw.startsWith('/dashboard') ? raw.replace(/^\/dashboard(\/|$)/, '/') : raw) || '/'
+    if (path === 'dashboard') return norm === '/' || norm === '/dashboard'
+    const target = `/${path}`
+    if (path === 'dialogue') return norm === '/dialogue' || /^\/dialogue\/\d+\/\d+$/.test(norm)
+    if (path === 'archives') return norm === '/archives' || norm.startsWith('/archives/')
+    return norm === target
   }
 
   const displayName = user?.username?.trim() || '用户'
@@ -87,10 +92,11 @@ export default function Layout() {
               {navItems.map((item) => {
                 const Icon = item.icon
                 const active = getActive(item.path)
+                const to = item.path === 'dialogue' ? getResumeDialoguePath() : `/${item.path}`
                 return (
                   <Link
                     key={item.path}
-                    to={item.path}
+                    to={to}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm transition-all duration-200 shrink-0',
                       active
@@ -211,10 +217,11 @@ export default function Layout() {
             {navItems.map((item) => {
               const Icon = item.icon
               const active = getActive(item.path)
+              const to = item.path === 'dialogue' ? getResumeDialoguePath() : `/${item.path}`
               return (
                 <Link
                   key={item.path}
-                  to={item.path}
+                  to={to}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',

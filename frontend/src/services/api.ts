@@ -328,7 +328,56 @@ export const dialogueApi = {
   getHistory: (sessionId: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/dialogue/history', { session_id: sessionId, ...params }),
 
-  clearHistory: (sessionId: string) => api.delete(`/dialogue/history/${sessionId}`),
+  /** 服务端账号级会话（档案+成员） */
+  listMessages: (
+    archiveId: number,
+    memberId: number,
+    opts?: { limit?: number; signal?: AbortSignal },
+  ) => {
+    const { limit, signal } = opts ?? {}
+    return api.get<{
+      messages: {
+        id: number
+        role: string
+        content: string
+        created_at?: string | null
+      }[]
+    }>('/dialogue/messages', {
+      params: {
+        archive_id: archiveId,
+        member_id: memberId,
+        ...(limit != null ? { limit } : {}),
+      },
+      signal,
+    }) as unknown as Promise<{
+      messages: {
+        id: number
+        role: string
+        content: string
+        created_at?: string | null
+      }[]
+    }>
+  },
+
+  /** 仅服务端该成员会话为空时导入；成功后应 invalidate listMessages */
+  bootstrapMessages: (data: {
+    archive_id: number
+    member_id: number
+    messages: { role: string; content: string }[]
+  }) =>
+    api.post<{ imported: number; skipped?: boolean }>('/dialogue/messages/bootstrap', data),
+
+  clearHistoryForMember: (archiveId: number, memberId: number) =>
+    api.delete<{ status: string }>('/dialogue/history', {
+      params: { archive_id: archiveId, member_id: memberId },
+    }),
+
+  /** 无前缀 archive/member 的随机 session（旧行为） */
+  clearHistoryLegacy: (sessionId: string) => api.delete(`/dialogue/history/${sessionId}`),
+
+  /** @deprecated 请用 clearHistoryForMember（带成员）或 clearHistoryLegacy（无成员上下文） */
+  clearHistory: (sessionId: string) =>
+    api.delete(`/dialogue/history/${sessionId}`),
 }
 
 // ========== KouriChat 相关 ==========

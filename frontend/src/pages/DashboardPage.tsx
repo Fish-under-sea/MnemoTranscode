@@ -15,6 +15,7 @@ import Badge from '@/components/ui/Badge'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui'
 import ScrollReveal, { ScrollRevealGroup } from '@/components/ui/ScrollReveal'
 import { fadeUp, staggerContainer } from '@/lib/motion'
+import { getResumeDialoguePath } from '@/lib/dialogueStorage'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -118,7 +119,7 @@ export default function DashboardPage() {
                 <QuickAction
                   icon={MessageCircle}
                   label="与记忆对话"
-                  onClick={() => navigate('/dialogue')}
+                  onClick={() => void navigate(getResumeDialoguePath())}
                 />
                 <QuickAction
                   icon={BookOpen}

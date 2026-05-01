@@ -133,6 +133,7 @@ export default function App() {
               <Route path="archives/:archiveId/members/:memberId/chat-import" element={<ChatImportProgressPage />} />
               <Route path="dialogue" element={<DialoguePage />} />
               <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
+              <Route path="dialogue/:archiveId" element={<Navigate to="/dialogue" replace />} />
               <Route path="timeline/:archiveId" element={<TimelinePage />} />
               <Route path="storybook/:archiveId" element={<StoryBookPage />} />
               <Route path="model-settings" element={<ModelSettingsPage />} />

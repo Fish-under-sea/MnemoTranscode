@@ -69,6 +69,10 @@ export default function ArchiveDetailPage() {
     enabled: archiveIdValid,
   })
 
+  /** 档案总览卡片「AI 对话」：仅一名成员时直达双段路由（与 useDialogue 持久化一致），否则进选择页 */
+  const dialogueFromArchiveHref =
+    members.length === 1 ? `/dialogue/${id}/${(members[0] as { id: number }).id}` : '/dialogue'
+
   const { data: memories = [] } = useQuery({
     queryKey: ['memories', 'archive', id],
     queryFn: () => memoryApi.list({ archive_id: archiveId }) as any,
@@ -236,7 +240,7 @@ export default function ArchiveDetailPage() {
               </Card>
             </a>
             <Link
-              to={`/dialogue/${id}`}
+              to={dialogueFromArchiveHref}
               className="block no-underline text-inherit min-h-0"
             >
               <Card hoverable variant="accent" padding="sm" className="h-full text-center">

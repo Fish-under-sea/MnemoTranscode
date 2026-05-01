@@ -10,17 +10,19 @@ MnemoTranscode：指定 member_id 时可走图记忆 + 扩散激活 + 意识召�
 """
 
 import logging
+import re
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from typing import Literal
 
 from app.core.database import get_db
 from app.models.user import User
 from app.models.memory import Memory, Member, Archive
+from app.models.dialogue import DialogueChatMessage
 from app.api.v1.auth import get_current_user
 from app.services.llm_service import LLMService
 from app.services.vector_service import VectorService
@@ -83,8 +85,125 @@ class DialogueHistoryResponse(BaseModel):
     messages: list[dict]
 
 
+class DialogueListResponse(BaseModel):
+    messages: list[dict]
+
+
+class BootstrapHistoryBody(BaseModel):
+    archive_id: int = Field(..., gt=0)
+    member_id: int = Field(..., gt=0)
+    messages: list[dict] = Field(default_factory=list, max_length=500)
+
+
 # 内存中的对话历史存储（生产环境应使用 Redis）
 _dialogue_sessions: dict[str, list[dict]] = {}
+
+
+async def _require_owned_member(
+    db: AsyncSession, current_user: User, archive_id: int, member_id: int
+) -> Member:
+    """校验成员属于当前用户且 archive_id 一致。"""
+    result = await db.execute(
+        select(Member)
+        .join(Archive, Member.archive_id == Archive.id)
+        .where(
+            Member.id == member_id,
+            Member.archive_id == archive_id,
+            Archive.owner_id == current_user.id,
+        )
+    )
+    m = result.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="成员不存在或无权访问")
+    return m
+
+
+async def _db_turn_count(db: AsyncSession, *, user_id: int, member_id: int) -> int:
+    c = await db.scalar(
+        select(func.count())
+        .select_from(DialogueChatMessage)
+        .where(DialogueChatMessage.user_id == user_id, DialogueChatMessage.member_id == member_id)
+    )
+    return int(c or 0)
+
+
+async def _load_db_turns(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    member_id: int,
+    archive_id: int | None = None,
+    max_rows: int = 400,
+) -> list[dict]:
+    """读取库中最新消息（按时序 user/assistant 文本）。"""
+    conds = [
+        DialogueChatMessage.user_id == user_id,
+        DialogueChatMessage.member_id == member_id,
+    ]
+    if archive_id is not None:
+        conds.append(DialogueChatMessage.archive_id == archive_id)
+    stmt = (
+        select(DialogueChatMessage)
+        .where(*conds)
+        .order_by(DialogueChatMessage.id.desc())
+        .limit(max(1, min(max_rows, 500)))
+    )
+    r = await db.execute(stmt)
+    rows = list(reversed(r.scalars().all()))
+    return [{"role": m.role, "content": m.content} for m in rows]
+
+
+async def _bulk_insert_normalized_turns(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    archive_id: int,
+    member_id: int,
+    normalized: list[dict],
+) -> None:
+    for item in normalized:
+        db.add(
+            DialogueChatMessage(
+                user_id=user_id,
+                archive_id=archive_id,
+                member_id=member_id,
+                role=item["role"],
+                content=item["content"],
+            )
+        )
+    await db.flush()
+
+
+async def _persist_chat_turn(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    archive_id: int,
+    member_id: int,
+    user_text: str,
+    assistant_reply: str,
+) -> None:
+    ut = user_text.strip()[:12000]
+    ar = assistant_reply.strip()[:12000]
+    db.add_all(
+        [
+            DialogueChatMessage(
+                user_id=user_id,
+                archive_id=archive_id,
+                member_id=member_id,
+                role="user",
+                content=ut,
+            ),
+            DialogueChatMessage(
+                user_id=user_id,
+                archive_id=archive_id,
+                member_id=member_id,
+                role="assistant",
+                content=ar,
+            ),
+        ]
+    )
+    await db.flush()
 
 
 def _normalize_client_history(raw: list[dict] | None, *, max_turns: int) -> list[dict] | None:
@@ -130,14 +249,29 @@ async def chat(
     - **channel**: 对话渠道（app=原生软件, wechat=微信, qq=QQ）
     - **session_id**: 会话 ID（用于跨请求保持上下文）
     """
-    session_id = request.session_id or f"{current_user.id}_{request.member_id or 'anon'}"
+    session_id = (
+        request.session_id
+        if request.session_id is not None
+        else (
+            f"dlg_{request.archive_id}_{request.member_id}"
+            if request.archive_id and request.member_id
+            else f"{current_user.id}_{request.member_id or 'anon'}"
+        )
+    )
 
     member_context = ""
     member_name = "AI 助手"
     member_id = request.member_id
     member_obj: Member | None = None
 
-    if request.member_id:
+    if request.member_id and request.archive_id:
+        member_obj = await _require_owned_member(
+            db, current_user, int(request.archive_id), int(request.member_id)
+        )
+        member_name = member_obj.name
+        member_id = member_obj.id
+        member_context = await _build_member_context(member_obj, request.archive_id, db)
+    elif request.member_id:
         result = await db.execute(
             select(Member)
             .join(Archive, Member.archive_id == Archive.id)
@@ -151,7 +285,32 @@ async def chat(
             member_context = await _build_member_context(member, request.archive_id, db)
 
     client_norm_full = _normalize_client_history(request.client_history, max_turns=200)
-    if client_norm_full is not None:
+    use_db = bool(
+        member_obj is not None
+        and request.archive_id is not None
+        and request.member_id is not None
+        and int(member_obj.archive_id) == int(request.archive_id)
+    )
+
+    if use_db and member_obj is not None and request.archive_id is not None:
+        cnt_before = await _db_turn_count(db, user_id=current_user.id, member_id=member_obj.id)
+        if cnt_before == 0 and client_norm_full:
+            await _bulk_insert_normalized_turns(
+                db,
+                user_id=current_user.id,
+                archive_id=int(request.archive_id),
+                member_id=member_obj.id,
+                normalized=list(client_norm_full),
+            )
+        stored_turns = await _load_db_turns(
+            db,
+            user_id=current_user.id,
+            member_id=member_obj.id,
+            archive_id=int(request.archive_id),
+            max_rows=400,
+        )
+        history = stored_turns[-request.history_limit :]
+    elif client_norm_full is not None:
         history = client_norm_full[-request.history_limit :]
     else:
         history = _dialogue_sessions.get(session_id, [])[-request.history_limit :]
@@ -183,7 +342,16 @@ async def chat(
         reply, usage_bundle = await _chat_llm_only(request, member_name, member_context, history)
     latency_ms = int((time.perf_counter() - t0) * 1000)
 
-    if client_norm_full is not None:
+    if use_db and member_obj is not None and request.archive_id is not None:
+        await _persist_chat_turn(
+            db,
+            user_id=current_user.id,
+            archive_id=int(request.archive_id),
+            member_id=member_obj.id,
+            user_text=request.message,
+            assistant_reply=reply,
+        )
+    elif client_norm_full is not None:
         _dialogue_sessions[session_id] = list(client_norm_full) + [
             {"role": "user", "content": request.message},
             {"role": "assistant", "content": reply},
@@ -199,7 +367,16 @@ async def chat(
         try:
             from app.services.conversation_memory_extract import extract_and_save_memories
 
-            full_turns = _dialogue_sessions.get(session_id, [])
+            if use_db and request.archive_id is not None:
+                full_turns = await _load_db_turns(
+                    db,
+                    user_id=current_user.id,
+                    member_id=member_obj.id,
+                    archive_id=int(request.archive_id),
+                    max_rows=120,
+                )
+            else:
+                full_turns = _dialogue_sessions.get(session_id, [])
             ex_llm = _llm_from_dialogue_request(request)
             created, _stats = await extract_and_save_memories(
                 db,
@@ -332,25 +509,131 @@ async def _chat_mnemo_pipeline(
     return await pipeline.chat(request.message, history=history)
 
 
+@router.get("/messages", response_model=DialogueListResponse)
+async def list_dialogue_messages(
+    archive_id: int = Query(..., gt=0),
+    member_id: int = Query(..., gt=0),
+    limit: int = Query(400, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """账号级会话消息（时间正序）；用于多端与换设备后与本地 localStorage 解耦"""
+    await _require_owned_member(db, current_user, archive_id, member_id)
+    stmt = (
+        select(DialogueChatMessage)
+        .where(
+            DialogueChatMessage.user_id == current_user.id,
+            DialogueChatMessage.archive_id == archive_id,
+            DialogueChatMessage.member_id == member_id,
+        )
+        .order_by(DialogueChatMessage.id.desc())
+        .limit(limit)
+    )
+    r = await db.execute(stmt)
+    rows = list(reversed(r.scalars().all()))
+    return DialogueListResponse(
+        messages=[
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in rows
+        ]
+    )
+
+
+@router.post("/messages/bootstrap")
+async def bootstrap_dialogue_messages(
+    body: BootstrapHistoryBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """仅在库内该成员会话为空时，一次性导入前端 localStorage（避免重复 INSERT）"""
+    m = await _require_owned_member(db, current_user, body.archive_id, body.member_id)
+    if await _db_turn_count(db, user_id=current_user.id, member_id=m.id) > 0:
+        return {"imported": 0, "skipped": True}
+    norm = _normalize_client_history(body.messages, max_turns=500)
+    if not norm:
+        return {"imported": 0, "skipped": False}
+    await _bulk_insert_normalized_turns(
+        db,
+        user_id=current_user.id,
+        archive_id=m.archive_id,
+        member_id=m.id,
+        normalized=list(norm),
+    )
+    return {"imported": len(norm), "skipped": False}
+
+
 @router.post("/history", response_model=DialogueHistoryResponse)
 async def get_history(
     request: DialogueHistoryRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """获取对话历史"""
-    messages = _dialogue_sessions.get(request.session_id, [])[-request.limit:]
+    """获取对话历史（优先读库）"""
+    if request.archive_id and request.member_id:
+        await _require_owned_member(db, current_user, request.archive_id, request.member_id)
+        msgs = await _load_db_turns(
+            db,
+            user_id=current_user.id,
+            member_id=request.member_id,
+            archive_id=request.archive_id,
+            max_rows=request.limit,
+        )
+        return DialogueHistoryResponse(
+            session_id=request.session_id,
+            messages=msgs[-request.limit :],
+        )
+    messages = _dialogue_sessions.get(request.session_id, [])[-request.limit :]
     return DialogueHistoryResponse(
         session_id=request.session_id,
         messages=messages,
     )
 
 
+@router.delete("/history")
+async def clear_history_by_member(
+    archive_id: int = Query(..., gt=0),
+    member_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """按档案+成员清空账号级会话"""
+    member = await _require_owned_member(db, current_user, archive_id, member_id)
+    await db.execute(
+        delete(DialogueChatMessage).where(
+            DialogueChatMessage.user_id == current_user.id,
+            DialogueChatMessage.member_id == member.id,
+        )
+    )
+    sid = f"dlg_{archive_id}_{member_id}"
+    _dialogue_sessions.pop(sid, None)
+    return {"status": "ok"}
+
+
 @router.delete("/history/{session_id}")
-async def clear_history(
+async def clear_history_legacy(
     session_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """清除对话历史"""
+    """兼容旧会话 id：dlg_{archive}_{member} 或内存随机 key"""
+    m = re.fullmatch(r"dlg_(\d+)_(\d+)", session_id)
+    if m:
+        aid, mid = int(m.group(1)), int(m.group(2))
+        try:
+            mem = await _require_owned_member(db, current_user, aid, mid)
+            await db.execute(
+                delete(DialogueChatMessage).where(
+                    DialogueChatMessage.user_id == current_user.id,
+                    DialogueChatMessage.member_id == mem.id,
+                )
+            )
+        except HTTPException:
+            pass
     if session_id in _dialogue_sessions:
         del _dialogue_sessions[session_id]
     return {"status": "ok"}

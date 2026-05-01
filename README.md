@@ -205,6 +205,32 @@ npm run dev
 
 ---
 
+## 运维：账号级 AI 对话与数据库迁移
+
+**行为**：选定档案成员后的 Web 对话会写入 Postgres 表 `dialogue_chat_messages`（按用户 + 档案 + 成员），换浏览器/设备同一账号仍可看到。**首次上线或拉代码含新迁移**要让数据库追到最新 revision。
+
+**相关迁移**：Alembic revision **`a1b2c3d4e5f7`**（`dialogue_chat_messages`）。
+
+**何时不必手动**：**Docker `backend`** 镜像入口 `backend/entrypoint.sh` 在每次容器启动时已执行 **`alembic upgrade head`**，Compose 拉起后端一般会自动建好表。
+
+**何时需要手动**：
+
+- 只用本机 **`uvicorn`** 指向同一数据库、且没有经过上述 entrypoint；
+- 容器卡住、想确认迁移已套用；
+- 本地开发仅用「基础设施 Compose + 本机后端」：`backend/.env` 里 **`DATABASE_URL`** 必须指向可连库，再在 `backend/` 执行迁移。
+
+**一键（PowerShell，先试 Compose 容器内 alembic，失败再退化为本机）**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\alembic-upgrade.ps1
+```
+
+只跑本机 Python（不切 Docker）可加 **`-LocalOnly`**。可选 **`-DockerExePath "..."`** 指定 `docker.exe`（与同目录 `rebuild-backend-docker.ps1` 一致）。
+
+**冒烟建议**：同一账号在 A 浏览器发两条 → B 无痕打开同成员对话页应可见；清空会话后两端均为空。（若只开单标签，`useDialogue` 已开启 **`refetchOnWindowFocus`**，切回浏览器标签也会拉服务端列表。）
+
+---
+
 ## 项目结构
 
 ```

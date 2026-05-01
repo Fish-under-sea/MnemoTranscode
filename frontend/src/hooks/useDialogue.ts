@@ -1,7 +1,7 @@
 // frontend/src/hooks/useDialogue.ts
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import toast from 'react-hot-toast'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dialogueApi } from '@/services/api'
 import { useApiError } from '@/hooks/useApiError'
 import { buildClientLlmPayload } from '@/lib/buildClientLlmPayload'
@@ -45,6 +45,35 @@ interface UseDialogueOptions {
   memberId?: number
   /** 每轮对话结束后由 LLM 提炼记忆并写入链式图（更慢） */
   extractMemoriesAfter?: boolean
+}
+
+/** 不写回「尚未打出字的助手占位气泡」，其余均落盘（含发送中助手前的用户消息），避免误判空列表擦掉 localStorage */
+function messagesForPersist(list: ChatMessage[]): ChatMessage[] {
+  let out = [...list]
+  while (out.length > 0) {
+    const last = out[out.length - 1]
+    if (last.role === 'assistant' && !String(last.content ?? '').trim()) {
+      out = out.slice(0, -1)
+      continue
+    }
+    break
+  }
+  return out
+}
+
+function mapServerRowToMessage(m: {
+  id: number
+  role: string
+  content: string
+  created_at?: string | null
+}): ChatMessage {
+  const role = m.role === 'assistant' ? 'assistant' : 'user'
+  return {
+    id: `dlg_${m.id}`,
+    role,
+    content: String(m.content ?? ''),
+    timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+  }
 }
 
 function parseStoredMessages(raw: string): ChatMessage[] {
@@ -98,8 +127,35 @@ export function useDialogue({
     return stableDialogueSessionId(archiveId, memberId)
   }, [archiveId, memberId, persistContext])
 
-  // 切换成员时按 key 重新加载
+  const remoteCtxKey =
+    persistContext && archiveId != null && memberId != null
+      ? `${archiveId}:${memberId}`
+      : ''
+
+  /** 已对当前成员尝试过 bootstrap（避免服务端仍空时的循环请求） */
+  const bootstrapAttemptedRef = useRef('')
+
   useEffect(() => {
+    bootstrapAttemptedRef.current = ''
+    if (!persistContext) return
+    setHydrated(false)
+    setMessages([])
+  }, [persistContext, remoteCtxKey])
+
+  const messagesQuery = useQuery({
+    queryKey: ['dialogue-messages', archiveId, memberId],
+    queryFn: ({ signal }) =>
+      dialogueApi.listMessages(Number(archiveId), Number(memberId), { signal }),
+    enabled: persistContext,
+    staleTime: 60_000,
+    retry: 1,
+    /** 切换回标签页时拉服务端最新（多端/清空后另一端可见） */
+    refetchOnWindowFocus: true,
+  })
+
+  /** 无前缀会话：仅从 localStorage 补水 / 持久化 */
+  useEffect(() => {
+    if (persistContext) return
     if (!storageKey) {
       setMessages([])
       setHydrated(true)
@@ -119,21 +175,126 @@ export function useDialogue({
     } finally {
       setHydrated(true)
     }
-  }, [storageKey])
+  }, [persistContext, storageKey])
 
-  // 持久化（打字机未完成时不写，避免半截助手消息）
+  // 账号级：从服务端列表补水；库空则尝试一次 bootstrap（localStorage 迁移）
   useEffect(() => {
-    if (!hydrated || !storageKey) return
-    if (isTyping || isSending) return
-    try {
-      if (messages.length === 0) {
-        localStorage.removeItem(storageKey)
+    if (!persistContext || archiveId === undefined || memberId === undefined) {
+      return
+    }
+
+    if (messagesQuery.isError) {
+      let fallback: ChatMessage[] = []
+      if (storageKey) {
+        try {
+          const raw = localStorage.getItem(storageKey)
+          if (raw) fallback = parseStoredMessages(raw)
+        } catch {
+          fallback = []
+        }
+      }
+      setMessages(fallback)
+      setHydrated(true)
+      return
+    }
+
+    if (!messagesQuery.isFetched) return
+
+    let cancelled = false
+    const run = async () => {
+      const rows = messagesQuery.data?.messages ?? []
+      if (rows.length > 0) {
+        if (cancelled) return
+        setMessages(rows.map(mapServerRowToMessage))
+        setHydrated(true)
+        if (storageKey) {
+          try {
+            localStorage.removeItem(storageKey)
+          } catch {
+            // ignore quota
+          }
+        }
         return
       }
+
+      let lsPersisted: ChatMessage[] = []
+      if (storageKey) {
+        try {
+          const raw = localStorage.getItem(storageKey)
+          if (raw) lsPersisted = messagesForPersist(parseStoredMessages(raw))
+        } catch {
+          lsPersisted = []
+        }
+      }
+
+      if (lsPersisted.length === 0) {
+        if (!cancelled) {
+          setMessages([])
+          setHydrated(true)
+        }
+        return
+      }
+
+      if (bootstrapAttemptedRef.current !== remoteCtxKey) {
+        bootstrapAttemptedRef.current = remoteCtxKey
+
+        try {
+          await dialogueApi.bootstrapMessages({
+            archive_id: archiveId,
+            member_id: memberId,
+            messages: lsPersisted.map((m) => ({ role: m.role, content: m.content })),
+          })
+          if (cancelled) return
+          await queryClient.invalidateQueries({ queryKey: ['dialogue-messages', archiveId, memberId] })
+        } catch {
+          bootstrapAttemptedRef.current = ''
+          if (!cancelled) {
+            setMessages(lsPersisted)
+            setHydrated(true)
+          }
+        }
+        return
+      }
+
+      if (!cancelled) {
+        setMessages(lsPersisted)
+        setHydrated(true)
+        try {
+          if (storageKey) localStorage.removeItem(storageKey)
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    persistContext,
+    archiveId,
+    memberId,
+    storageKey,
+    remoteCtxKey,
+    messagesQuery.isError,
+    messagesQuery.isFetched,
+    messagesQuery.dataUpdatedAt,
+    messagesQuery.data,
+    queryClient,
+  ])
+
+  // 无前缀会话：仅存 localStorage
+  useEffect(() => {
+    if (persistContext) return
+    if (!hydrated || !storageKey) return
+    if (isTyping) return
+    try {
+      const list = messagesForPersist(messages)
       localStorage.setItem(
         storageKey,
         JSON.stringify(
-          messages.map((m) => ({
+          list.map((m) => ({
             id: m.id,
             role: m.role,
             content: m.content,
@@ -144,7 +305,7 @@ export function useDialogue({
     } catch {
       // ignore quota
     }
-  }, [messages, storageKey, hydrated, isTyping, isSending])
+  }, [persistContext, messages, storageKey, hydrated, isTyping])
 
   useEffect(() => {
     return () => {
@@ -195,7 +356,7 @@ export function useDialogue({
         channel: 'app',
         session_id: sessionId,
         history_limit: 24,
-        ...(priorForApi.length > 0 ? { client_history: priorForApi } : {}),
+        ...(!persistContext && priorForApi.length > 0 ? { client_history: priorForApi } : {}),
         ...(snapshot ? { client_llm: snapshot } : {}),
         ...(extractMemoriesAfter ? { extract_memories_after: true } : {}),
       })) as unknown as DialogueChatResult
@@ -260,6 +421,7 @@ export function useDialogue({
     showError,
     extractMemoriesAfter,
     queryClient,
+    persistContext,
   ])
 
   const clear = useCallback(async () => {
@@ -277,11 +439,17 @@ export function useDialogue({
       }
     }
     try {
-      await dialogueApi.clearHistory(sessionId)
+      if (persistContext && archiveId != null && memberId != null) {
+        await dialogueApi.clearHistoryForMember(archiveId, memberId)
+        queryClient.setQueryData(['dialogue-messages', archiveId, memberId], { messages: [] })
+        void queryClient.invalidateQueries({ queryKey: ['dialogue-messages', archiveId, memberId] })
+      } else if (sessionId) {
+        await dialogueApi.clearHistoryLegacy(sessionId)
+      }
     } catch {
       // 忽略清除历史失败
     }
-  }, [sessionId, storageKey])
+  }, [sessionId, storageKey, persistContext, archiveId, memberId, queryClient])
 
   /** 模型设置里当前选用的模型名（用于尚未收到本轮响应时的展示） */
   const configuredModelLabel = useMemo(() => {
@@ -302,5 +470,7 @@ export function useDialogue({
     send,
     clear,
     sessionId,
+    /** 未完成从 localStorage 补水前勿渲染空白列表（避免误判「无会话」） */
+    dialogueHydrated: hydrated,
   }
 }

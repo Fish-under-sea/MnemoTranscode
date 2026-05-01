@@ -17,6 +17,7 @@ import Avatar from '@/components/ui/Avatar'
 import toast from 'react-hot-toast'
 import { useApiError } from '@/hooks/useApiError'
 import { useAuthStore } from '@/hooks/useAuthStore'
+import { rememberDialogueRoute } from '@/lib/dialogueStorage'
 
 const STARTER_PROMPTS = [
   '你最难忘的一件事是什么？',
@@ -98,6 +99,7 @@ export default function DialoguePage() {
     clear,
     lastInference,
     configuredModelLabel,
+    dialogueHydrated,
   } = useDialogue({
     archiveId: archiveIdNum,
     memberId: memberIdNum,
@@ -132,6 +134,11 @@ export default function DialoguePage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, displayedContent])
+
+  useEffect(() => {
+    if (!hasChatContext || !archiveIdNum || !memberIdNum) return
+    rememberDialogueRoute(`/dialogue/${archiveIdNum}/${memberIdNum}`)
+  }, [hasChatContext, archiveIdNum, memberIdNum])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -346,10 +353,16 @@ export default function DialoguePage() {
             </div>
           )}
 
-          {/* 消息列表 */}
+          {/* 消息列表：hydrate 完成前不渲染空态，避免误判无历史 */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <AnimatePresence mode="popLayout">
-              {messages.length === 0 ? (
+            {hasChatContext && !dialogueHydrated ? (
+              <div className="h-full min-h-[280px] flex items-center justify-center">
+                <LoadingState message="载入对话记录…" />
+              </div>
+            ) : (
+              <>
+                <AnimatePresence mode="popLayout">
+                  {messages.length === 0 ? (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0 }}
@@ -419,8 +432,10 @@ export default function DialoguePage() {
                   })}
                 </motion.div>
               )}
-            </AnimatePresence>
-            <div ref={messagesEndRef} />
+                </AnimatePresence>
+                <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
 
           {/* 输入区：与消息列表同为 px-4，避免横向「出格」 */}
