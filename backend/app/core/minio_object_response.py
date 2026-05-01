@@ -12,7 +12,7 @@ from minio.error import S3Error
 from app.core.config import get_settings
 
 
-def streaming_response_for_object_key(key: str) -> StreamingResponse:
+def streaming_response_for_object_key(key: str, *, bucket: str | None = None) -> StreamingResponse:
     """读取 bucket 内 object，返回可直接用于 get 路由的响应。"""
     if not key or not key.strip():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在")
@@ -25,10 +25,10 @@ def streaming_response_for_object_key(key: str) -> StreamingResponse:
         secure=settings.minio_secure,
         region="us-east-1",
     )
-    bucket = settings.minio_bucket
+    bucket_name = (bucket or "").strip() or settings.minio_bucket
 
     try:
-        stat = client.stat_object(bucket, key)
+        stat = client.stat_object(bucket_name, key)
     except S3Error as e:
         code = getattr(e, "code", "") or ""
         if "NoSuchKey" in str(e) or "NotFound" in str(e) or code in ("NoSuchKey", "NoSuchObject"):
@@ -39,7 +39,7 @@ def streaming_response_for_object_key(key: str) -> StreamingResponse:
         ) from e
 
     try:
-        response = client.get_object(bucket, key)
+        response = client.get_object(bucket_name, key)
     except S3Error as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

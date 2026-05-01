@@ -430,6 +430,64 @@ Authorization: Bearer <token>
 
 ---
 
+### 4.7 获取记忆关系图（Mnemo / Engram）
+
+**GET** `/api/v1/memories/mnemo-graph`
+
+返回指定成员的 Engram **结点与边**，供前端力导向画布使用。服务端会过滤不可用记忆绑定的结点等；响应字段含义与图例常量见 **[memory-relation-network.md](./memory-relation-network.md)**。
+
+**查询参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| member_id | int | 是 | 成员 ID（≥ 1） |
+
+**响应：** `member_id`、`nodes[]`（`id`, `node_type`, `label`, `memory_id?`）、`edges[]`（`from_id`, `to_id`, `edge_type`, `weight`）。
+
+---
+
+### 4.8 聊天记录导入（同步）
+
+**POST** `/api/v1/memories/import-chat`
+
+与别名 **POST** `/api/v1/memories/chat-import` 等价。
+
+**说明**：对已解析片段 **逐段直写入库**（不进行多批 LLM 精炼）；大批量可能暂缓向量写入。若需 SSE 进度与 AI 精炼，请使用 §4.9。
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| member_id | int | 是 | 成员 ID |
+| raw_text | string | 是 | 导出正文（≤ 500000 字） |
+| source | string | 否 | `auto` \| `wechat` \| `plain`，默认 `auto` |
+| build_graph | bool | 否 | 是否在写入后构图，默认 `true` |
+
+**响应：** `created_count`、`memory_ids`、`graph_temporal_edges`、`graph_llm_edges`、`vectors_deferred?`。
+
+---
+
+### 4.9 聊天记录导入（流式 SSE）
+
+**POST** `/api/v1/memories/import-chat/stream`
+
+与别名 **POST** `/api/v1/memories/chat-import/stream` 等价。
+
+**媒体类型：** `text/event-stream`，帧形如 `data: {JSON}\\n\\n`。
+
+**请求体：** 在 §4.8 基础上可增加：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| ai_refine | bool | 否 | 默认 `true`；`false` 时跳过多批 LLM 精炼 |
+| client_llm | object | 否 | 与 **§5.1** `client_llm` 同形（`base_url`、`model`、`api_key?`）；流式流水线中用于精炼阶段。**前端应在每次 POST 前使用浏览器当前「模型设置」覆盖快照**，避免因 localStorage job 早于保存密钥而导致 401。 |
+
+**SSE 帧类型概要**：`stage`、`parse_done`、`llm_batch`、`batch_done`、`persist_progress`、`note`、`done`（含统计）、`error`。
+
+成员页在用户开启 AI 精炼且非 Ollama、且浏览器未保存 API Key 时，会先 **Toast** 提示可能依赖服务端 `LLM_*` 环境变量。详见 **[memory-relation-network.md](./memory-relation-network.md)** §6。
+
+---
+
 ## 五、AI 对话接口
 
 ### 5.1 发送对话消息
@@ -447,7 +505,10 @@ Authorization: Bearer <token>
 | member_id | int | 否 | 成员 ID |
 | channel | string | 否 | 对话渠道：`app`/`wechat`/`qq`（默认 `app`） |
 | session_id | string | 否 | 会话 ID（用于跨请求上下文） |
-| history_limit | int | 否 | 携带历史消息条数（默认 10，最大 50） |
+| history_limit | int | 否 | 携带服务端历史消息条数（默认 10，最大 50） |
+| client_history | object[] | 否 | 浏览器恢复的 `user` / `assistant` 消息片段；存在时优先于服务端进程内会话 |
+| client_llm | object | 否 | OpenAI 兼容网关覆盖：`base_url`（必填）、`model`（必填）、`api_key`（可空）；与「模型设置」一致 |
+| extract_memories_after | bool | 否 | `true` 时在本轮对话写入会话后，用 LLM 提炼记忆并入链式图（增加耗时） |
 
 **响应示例：**
 

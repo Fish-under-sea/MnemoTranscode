@@ -16,7 +16,9 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 
 用 AI 技术将记忆（声音、照片、文字、情感）进行数字化存档、智能化整理和多模态还原，让每一段值得的关系都留有迹可循。
 
-**当前阶段**：Web 全栈与基础设施已跑通，核心档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊等能力在持续迭代中；**桌面级客户端应用** 列为下一步方向。LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)。
+**当前阶段**：Web 全栈与基础设施已跑通；在档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊之上，持续迭代 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、成员头像与受控上传等能力。**桌面级客户端应用** 列为下一步方向。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
+
+LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架构总览见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)、规格摘要见 [docs/SPEC.md](./docs/SPEC.md)、REST 摘录见 [docs/API.md](./docs/API.md)。
 
 ---
 
@@ -27,7 +29,9 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 | **关系档案库** | 创建恋人、挚友、至亲、家族、伟人等多类型档案，管理档案内成员信息 |
 | **记忆管理** | 为每位成员记录记忆条目，支持情感标签、时间、地点等元数据 |
 | **媒体存档** | 照片、视频、音频两阶段预签名上传，私有桶安全存储（MinIO） |
-| **AI 对话** | 与档案中的成员进行 AI 角色扮演对话，前端打字机效果，记忆上下文注入 |
+| **Mnemo / 记忆图谱** | 后端 `app/mnemo/`：对话巩固、Engram 关系、有意识召回（conscious recall）等；前端成员详情 **记忆关系图**（`MemoryRelationGraph` + `react-force-graph-2d`）。**技术说明**： [docs/memory-relation-network.md](./docs/memory-relation-network.md)（含图谱 API、`client_llm` 流式导入衔接、力导向开启后停表锚点对齐） |
+| **成员头像** | MinIO 存储 + 预签名；受控尺寸/类型（`avatar_image` / `upload_bounded`）；详情见 API 与 `Member.avatar_url` |
+| **AI 对话** | 与档案中的成员进行 AI 角色扮演对话，前端打字机效果，记忆上下文注入；可选承接 Mnemo 管线巩固记忆 |
 | **故事书生成** | 基于记忆条目 AI 自动生成生命故事，支持怀旧温情、文学风格等四种写作风格，可导出 PDF |
 | **交互时间线** | 按年份聚合的可视化记忆时间线，支持情感/成员/时间范围三维筛选 |
 | **记忆胶囊** | 创建定时解封的加密信件，锁定期内内容加密保护，到期自动解封 |
@@ -42,12 +46,12 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 ## 系统架构
 
 ```
-输入层              AI 核心层           存储层              输出层
-  │                    │                   │                   │
-  ├── 文字录入         ├── LLM 对话引擎     ├── PostgreSQL       ├── 关系档案
-  ├── 照片 / 视频      ├── 记忆整理         ├── Qdrant（向量）   ├── 记忆时间线
-  ├── 音频上传         ├── 故事书生成       ├── MinIO（媒体）    ├── AI 对话
-  └── 声纹采集         └── 语音克隆         └── Redis（队列）    ├── 故事书
+输入层              AI 核心层                  存储层              输出层
+  │                    │                        │                   │
+  ├── 文字录入         ├── LLM 对话 / Mnemo     ├── PostgreSQL       ├── 关系档案
+  ├── 照片 / 视频      ├── 记忆整理 / Engram    ├── Qdrant（向量）   ├── 记忆时间线
+  ├── 音频上传         ├── 故事书生成           ├── MinIO（媒体）    ├── AI 对话
+  └── 声纹采集         └── 语音克隆             └── Redis（队列）    ├── 故事书
                                                                 ├── 记忆胶囊
                                                                 └── API / Webhook
 ```
@@ -58,7 +62,7 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 18 · TypeScript · Vite · Tailwind CSS · Framer Motion |
+| 前端 | React 18 · TypeScript · Vite · Tailwind CSS · Motion v12（`motion`）· `react-force-graph-2d`（记忆关系图）|
 | 状态管理 | Zustand · TanStack Query v5 |
 | 组件库 | 自研 A 基座设计系统（东方温润设计语言）|
 | 后端 | FastAPI · Python 3.11 · SQLAlchemy 2.0 · Alembic |
@@ -91,8 +95,8 @@ cd MnemoTranscode
 
 ```bash
 cp backend/.env.example backend/.env
-# 编辑 backend/.env，填入以下关键配置：
-# DATABASE_URL、SECRET_KEY、OPENAI_API_KEY、MINIO_* 等
+# 编辑 backend/.env（键名与注释见示例文件；完整列表见 app/core/config.py 中 Settings）
+# 常见必填/建议：DATABASE_URL、SECRET_KEY、REDIS_URL、MINIO_*、LLM_* 等（Docker 全栈下 compose 已注入部分连接串，仍建议维护 .env）
 ```
 
 ### 3. 启动服务（Docker）
@@ -207,12 +211,14 @@ npm run dev
 MTC/
 ├── backend/                    # FastAPI 后端
 │   ├── app/
+│   │   ├── mnemo/             # Mnemo 管线（巩固、召回、Engram 同步等）
 │   │   ├── api/v1/            # API 路由（auth / archive / memory / media /
 │   │   │                      #           dialogue / storybook / capsule / ...）
 │   │   ├── core/              # 配置、数据库、依赖注入
 │   │   ├── models/            # SQLAlchemy ORM 模型
 │   │   ├── schemas/           # Pydantic 请求 / 响应 Schema
-│   │   ├── services/          # 业务服务（LLM / 向量 / 媒体 / 语音）
+│   │   ├── services/          # 业务服务（LLM / 向量 / 媒体 / 头像与受控上传等）
+│   │   ├── workers/           # Celery 任务入口（含 Mnemo 异步）
 │   │   └── main.py
 │   ├── alembic/               # 数据库迁移
 │   ├── requirements.txt
@@ -224,7 +230,7 @@ MTC/
 │   │   │   ├── ui/            # A 基座设计系统组件
 │   │   │   ├── dialogue/      # 对话气泡 / 打字机
 │   │   │   ├── member/        # 成员档案组件
-│   │   │   ├── memory/        # 记忆卡片 / 详情抽屉
+│   │   │   ├── memory/        # 记忆卡片 / 详情抽屉 / 关系图谱
 │   │   │   ├── media/         # 媒体上传 / 相册 / 灯箱
 │   │   │   ├── timeline/      # 时间线可视化
 │   │   │   ├── storybook/     # 故事书预览
@@ -233,7 +239,7 @@ MTC/
 │   │   │                      #       故事书、记忆胶囊、模型设置、个人中心等）
 │   │   ├── hooks/             # 认证、LLM 用户配置、业务 hooks 等
 │   │   ├── services/          # API 客户端（axios + 统一错误处理）
-│   │   ├── lib/               # 设计 token、时间线/成员状态、LLM 预设与探测等
+│   │   ├── lib/               # 设计 token、时间线、LLM 预设、Mnemo 图谱布局与高亮等
 │   │   └── providers/         # MotionProvider / ThemeProvider
 │   ├── package.json
 │   ├── Dockerfile
@@ -246,12 +252,17 @@ MTC/
 │   ├── docker-compose.yml     # 全栈 + PG / Qdrant / MinIO / Redis
 │   └── docker-compose.hybrid-frontend.example.yml
 │
-├── scripts/                   # 运维脚本（`start-services.sh` 全栈 / `start-stable.ps1` Windows 开发）
+├── scripts/                   # 运维脚本：`start-services.sh`、`start-stable.ps1`、Docker 上下文修复等
 │
 └── docs/
-    ├── MnemoTranscode.txt      # 项目文字宣言（项目初创即与此同源）
-    ├── LLM.txt                  # 各厂商推荐模型与 Base URL（与 `lib/llmPresets` 一致）
-    ├── design-system.md       # A 基座设计系统规范
+    ├── MnemoTranscode.txt      # 项目文字宣言
+    ├── LLM.txt                 # 厂商与模型参考
+    ├── ARCHITECTURE.md         # 架构说明
+    ├── SPEC.md                 # 规格摘要
+    ├── API.md                  # 主要 REST 摘录
+    ├── memory-relation-network.md  # 记忆关系网（Engram）前后端契约与交互
+    ├── stable-dev-windows.md   # Windows + Docker 稳定性
+    ├── design-system.md        # A 基座设计系统
     └── superpowers/
         ├── specs/             # 各子项目设计规格文档
         ├── plans/             # 各子项目实现计划
@@ -305,7 +316,7 @@ npm run build        # 生产构建
 | 认证 | `/api/v1/auth` |
 | 档案 | `/api/v1/archives` |
 | 成员 | `/api/v1/archives/{id}/members` |
-| 记忆 | `/api/v1/memories` |
+| 记忆 | `/api/v1/memories` · 语义搜索 `/search` · 图谱 `GET …/mnemo-graph` · 导入 `POST …/import-chat` / `…/import-chat/stream` |
 | 媒体 | `/api/v1/media` |
 | AI 对话 | `/api/v1/dialogue` |
 | 故事书 | `/api/v1/storybook` |
@@ -323,12 +334,14 @@ npm run build        # 生产构建
 用户 (User)
  └── 档案 (Archive)  — 家族 / 恋人 / 挚友 / 至亲 / 伟人 / 历史
       └── 成员 (Member)
+           ├── 成员状态：status（active / passed / distant / pet / other），可选 end_year（及旧版影子字段兼容）
            ├── 记忆 (Memory)          — 情感标签 / 时间 / 地点
            ├── 媒体资产 (MediaAsset)  — 照片 / 视频 / 音频
+           ├── Engram（mnemo）       — 记忆关系 / 巩固图（随迁移与功能启用）
            └── 记忆胶囊 (MemoryCapsule) — 定时解封
 ```
 
-成员状态采用三值语义：`alive`（健在）· `deceased`（已离开）· `unknown`（未知）。
+前端展示与 API 以 `status` 为主；遗留 `is_alive` / `death_year` 仅兼容旧数据，新业务请使用 `status` / `end_year`。
 
 ---
 
@@ -353,8 +366,9 @@ npm run build        # 生产构建
 - [KouriChat](https://kourichat.com) — 微信 AI 聊天机器人的参考实现
 - [FastAPI](https://fastapi.tiangolo.com/) — 现代 Python Web 框架
 - [React](https://react.dev/) — 用于构建用户界面的 JavaScript 库
-- [Framer Motion](https://www.framer.com/motion/) — React 动效库
 - [TanStack Query](https://tanstack.com/query) — 异步状态管理
+- [Motion](https://motion.dev/) — React 动效（`motion`）
+- [ex-skill](https://github.com/perkfly/ex-skill) — perkfly：**聊天记录与个人叙事蒸馏为 Agent Skill**（Persona + Memories）、本地解析与版本管理的实践参考（MIT）
 - 所有开源项目的贡献者
 
 ---

@@ -60,25 +60,25 @@ export default function Layout() {
         className="pointer-events-none fixed inset-0 -z-10 bg-warm-50 bg-cover bg-center bg-fixed bg-no-repeat [background-image:var(--app-background-image,none)]"
         aria-hidden
       />
-      {/* 顶部导航 */}
+      {/* 顶栏：全宽 —— Logo 贴左、主导航居中、用户区贴右 */}
       <header className="bg-warm-50/80 border-b border-warm-200 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto pl-3 pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-4 sm:pr-[max(1rem,env(safe-area-inset-right,0px))] lg:px-8">
-          <div className="flex items-center justify-between h-14 gap-2 min-w-0">
-            {/* Logo */}
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-jade-400 to-jade-600 rounded-lg flex items-center justify-center shadow-jade">
+        <div className="w-full min-w-0 pl-3 pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-4 sm:pr-[max(1rem,env(safe-area-inset-right,0px))] lg:pl-6 lg:pr-8">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center h-14 gap-2 sm:gap-4 min-w-0">
+            {/* Logo — 视口左侧 */}
+            <Link to="/" className="flex items-center gap-2 shrink-0 min-w-0 justify-self-start">
+              <div className="w-8 h-8 bg-gradient-to-br from-jade-400 to-jade-600 rounded-lg flex items-center justify-center shadow-jade shrink-0">
                 <span className="text-white font-bold text-sm">MTC</span>
               </div>
-              <span className="font-display font-semibold text-slate-900 hidden sm:block">
+              <span className="font-display font-semibold text-slate-900 hidden sm:block truncate">
                 Memory To Code
               </span>
             </Link>
 
-            {/* 桌面导航 */}
-            <nav className="hidden md:flex items-center gap-1">
+            {/* 桌面导航 — 中间列居中 */}
+            <nav className="hidden md:flex items-center justify-center gap-1 min-w-0 justify-self-center max-w-full overflow-x-auto">
               <Link
                 to="/welcome"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-slate-500 hover:text-jade-700 hover:bg-jade-50 transition-all duration-200"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-slate-500 hover:text-jade-700 hover:bg-jade-50 transition-all duration-200 shrink-0"
                 title="返回官网落地页，无需退出登录"
               >
                 <ExternalLink size={16} />
@@ -92,7 +92,7 @@ export default function Layout() {
                     key={item.path}
                     to={item.path}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm transition-all duration-200',
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm transition-all duration-200 shrink-0',
                       active
                         ? 'bg-jade-50 text-jade-700 font-semibold'
                         : 'text-slate-600 hover:text-jade-700 hover:bg-jade-50'
@@ -105,8 +105,8 @@ export default function Layout() {
               })}
             </nav>
 
-            {/* 用户信息 */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0" ref={menuRef}>
+            {/* 用户信息 + 移动端菜单 — 视口右侧 */}
+            <div className="flex items-center justify-end gap-2 sm:gap-2 shrink-0 justify-self-end min-w-0" ref={menuRef}>
               {/* 用户下拉菜单 */}
               <div className="relative">
                 <button

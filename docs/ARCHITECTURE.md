@@ -76,7 +76,7 @@ flowchart TB
 - TanStack Query 数据获取和缓存
 - Zustand 轻量级状态管理
 - React Router v6 客户端路由
-- 响应式设计，支持移动端
+- 交互式可视化：成员 **记忆关系网**（Mnemo），依赖 `TanStack Query` 拉取 `mnemo-graph` 与画布库 `react-force-graph-2d`；专题说明见 **[memory-relation-network.md](./memory-relation-network.md)**
 
 **目录结构：**
 
@@ -332,6 +332,14 @@ flowchart TD
     Filter-->Return["返回回复"]
 ```
 
+### 5.3 Engram 记忆关系网（Mnemo）
+
+**数据**：写入侧由 Mnemo / 导入 / 提炼等链路维护 `EngramNode` · `EngramEdge`（PostgreSQL）。**读出侧**由统一 API **`GET /api/v1/memories/mnemo-graph?member_id=`** 提供给前端画布；服务端对孤儿事件结点等做过滤以保证展示一致性。
+
+**前端**：`MemoryRelationGraph`（`react-force-graph-2d`）叠加 `mnemoGraphLayout` 环形种子与高亮链路逻辑；用户在「力导向」由关切换为开后将触发 d3-force 冷却结束回调 **`onEngineStop`**，并把画布中心对齐 **Person 人物锚点**（无则对齐首结点），避免视口漂移。
+
+**完整契约、图例常量与排错表**： **[memory-relation-network.md](./memory-relation-network.md)**。
+
 ---
 
 ## 六、安全架构
@@ -397,4 +405,4 @@ make deploy
 
 ---
 
-*文档版本：v0.1.0 · 最后更新：2026-04-23*
+*文档版本：v0.2.0 · 最后更新：2026-05-01 · 增补 Engram 关系网链路说明（见第五节 5.3）*

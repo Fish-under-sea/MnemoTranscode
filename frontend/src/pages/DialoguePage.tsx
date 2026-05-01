@@ -1,5 +1,5 @@
 // frontend/src/pages/DialoguePage.tsx
-import { useRef, useEffect, KeyboardEvent, useState } from 'react'
+import { useRef, useEffect, KeyboardEvent, useState, type CSSProperties } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import Avatar from '@/components/ui/Avatar'
 import toast from 'react-hot-toast'
 import { useApiError } from '@/hooks/useApiError'
+import { useAuthStore } from '@/hooks/useAuthStore'
 
 const STARTER_PROMPTS = [
   '你最难忘的一件事是什么？',
@@ -23,11 +24,28 @@ const STARTER_PROMPTS = [
   '你想对我说什么？',
 ]
 
+/**
+ * 输入区辅助文案：仅「上半行」相对「下半行（复选框+说明）」的水平微调。
+ * 单位 px；数值越大，上半行整体越往左移（translateX 负向），用于与下行视觉右缘对齐。
+ * 仅影响位移，不改 `text-caption` / 颜色等样式类。
+ *
+ * ←—— 在此处改数字微调 ——→
+ */
+const DIALOGUE_INPUT_META_SHORTCUT_NUDGE_LEFT_PX = 8.25
+
+/**
+ * 输入条圆角白底容器：右侧内边距（Tailwind padding class）。
+ * 原 `px-3` 左右对称时，「发送」会比下方 `self-end` 的辅助文案更靠左一截；略减右侧即可与整栏右缘视觉统一。
+ * 微调示例：`pr-2` → `pr-1.5` / `pr-1` / `pr-0`（更贴边）。
+ */
+const DIALOGUE_INPUT_COMPOSER_INNER_PR = 'pr-2'
+
 export default function DialoguePage() {
   const { archiveId, memberId } = useParams<{ archiveId?: string; memberId?: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { show: showError } = useApiError()
+  const { user: authUser } = useAuthStore()
   const archiveParsed = archiveId ? Number(archiveId) : NaN
   const memberParsed = memberId ? Number(memberId) : NaN
   const hasChatContext =
@@ -78,6 +96,8 @@ export default function DialoguePage() {
     graphMemoryActive,
     send,
     clear,
+    lastInference,
+    configuredModelLabel,
   } = useDialogue({
     archiveId: archiveIdNum,
     memberId: memberIdNum,
@@ -122,6 +142,8 @@ export default function DialoguePage() {
 
   const memberName = (member as any)?.name || (archive as any)?.name || 'AI 助手'
   const memberAvatarUrl = (member as { avatar_url?: string | null } | undefined)?.avatar_url ?? undefined
+  const userAvatarUrl = authUser?.avatar_url?.trim() || undefined
+  const userBubbleName = authUser?.username?.trim() || authUser?.email?.trim() || '我'
 
   /** 侧边栏（及移动端）：从档案加载的可选对话成员 */
   const pickerBody = (
@@ -271,40 +293,42 @@ export default function DialoguePage() {
               {pickerBody}
             </div>
           )}
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border-default bg-surface/80 backdrop-blur-sm flex-shrink-0">
-            <div>
-              <h1 className="text-body font-semibold text-ink-primary">
-                与 {memberName} 对话
-              </h1>
-              {(member as any)?.relationship_type && (
-                <p className="text-caption text-ink-muted">{(member as any).relationship_type}</p>
-              )}
+          {/* Header：标题与操作，模型信息在输入区下方展示 */}
+          <div className="shrink-0 border-b border-border-default bg-surface/80 backdrop-blur-sm px-4 py-3 space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-body font-semibold text-ink-primary">
+                  与 {memberName} 对话
+                </h1>
+                {(member as any)?.relationship_type && (
+                  <p className="text-caption text-ink-muted">{(member as any).relationship_type}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end sm:justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<BookmarkPlus size={14} />}
+                  loading={extractMutation.isPending}
+                  disabled={
+                    !hasChatContext || !messages.some((m) => m.content.trim().length > 0)
+                  }
+                  onClick={() => extractMutation.mutate()}
+                  title="将当前对话窗口中的内容提炼为记忆并入关系网"
+                >
+                  写入记忆
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={<Trash2 size={14} />}
+                  onClick={clear}
+                  title="清空对话"
+                >
+                  清空
+                </Button>
+              </div>
             </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<BookmarkPlus size={14} />}
-              loading={extractMutation.isPending}
-              disabled={
-                !hasChatContext || !messages.some((m) => m.content.trim().length > 0)
-              }
-              onClick={() => extractMutation.mutate()}
-              title="将当前对话窗口中的内容提炼为记忆并入关系网"
-            >
-              写入记忆
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={<Trash2 size={14} />}
-              onClick={clear}
-              title="清空对话"
-            >
-              清空
-            </Button>
-          </div>
           </div>
 
           {hasChatContext && graphMemoryActive && (
@@ -381,6 +405,8 @@ export default function DialoguePage() {
                           assistantAvatarSrc={
                             msg.role === 'assistant' ? memberAvatarUrl : undefined
                           }
+                          userAvatarSrc={userAvatarUrl}
+                          userName={userBubbleName}
                           typingContent={
                             isCurrentlyTyping
                               ? (isTyping ? displayedContent : undefined)
@@ -397,9 +423,15 @@ export default function DialoguePage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* 输入区 */}
-          <div className="flex-shrink-0 border-t border-border-default bg-surface p-3">
-            <div className="flex gap-3 items-end">
+          {/* 输入区：与消息列表同为 px-4，避免横向「出格」 */}
+          <div className="flex-shrink-0 border-t border-border-default bg-surface px-4 pb-4 pt-3">
+            <div
+              className={cn(
+                'flex gap-2 items-center rounded-xl border border-border-default bg-canvas pl-3 py-1.5 shadow-e1',
+                DIALOGUE_INPUT_COMPOSER_INNER_PR,
+                (!hasChatContext || isSending || isTyping) && 'opacity-60',
+              )}
+            >
               <textarea
                 ref={textareaRef}
                 value={inputValue}
@@ -411,16 +443,17 @@ export default function DialoguePage() {
                 rows={1}
                 disabled={!hasChatContext || isSending || isTyping}
                 className={cn(
-                  'flex-1 resize-none outline-none text-body-sm bg-transparent',
+                  'flex-1 min-w-0 min-h-9 max-h-32 resize-none outline-none text-body-sm',
                   'text-ink-primary placeholder:text-ink-muted',
-                  'max-h-32 leading-relaxed',
-                  (!hasChatContext || isSending || isTyping) && 'opacity-50',
+                  // 对称内边距 + 略收紧行高，单行时文字相对框体更居中；多行仍由上往下排
+                  'px-1.5 py-1.5 leading-snug bg-transparent border-0',
                 )}
-                style={{ fieldSizing: 'content' } as React.CSSProperties}
+                style={{ fieldSizing: 'content' } as CSSProperties}
               />
               <Button
                 variant="primary"
                 size="sm"
+                className="shrink-0 h-9 px-4"
                 rightIcon={<Send size={14} />}
                 onClick={send}
                 disabled={
@@ -430,19 +463,69 @@ export default function DialoguePage() {
                 发送
               </Button>
             </div>
-            <p className="text-caption text-ink-muted mt-1.5 text-center">
-              Enter 发送 · Shift + Enter 换行
-            </p>
-            {hasChatContext && (
-              <label className="flex items-center justify-center gap-2 mt-2 text-caption text-ink-secondary cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={extractMemoriesAfter}
-                  onChange={(e) => setExtractMemoriesAfter(e.target.checked)}
-                  className="rounded border-border-default text-jade-600 focus:ring-jade-500"
-                />
-                发送后提炼记忆并入关系网（需可用的 LLM，略慢）
-              </label>
+
+            {/* 与消息区同宽；左状态 / 右辅助，贴齐主内容左右沿 */}
+            {hasChatContext ? (
+              <div className="mt-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+                <div
+                  className="min-w-0 rounded-xl border border-border-default bg-subtle/70 dark:bg-subtle/60 px-3.5 py-2.5 shadow-e1 sm:max-w-xl"
+                  aria-live="polite"
+                >
+                  <p className="text-body-sm leading-snug">
+                    <span className="text-ink-secondary font-medium">当前模型</span>{' '}
+                    <span
+                      className="font-medium text-ink-primary truncate align-bottom max-sm:max-w-[11rem] max-sm:inline-block max-sm:truncate"
+                      title={lastInference?.model ?? configuredModelLabel ?? ''}
+                    >
+                      {lastInference?.model ?? configuredModelLabel ?? '服务端默认'}
+                    </span>
+                  </p>
+                  {lastInference ? (
+                    <p className="text-caption text-ink-muted mt-1.5 leading-relaxed">
+                      {lastInference.tokensPerSec != null ? (
+                        <>本轮推演约 {lastInference.tokensPerSec.toFixed(1)} token/s</>
+                      ) : (
+                        <>本轮推演约 {lastInference.charsPerSec?.toFixed(0) ?? '—'} 字/s</>
+                      )}
+                      <span className="text-ink-muted/90"> · {lastInference.latencyMs} ms</span>
+                      {lastInference.completionTokens != null ? (
+                        <span className="text-ink-muted/90"> · 输出 {lastInference.completionTokens} tok</span>
+                      ) : null}
+                    </p>
+                  ) : (
+                    <p className="text-caption text-ink-muted mt-1.5 leading-relaxed">
+                      发送一条消息后，将显示本轮实际调用模型与速度
+                    </p>
+                  )}
+                </div>
+
+                {/* items-end：子项不要 stretch，否则 label 被拉满行而内部仍左排，「换行」会较「）」更靠右；收窄为内容宽后两行右缘同一垂线 */}
+                <div className="flex w-fit max-w-full min-w-0 shrink-0 flex-col items-end gap-2 self-end sm:self-auto">
+                  <p
+                    className="text-caption text-ink-muted leading-snug whitespace-nowrap"
+                    style={
+                      {
+                        transform: `translateX(-${DIALOGUE_INPUT_META_SHORTCUT_NUDGE_LEFT_PX}px)`,
+                      } satisfies CSSProperties
+                    }
+                  >
+                    Enter 发送 · Shift + Enter 换行
+                  </p>
+                  <label className="inline-flex max-w-full min-w-0 flex-nowrap items-center gap-2.5 cursor-pointer select-none overflow-x-auto overscroll-x-contain">
+                    <input
+                      type="checkbox"
+                      checked={extractMemoriesAfter}
+                      onChange={(e) => setExtractMemoriesAfter(e.target.checked)}
+                      className="size-4 shrink-0 rounded border-border-default text-jade-600 focus:ring-jade-500"
+                    />
+                    <span className="text-caption text-ink-secondary whitespace-nowrap">
+                      发送后提炼记忆并入关系网（需可用的 LLM，略慢）
+                    </span>
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <p className="text-caption text-ink-muted mt-3 text-right">Enter 发送 · Shift + Enter 换行</p>
             )}
           </div>
         </div>

@@ -187,8 +187,10 @@ export default function TimelinePage() {
           activeMemory
             ? async () => {
                 try {
+                  const mid = activeMemory.member_id
                   await memoryApi.delete(activeMemory.id)
-                  queryClient.invalidateQueries({ queryKey: ['memories'] })
+                  void queryClient.invalidateQueries({ queryKey: ['memories'] })
+                  void queryClient.invalidateQueries({ queryKey: ['mnemo-graph', mid] })
                   setActiveMemory(null)
                   toast.success('已删除')
                 } catch (e) {

@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 复制依赖文件
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 构建期校验：避免旧缓存镜像缺 Pillow 却在运行时才因 import PIL 崩溃
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "from PIL import Image; print('pillow_ok')"
 
 # 复制应用代码
 COPY . .

@@ -4,9 +4,9 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FileText, MessageCircle, Plus, MessageSquareShare, Upload } from 'lucide-react'
+import { FileText, MessageCircle, Plus, MessageSquareShare, Trash2, Upload } from 'lucide-react'
 import { motion } from 'motion/react'
-import { lazy, Suspense, useState, useRef } from 'react'
+import { lazy, Suspense, useState, useRef, useEffect, useMemo } from 'react'
 import { archiveApi, memoryApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
@@ -20,11 +20,14 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
 import Select from '@/components/ui/Select'
-import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
+import { LoadingState, ErrorState, EmptyState, ConfirmDialog } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberProfile from '@/components/member/MemberProfile'
 import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { savePendingChatImport } from '@/lib/chatImportSession'
+import { buildClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import { readStoredLlmUserConfig } from '@/hooks/useLlmUserConfig'
 
 const MemoryRelationGraph = lazy(() => import('@/components/memory/MemoryRelationGraph'))
 
@@ -48,9 +51,16 @@ export default function MemberDetailPage() {
   const [importRaw, setImportRaw] = useState('')
   const [importSource, setImportSource] = useState<'auto' | 'wechat' | 'plain'>('auto')
   const [importTxtName, setImportTxtName] = useState<string | null>(null)
+  const [importBuildGraph, setImportBuildGraph] = useState(true)
+  const [importAiRefine, setImportAiRefine] = useState(true)
   const [importDropActive, setImportDropActive] = useState(false)
 
+  const [selectedMemoryIds, setSelectedMemoryIds] = useState<Set<number>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [deleteAllMemoriesOpen, setDeleteAllMemoriesOpen] = useState(false)
+
   const avatarFileRef = useRef<HTMLInputElement>(null)
+  const masterCheckboxRef = useRef<HTMLInputElement>(null)
   const importTxtRef = useRef<HTMLInputElement>(null)
 
   /** 与后端 ChatImportRequest.raw_text max_length 对齐 */
@@ -127,7 +137,7 @@ export default function MemberDetailPage() {
         member_id: Number(memberId),
         raw_text: importRaw,
         source: importSource,
-        build_graph: true,
+        build_graph: importBuildGraph,
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
@@ -136,11 +146,54 @@ export default function MemberDetailPage() {
       setImportRaw('')
       setImportTxtName(null)
       toast.success(
-        `已导入 ${data.created_count} 条记忆；时间链边 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}`,
+        `已导入 ${data.created_count} 条记忆；时间链边 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}` +
+          (data.vectors_deferred ? '（大批量已暂缓写入语义向量，对话时会逐步补齐）' : ''),
       )
     },
     onError: (err) => show(err),
   })
+
+  const startChatImportOnProgressPage = () => {
+    if (!importRaw.trim()) {
+      toast.error('请先粘贴或载入聊天记录文本')
+      return
+    }
+    if (!archiveId || !memberId) return
+
+    // 开启 AI 精炼但浏览器未携带密钥时，服务端须有 LLM_*；提前提示避免进度页才看到 401
+    if (importAiRefine) {
+      const cfg = readStoredLlmUserConfig()
+      const llm = buildClientLlmPayload(cfg)
+      const hasBrowserKey = !!(llm?.api_key && llm.api_key.trim())
+      if (cfg.mode !== 'ollama' && (!llm || !hasBrowserKey)) {
+        toast(
+          '提示：当前未在「模型设置」保存 API Key，导入将仅靠服务端 LLM 环境变量；若遇 401，请到模型配置填写密钥并保存。',
+          { duration: 6500, icon: 'ℹ️' },
+        )
+      }
+    }
+
+    let jobId: string
+    try {
+      ;({ jobId } = savePendingChatImport({
+        member_id: Number(memberId),
+        archive_id: Number(archiveId),
+        raw_text: importRaw,
+        source: importSource,
+        build_graph: importBuildGraph,
+        ai_refine: importAiRefine,
+        client_llm: buildClientLlmPayload(readStoredLlmUserConfig()) ?? undefined,
+      }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '无法写入临时数据')
+      return
+    }
+    const path = `/archives/${archiveId}/members/${memberId}/chat-import`
+    const q = new URLSearchParams({ job: jobId })
+    setImportChatOpen(false)
+    toast.success('正在进入 AI 导入进度页，请保持页面直至完成')
+    navigate(`${path}?${q.toString()}`)
+  }
 
   const EMOTION_OPTIONS = [
     { value: RADIX_SELECT_NONE, label: '（无）' },
@@ -162,11 +215,61 @@ export default function MemberDetailPage() {
     enabled: !!archiveId && !!memberId,
   })
 
-  const { data: memories = [] } = useQuery({
+  const {
+    data: memories,
+    isError: memoriesIsError,
+    error: memoriesQueryError,
+    refetch: refetchMemories,
+  } = useQuery({
     queryKey: ['memories', 'member', memberId],
-    queryFn: () => memoryApi.list({ member_id: Number(memberId) }) as any,
+    queryFn: () => memoryApi.list({ member_id: Number(memberId), limit: 500 }) as any,
     enabled: !!memberId,
   })
+  const memoriesList = memories ?? []
+
+  const memoryListIds = useMemo(
+    () => memoriesList.map((m: { id: unknown }) => Number(m.id)),
+    [memoriesList],
+  )
+
+  useEffect(() => {
+    const el = masterCheckboxRef.current
+    if (!el) return
+    const n = memoryListIds.length
+    const sel = selectedMemoryIds.size
+    el.checked = n > 0 && sel === n
+    el.indeterminate = sel > 0 && sel < n
+  }, [memoryListIds, selectedMemoryIds])
+
+  useEffect(() => {
+    const allowed = new Set(memoryListIds)
+    setSelectedMemoryIds((prev) => {
+      let prune = false
+      const next = new Set<number>()
+      prev.forEach((id) => {
+        if (allowed.has(id)) next.add(id)
+        else prune = true
+      })
+      return prune || next.size !== prev.size ? next : prev
+    })
+  }, [memoryListIds])
+
+  const onMasterCheckboxChange = () => {
+    if (selectedMemoryIds.size === memoryListIds.length && memoryListIds.length > 0) {
+      setSelectedMemoryIds(new Set())
+    } else {
+      setSelectedMemoryIds(new Set(memoryListIds))
+    }
+  }
+
+  const toggleMemorySelected = (id: number) => {
+    setSelectedMemoryIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const createMemoryMutation = useMutation({
     mutationFn: (data: typeof newMemory) =>
@@ -184,6 +287,23 @@ export default function MemberDetailPage() {
       setCreateMemoryModal(false)
       setNewMemory({ title: '', content_text: '', timestamp: '', location: '', emotion_label: '' })
       toast.success('记忆创建成功')
+    },
+    onError: (err) => show(err),
+  })
+
+  const batchDeleteMemoriesMutation = useMutation({
+    mutationFn: (memory_ids: number[]) =>
+      memoryApi.batchDelete({ memory_ids, member_id: Number(memberId) }),
+    onSuccess: (data, memory_ids) => {
+      void queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+      void queryClient.invalidateQueries({ queryKey: ['mnemo-graph', Number(memberId)] })
+      setSelectedMemoryIds(new Set())
+      setBulkDeleteOpen(false)
+      setDeleteAllMemoriesOpen(false)
+      if (activeMemory && memory_ids.includes(activeMemory.id)) {
+        setActiveMemory(null)
+      }
+      toast.success(`已删除 ${data.deleted_count} 条记忆`)
     },
     onError: (err) => show(err),
   })
@@ -270,7 +390,7 @@ export default function MemberDetailPage() {
               导入聊天记录
             </Button>
             <span className="text-body-sm text-ink-muted self-center ml-auto">
-              {memories.length} 条记忆
+              {memoriesIsError ? '记忆列表加载失败' : `${memoriesList.length} 条记忆`}
             </span>
           </div>
         </Card>
@@ -306,17 +426,19 @@ export default function MemberDetailPage() {
 
       <motion.div variants={fadeUp}>
         <Card variant="plain">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="font-medium text-ink-primary text-body-lg flex items-center gap-2">
               <FileText size={18} />
-              记忆 ({memories.length})
+              记忆 ({memoriesIsError ? '—' : memoriesList.length})
             </h2>
             <Button size="sm" leftIcon={<Plus size={16} />} onClick={() => setCreateMemoryModal(true)}>
               添加记忆
             </Button>
           </div>
 
-          {memories.length === 0 ? (
+          {memoriesIsError ? (
+            <ErrorState error={memoriesQueryError ?? '无法加载记忆列表'} onRetry={() => void refetchMemories()} />
+          ) : memoriesList.length === 0 ? (
             <div>
               <EmptyState
                 icon={FileText}
@@ -331,32 +453,100 @@ export default function MemberDetailPage() {
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
-              {memories.map((memory: Record<string, unknown>) => {
-                const m = memory
-                const rec: Memory = {
-                  id: Number(m.id),
-                  title: String(m.title ?? ''),
-                  content_text: String(m.content_text ?? ''),
-                  timestamp: m.timestamp as string | null | undefined,
-                  location: m.location as string | null | undefined,
-                  emotion_label: m.emotion_label as string | null | undefined,
-                  member_id: Number(m.member_id),
-                  archive_id: Number(archiveId),
-                }
-                return (
-                  <MemoryCard
-                    key={String(m.id)}
-                    {...rec}
-                    variant="list"
-                    onClick={() => setActiveMemory(rec)}
+            <>
+              <div className="flex flex-wrap items-center gap-3 mb-4 pb-3 border-b border-border-default">
+                <label className="inline-flex items-center gap-2 text-body-sm text-ink-secondary cursor-pointer select-none">
+                  <input
+                    ref={masterCheckboxRef}
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border-default text-jade-600 focus:ring-jade-500"
+                    onChange={onMasterCheckboxChange}
                   />
-                )
-              })}
-            </div>
+                  全选
+                </label>
+                <span className="text-caption text-ink-muted">
+                  已选 {selectedMemoryIds.size} / {memoriesList.length}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<Trash2 size={14} />}
+                  disabled={selectedMemoryIds.size === 0 || batchDeleteMemoriesMutation.isPending}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  删除选中
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  leftIcon={<Trash2 size={14} />}
+                  disabled={batchDeleteMemoriesMutation.isPending}
+                  onClick={() => setDeleteAllMemoriesOpen(true)}
+                >
+                  删除本页全部
+                </Button>
+              </div>
+              <p className="text-caption text-ink-muted -mt-2 mb-4">
+                当前列表最多加载 500 条；若成员下记忆更多，请分批删除或后续再扩展分页。
+              </p>
+              <div className="space-y-4">
+                {memoriesList.map((memory: Record<string, unknown>) => {
+                  const m = memory
+                  const rec: Memory = {
+                    id: Number(m.id),
+                    title: String(m.title ?? ''),
+                    content_text: String(m.content_text ?? ''),
+                    timestamp: m.timestamp as string | null | undefined,
+                    location: m.location as string | null | undefined,
+                    emotion_label: m.emotion_label as string | null | undefined,
+                    member_id: Number(m.member_id),
+                    archive_id: Number(archiveId),
+                  }
+                  const mid = rec.id
+                  return (
+                    <div key={String(m.id)} className={cn('flex gap-3 items-stretch')}>
+                      <label className="flex items-start pt-4 shrink-0 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-border-default text-jade-600 focus:ring-jade-500"
+                          checked={selectedMemoryIds.has(mid)}
+                          onChange={() => toggleMemorySelected(mid)}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`选择记忆：${rec.title}`}
+                        />
+                      </label>
+                      <div className="flex-1 min-w-0">
+                        <MemoryCard {...rec} variant="list" onClick={() => setActiveMemory(rec)} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </Card>
       </motion.div>
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title="删除选中的记忆"
+        description={`确定删除已选中的 ${selectedMemoryIds.size} 条记忆？删除后不可恢复。`}
+        confirmText="删除"
+        variant="danger"
+        loading={batchDeleteMemoriesMutation.isPending}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={() => void batchDeleteMemoriesMutation.mutateAsync([...selectedMemoryIds])}
+      />
+      <ConfirmDialog
+        open={deleteAllMemoriesOpen}
+        title="删除本页全部记忆"
+        description={`将删除当前列表中的全部 ${memoryListIds.length} 条记忆（单页最多 500 条），删除后不可恢复。`}
+        confirmText="全部删除"
+        variant="danger"
+        loading={batchDeleteMemoriesMutation.isPending}
+        onCancel={() => setDeleteAllMemoriesOpen(false)}
+        onConfirm={() => void batchDeleteMemoriesMutation.mutateAsync([...memoryListIds])}
+      />
 
       <MemoryDetailDrawer
         memory={activeMemory}
@@ -367,7 +557,13 @@ export default function MemberDetailPage() {
             ? async () => {
                 try {
                   await memoryApi.delete(activeMemory.id)
-                  queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+                  void queryClient.invalidateQueries({ queryKey: ['memories', 'member', memberId] })
+                  void queryClient.invalidateQueries({ queryKey: ['mnemo-graph', Number(memberId)] })
+                  setSelectedMemoryIds((prev) => {
+                    const next = new Set(prev)
+                    next.delete(activeMemory.id)
+                    return next
+                  })
                   setActiveMemory(null)
                   toast.success('记忆已删除')
                 } catch (err) {
@@ -480,9 +676,11 @@ export default function MemberDetailPage() {
           />
           <p className="text-caption text-ink-muted leading-relaxed">
             可<strong className="font-medium text-ink-secondary"> 拖拽或选择 .txt </strong>
-            （微信/QQ 导出），也可在下方粘贴全文。解析为多段记忆后，由 AI 构建
-            <strong className="font-medium text-ink-secondary"> 记忆关系网 </strong>
-            （需后台配置可用 LLM；单篇文本上限 {CHAT_IMPORT_MAX_CHARS.toLocaleString()} 字）。
+            （微信/QQ 导出），也可在下方粘贴全文。
+            <strong className="font-medium text-ink-secondary"> 推荐 </strong>
+            使用「跳转 AI 导入进度页」：规则分段后由多批 LLM 提炼为记忆条目（类「分析—写入」管线），并
+            <strong className="font-medium text-ink-secondary"> 实时显示进度</strong>。
+            单篇上限 {CHAT_IMPORT_MAX_CHARS.toLocaleString()} 字。
           </p>
           <div
             role="button"
@@ -547,6 +745,28 @@ export default function MemberDetailPage() {
             onValueChange={(v) => setImportSource(v as 'auto' | 'wechat' | 'plain')}
             fullWidth
           />
+          <div className="space-y-2 rounded-xl border border-border-default bg-subtle/40 px-3 py-3">
+            <label className="flex cursor-pointer items-start gap-2 text-body-sm text-ink-secondary">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-border-default"
+                checked={importAiRefine}
+                onChange={(e) => setImportAiRefine(e.target.checked)}
+              />
+              <span>
+                使用 AI 精炼记忆正文（多批处理，需配置 LLM；关则仅保留解析分段，与旧版相近）
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-body-sm text-ink-secondary">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-border-default"
+                checked={importBuildGraph}
+                onChange={(e) => setImportBuildGraph(e.target.checked)}
+              />
+              <span>导入后构建记忆关系网（时间链 + LLM 联结）</span>
+            </label>
+          </div>
           <Textarea
             label="聊天原文（可编辑）"
             value={importRaw}
@@ -558,18 +778,28 @@ export default function MemberDetailPage() {
             placeholder="粘贴全文，或从上方载入 txt…"
             fullWidth
           />
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <Button variant="ghost" type="button" onClick={() => setImportChatOpen(false)} fullWidth>
               取消
             </Button>
             <Button
               type="button"
+              variant="secondary"
               loading={importChatMutation.isPending}
               disabled={!importRaw.trim()}
               onClick={() => importChatMutation.mutate()}
               fullWidth
             >
-              导入并构建关系网
+              单次请求导入（无进度页）
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!importRaw.trim()}
+              onClick={startChatImportOnProgressPage}
+              fullWidth
+            >
+              跳转 AI 导入进度页
             </Button>
           </div>
         </div>

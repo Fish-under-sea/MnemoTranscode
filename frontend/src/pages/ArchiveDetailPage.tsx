@@ -297,21 +297,18 @@ export default function ArchiveDetailPage() {
                       to={`/archives/${id}/members/${m.id}`}
                       className="block no-underline text-inherit"
                     >
-                      <Card hoverable className="h-full">
-                        <div className="flex items-start justify-between gap-3 pr-10">
-                          <div className="flex items-start gap-3 min-w-0 flex-1">
-                            <Avatar
-                              src={m.avatar_url ?? undefined}
-                              name={m.name}
-                              size={48}
-                              className="shrink-0 ring-2 ring-border-default"
-                            />
-                            <div className="min-w-0">
-                              <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
-                              {rel && <p className="text-sm text-ink-secondary truncate">{rel}</p>}
-                            </div>
+                      <Card hoverable className="h-full pr-[5.25rem]">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <Avatar
+                            src={m.avatar_url ?? undefined}
+                            name={m.name}
+                            size={48}
+                            className="shrink-0 ring-2 ring-border-default"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-medium text-ink-primary truncate">{m.name}</h3>
+                            {rel && <p className="text-sm text-ink-secondary truncate">{rel}</p>}
                           </div>
-                          <MessageCircle size={18} className="shrink-0 text-jade-600 mt-1" aria-hidden />
                         </div>
                         <div className="mt-3">
                           <MemberStatusBadge
@@ -322,17 +319,29 @@ export default function ArchiveDetailPage() {
                         </div>
                       </Card>
                     </Link>
-                    <button
-                      type="button"
-                      aria-label={`删除成员 ${m.name}`}
-                      className="absolute top-3 right-3 z-10 p-2 rounded-lg text-ink-muted hover:bg-red-50 hover:text-red-600 transition-colors"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setConfirmDeleteMember({ id: m.id, name: m.name })
-                      }}
+                    <div
+                      className="absolute top-2.5 right-2.5 z-10 flex items-center gap-0.5 rounded-lg bg-warm-50/95 dark:bg-subtle border border-border-default/70 shadow-e1 p-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                      role="toolbar"
+                      aria-label={`${m.name} 的操作`}
                     >
-                      <Trash2 size={18} />
-                    </button>
+                      <Link
+                        to={`/dialogue/${id}/${m.id}`}
+                        className="p-2 rounded-md text-jade-600 hover:bg-jade-500/10 transition-colors"
+                        title="AI 对话"
+                        aria-label={`与 ${m.name} 对话`}
+                      >
+                        <MessageCircle size={18} aria-hidden />
+                      </Link>
+                      <button
+                        type="button"
+                        aria-label={`删除成员 ${m.name}`}
+                        className="p-2 rounded-md text-ink-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                        onClick={() => setConfirmDeleteMember({ id: m.id, name: m.name })}
+                      >
+                        <Trash2 size={18} aria-hidden />
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -395,8 +404,10 @@ export default function ArchiveDetailPage() {
           activeMemory
             ? async () => {
                 try {
+                  const mid = activeMemory.member_id
                   await memoryApi.delete(activeMemory.id)
-                  queryClient.invalidateQueries({ queryKey: ['memories', 'archive', id] })
+                  void queryClient.invalidateQueries({ queryKey: ['memories', 'archive', id] })
+                  void queryClient.invalidateQueries({ queryKey: ['mnemo-graph', mid] })
                   setActiveMemory(null)
                   toast.success('记忆已删除')
                 } catch (err) {

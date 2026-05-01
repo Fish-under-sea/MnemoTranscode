@@ -242,6 +242,9 @@ export const memoryApi = {
 
   delete: (id: number) => api.delete(`/memories/${id}`),
 
+  batchDelete: (data: { memory_ids: number[]; member_id?: number }) =>
+    api.post<{ deleted_count: number }, { deleted_count: number }>('/memories/batch-delete', data),
+
   search: (query: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/memories/search', { query, ...params }),
 
@@ -256,6 +259,7 @@ export const memoryApi = {
       memory_ids: number[]
       graph_temporal_edges: number
       graph_llm_edges: number
+      vectors_deferred?: boolean
     }
     const paths = ['/memories/chat-import', '/memories/import-chat'] as const
     let last: unknown
@@ -300,6 +304,8 @@ export const dialogueApi = {
     channel?: 'app' | 'wechat' | 'qq'
     session_id?: string
     history_limit?: number
+    /** 浏览器恢复的上下文（优先于服务端进程内会话） */
+    client_history?: { role: string; content: string }[]
     /** 与模型设置对齐；提供则服务端优先于其 LLM_* 环境变量 */
     client_llm?: ClientLlmPayload | null
     /** 本轮对话结束后提炼记忆并写入链式图 */
@@ -310,6 +316,11 @@ export const dialogueApi = {
       mnemo_mode?: boolean
       session_id?: string
       memories_created?: number
+      model_used?: string | null
+      prompt_tokens?: number | null
+      completion_tokens?: number | null
+      latency_ms?: number | null
+      output_chars?: number | null
     }>('/dialogue/chat', data, {
       timeout: 90_000,
     }),
@@ -526,6 +537,10 @@ export const mediaApi = {
 
   getDownloadUrl: (mediaId: number): Promise<{ get_url: string; expires_in: number }> =>
     api.get(`/media/${mediaId}/download-url`),
+
+  /** 鉴权拉取媒体二进制（相册等同源展示，避免 MinIO 预签名 URL 在浏览器侧不可达） */
+  getFileBlob: (mediaId: number): Promise<Blob> =>
+    api.get(`/media/${mediaId}/file`, { responseType: 'blob' }),
 
   list: (params: { archive_id?: number; member_id?: number; purpose?: MediaPurpose }): Promise<MediaAsset[]> =>
     api.get('/media/', { params }),

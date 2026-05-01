@@ -4,8 +4,10 @@
 所有环境变量和运行时配置集中管理
 """
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -28,9 +30,15 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "mtc_memories"
 
-    # LLM 配置
-    llm_api_key: str = ""
-    llm_base_url: str = "https://api.openai.com/v1"
+    # LLM 配置（环境变量支持 LLM_API_KEY 或常见的 OPENAI_API_KEY）
+    llm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),
+    )
+    llm_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL"),
+    )
     llm_model: str = "gpt-4o"
     llm_max_tokens: int = 4000
     llm_temperature: float = 0.7
@@ -100,9 +108,11 @@ class Settings(BaseSettings):
     # MnemoTranscode（图记忆 + 扩散激活 + 意识召回）；失败时对话路由自动回退传统模式
     mnemo_transcode_enabled: bool = True
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache

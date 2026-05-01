@@ -63,9 +63,11 @@ kourichat/src/autoupdate/cloud/dismissed_announcements.json
 kourichat/src/autoupdate/config/autoupdate_config.json
 kourichat/wxauto_logs/
 
-# Environment
+# Environment（密钥勿入库；示例文件显式放行）
 .env
 .env.*
+!.env.example
+!**/.env.example
 *.env
 
 # Node
@@ -80,6 +82,10 @@ backend/dist/
 # Test cache
 .pytest_cache/
 backend/.pytest_cache/
+
+# Celery beat（本机跑出 schedule 时不要提交）
+celerybeat-schedule
+celerybeat-schedule.*
 
 # Coverage
 .coverage

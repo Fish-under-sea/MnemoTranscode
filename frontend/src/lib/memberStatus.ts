@@ -46,9 +46,15 @@ export const STATUS_META: Record<MemberStatus, StatusMeta> = {
   },
 }
 
-/** 容错读：字段缺失 / null / 空字符串 / 未知字符串 → 都归为 unknown */
+/**
+ * 容错读：兼容后端 MemberStatus（active/passed/…）与历史前端字面量（alive/deceased/unknown）。
+ */
 export function normalizeStatus(raw: unknown): MemberStatus {
-  if (raw === 'alive' || raw === 'deceased' || raw === 'unknown') return raw
+  if (raw === 'alive' || raw === 'active') return 'alive'
+  if (raw === 'deceased' || raw === 'passed') return 'deceased'
+  if (raw === 'unknown') return 'unknown'
+  // distant / pet / other：表单侧暂无单独徽章，归入未说明类展示
+  if (raw === 'distant' || raw === 'pet' || raw === 'other') return 'unknown'
   return 'unknown'
 }
 

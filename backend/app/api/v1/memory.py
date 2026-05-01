@@ -6,8 +6,9 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -20,7 +21,10 @@ from app.schemas.memory import (
     MemoryResponse,
     MemorySearchRequest,
     MemorySearchResponse,
+    MemoryBatchDeleteRequest,
+    MemoryBatchDeleteResponse,
     ChatImportRequest,
+    ChatImportStreamRequest,
     ChatImportResponse,
     ConversationExtractRequest,
     ConversationExtractResponse,
@@ -35,12 +39,33 @@ from app.models.engram import EngramNode, EngramEdge
 from app.mnemo.sync_memories import ensure_memory_engram
 from app.mnemo.chain_enricher import enrich_after_memories_created
 from app.services.chat_import_parser import parse_chat_import
+from app.services.chat_import_ai import stream_chat_import
 from app.services.conversation_memory_extract import extract_and_save_memories
 from app.services.llm_service import LLMService
 
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+async def _delete_engram_event_nodes_for_memories(
+    db: AsyncSession,
+    user_id: int,
+    memory_ids: list[int],
+) -> None:
+    """删除业务记忆时同步删除绑定的 Engram 事件节点。
+
+    engram_nodes.memory_id 外键为 ON DELETE SET NULL，仅删 Memory 会留下孤儿节点，
+    关系网仍显示旧结点；故在删 Memory 之前按 memory_id 清除对应节点（边随节点 CASCADE）。
+    """
+    if not memory_ids:
+        return
+    await db.execute(
+        delete(EngramNode).where(
+            EngramNode.user_id == user_id,
+            EngramNode.memory_id.in_(memory_ids),
+        )
+    )
 
 
 def memory_to_response(m: Memory) -> MemoryResponse:
@@ -90,8 +115,19 @@ async def import_chat_log(
     if not drafts:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="未能从文本中解析出有效片段")
 
-    created: list[Memory] = []
-    for d in drafts[:500]:
+    # 大批量：跳过每条记忆的 embedding+Qdrant，避免单次 HTTP 请求内数百次远程调用导致内存暴涨或 Docker OOM
+    vector_sync_threshold = 72
+    defer_vector = len(drafts) > vector_sync_threshold
+    if defer_vector:
+        logger.info(
+            "导入片段 %s 条超过阈值 %s，本批次跳过向量同步（构图仍可用）",
+            len(drafts),
+            vector_sync_threshold,
+        )
+
+    created_ids: list[int] = []
+    batch_commit_every = 25
+    for idx, d in enumerate(drafts[:500]):
         ts = d.occurred_at or datetime.now(timezone.utc)
         memory = Memory(
             title=d.title[:200],
@@ -103,11 +139,24 @@ async def import_chat_log(
         db.add(memory)
         await db.flush()
         await db.refresh(memory)
-        created.append(memory)
+        created_ids.append(memory.id)
         try:
-            await ensure_memory_engram(db, memory, current_user.id)
+            await ensure_memory_engram(
+                db,
+                memory,
+                current_user.id,
+                with_vector=not defer_vector,
+            )
         except Exception as exc:
             logger.warning("导入记忆入图失败 id=%s: %s", memory.id, exc)
+
+        if (idx + 1) % batch_commit_every == 0:
+            await db.commit()
+
+    await db.commit()
+
+    mem_rows = await db.execute(select(Memory).where(Memory.id.in_(created_ids)))
+    created = list(mem_rows.scalars().all())
 
     llm = LLMService()
     stats = {"temporal_edges": 0, "llm_edges": 0}
@@ -122,6 +171,37 @@ async def import_chat_log(
         memory_ids=[m.id for m in created],
         graph_temporal_edges=int(stats.get("temporal_edges", 0)),
         graph_llm_edges=int(stats.get("llm_edges", 0)),
+        vectors_deferred=defer_vector,
+    )
+
+
+@router.post("/import-chat/stream")
+@router.post("/chat-import/stream")
+async def import_chat_log_stream(
+    body: ChatImportStreamRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """流式导入：解析 → 多批 LLM 精炼（可关闭）→ 持久化 → 关系网；进度页实时展示。"""
+    await _require_member_for_user(db, current_user, body.member_id)
+
+    async def gen():
+        async for chunk in stream_chat_import(
+            db,
+            user_id=current_user.id,
+            member_id=body.member_id,
+            raw_text=body.raw_text,
+            source=body.source,
+            build_graph=body.build_graph,
+            ai_refine=body.ai_refine,
+            client_llm=body.client_llm,
+        ):
+            yield chunk
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
 
 
@@ -166,6 +246,20 @@ async def get_mnemo_graph(
         )
     )
     nodes_orm = list(nr.scalars().all())
+    # 仅展示仍有一条业务记忆支撑的事件节点；Person/Emotion 等可为 memory_id 空
+    mem_ids_r = await db.execute(select(Memory.id).where(Memory.member_id == member_id))
+    valid_memory_ids = {row[0] for row in mem_ids_r.all()}
+    filtered: list[EngramNode] = []
+    for n in nodes_orm:
+        if n.memory_id is not None:
+            if n.memory_id in valid_memory_ids:
+                filtered.append(n)
+            continue
+        if n.node_type == "Event":
+            # 事件节点应对应 memories 行；历史上删记忆仅 SET NULL 会留下 ghost Event
+            continue
+        filtered.append(n)
+    nodes_orm = filtered
     node_ids = {n.id for n in nodes_orm}
     if not node_ids:
         return MnemoGraphResponse(member_id=member_id, nodes=[], edges=[])
@@ -306,7 +400,7 @@ async def list_memories(
     member_id: int | None = None,
     emotion_label: str | None = None,
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -329,6 +423,35 @@ async def list_memories(
     result = await db.execute(query)
     memories = result.scalars().all()
     return [memory_to_response(m) for m in memories]
+
+
+@router.post("/batch-delete", response_model=MemoryBatchDeleteResponse)
+async def batch_delete_memories(
+    body: MemoryBatchDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量删除记忆（单事务）。"""
+    unique_ids = list(dict.fromkeys(body.memory_ids))
+    q = (
+        select(Memory.id)
+        .join(Member, Memory.member_id == Member.id)
+        .join(Archive, Member.archive_id == Archive.id)
+        .where(Memory.id.in_(unique_ids), Archive.owner_id == current_user.id)
+    )
+    if body.member_id is not None:
+        q = q.where(Memory.member_id == body.member_id)
+    result = await db.execute(q)
+    found = [row[0] for row in result.all()]
+    if len(found) != len(unique_ids):
+        raise DomainResourceError(
+            error_code="RESOURCE_NOT_FOUND",
+            message="部分记忆不存在、不属于该成员或无权删除，请刷新后重试",
+        )
+    await _delete_engram_event_nodes_for_memories(db, current_user.id, found)
+    await db.execute(delete(Memory).where(Memory.id.in_(found)))
+    await db.commit()
+    return MemoryBatchDeleteResponse(deleted_count=len(found))
 
 
 @router.get("/{memory_id}", response_model=MemoryResponse)
@@ -406,5 +529,6 @@ async def delete_memory(
     if not memory:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
 
+    await _delete_engram_event_nodes_for_memories(db, current_user.id, [memory.id])
     await db.delete(memory)
     await db.commit()

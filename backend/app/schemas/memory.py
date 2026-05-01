@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, EmailStr, Field, model_serializer, model_validator
 from enum import Enum
 
+from app.schemas.client_llm import ClientLlmOverride
+
 
 class UserRole(str, Enum):
     """用户角色枚举"""
@@ -243,6 +245,21 @@ class MemoryUpdate(BaseModel):
     emotion_label: str | None = None
 
 
+class MemoryBatchDeleteRequest(BaseModel):
+    """批量删除记忆（须全部为当前用户名下档案中的条目）。"""
+
+    memory_ids: list[int] = Field(..., min_length=1, max_length=500)
+    member_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="若提供，仅删除属于该成员的记忆，避免误选其它成员条目",
+    )
+
+
+class MemoryBatchDeleteResponse(BaseModel):
+    deleted_count: int
+
+
 class MemoryResponse(MemoryBase):
     """记忆响应"""
     id: int
@@ -286,11 +303,21 @@ class ChatImportRequest(BaseModel):
     build_graph: bool = True
 
 
+class ChatImportStreamRequest(ChatImportRequest):
+    """流式导入（SSE）：规则分段后默认经多批 LLM 精炼再入库。"""
+
+    ai_refine: bool = True
+    # 与对话页一致：使用浏览器「模型设置」中的网关与密钥，避免仅依赖服务端 .env
+    client_llm: ClientLlmOverride | None = None
+
+
 class ChatImportResponse(BaseModel):
     created_count: int
     memory_ids: list[int]
     graph_temporal_edges: int
     graph_llm_edges: int
+    # 大批量导入时为 True：已跳过 Qdrant 向量同步，避免数百次 embedding 导致 OOM；对话预热可补齐。
+    vectors_deferred: bool = False
 
 
 class ConversationExtractRequest(BaseModel):

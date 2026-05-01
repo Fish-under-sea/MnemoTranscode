@@ -45,7 +45,7 @@ class ChatPipeline:
         self.member_id = member_id
         self.consolidator = consolidator
 
-    async def chat(self, user_message: str, history: list[dict]) -> str:
+    async def chat(self, user_message: str, history: list[dict]) -> tuple[str, dict]:
         episode_id = await self.graph.create_node(
             "Event",
             user_message,
@@ -62,10 +62,12 @@ class ChatPipeline:
         conscious_ext = await self.recall.assemble_system_extension(ctx)
         system_prompt = f"{self.base_system_prompt}\n\n{conscious_ext}"
 
+        usage_out: dict = {}
         reply = await self.llm.get_response(
             message=user_message,
             system_prompt=system_prompt,
             history=history,
+            usage_out=usage_out,
         )
 
         try:
@@ -73,7 +75,7 @@ class ChatPipeline:
             await self._encode_response(reply, episode_id)
         except Exception as exc:
             logger.exception("对话后记忆编码失败（不影响本轮回复）: %s", exc)
-        return reply
+        return reply, usage_out
 
     async def _encode_semantics(self, episode_id: str, message: str) -> None:
         prompt = f"""从下列用户话语文本中提取最多 4 个简短「实体或命题」（中文名词短语），JSON：

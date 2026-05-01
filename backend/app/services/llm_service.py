@@ -62,6 +62,7 @@ class LLMService:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        usage_out: dict | None = None,
     ) -> str:
         """
         调用 LLM 获取回复
@@ -72,13 +73,14 @@ class LLMService:
         - 思考内容过滤（R1 模型格式）
         """
         history = history or []
+        use_model = model or self.model
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
                 headers=self._request_headers(),
                 json={
-                    "model": model or self.model,
+                    "model": use_model,
                     "messages": self._build_messages(message, system_prompt, history),
                     "temperature": temperature or self.temperature,
                     "max_tokens": max_tokens or self.max_tokens,
@@ -94,6 +96,13 @@ class LLMService:
 
             # 过滤思考内容（R1 模型格式）
             content = self._filter_thinking_content(content)
+
+            if usage_out is not None:
+                u = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                usage_out["model"] = data.get("model") or use_model
+                usage_out["prompt_tokens"] = u.get("prompt_tokens")
+                usage_out["completion_tokens"] = u.get("completion_tokens")
+                usage_out["total_tokens"] = u.get("total_tokens")
 
             return content
 
@@ -138,17 +147,31 @@ class LLMService:
         return data
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
-        """直接传入消息列表进行对话"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        """直接传入消息列表进行对话。可传 timeout= 秒数（默认 60），用于长提示或 JSON 抽取。"""
+        timeout_sec = float(kwargs.pop("timeout", 60.0))
+        use_model = kwargs.pop("model", self.model)
+        temperature = kwargs.pop("temperature", self.temperature)
+        max_tokens = kwargs.pop("max_tokens", self.max_tokens)
+        async with httpx.AsyncClient(timeout=timeout_sec) as client:
             response = await client.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
                 headers=self._request_headers(),
                 json={
-                    "model": kwargs.get("model", self.model),
+                    "model": use_model,
                     "messages": messages,
-                    "temperature": kwargs.get("temperature", self.temperature),
-                    "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
                 },
             )
+            if response.status_code != 200:
+                detail = (response.text or "")[:2000]
+                raise Exception(f"LLM API 返回错误 {response.status_code}: {detail}")
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            choices = data.get("choices")
+            if not isinstance(choices, list) or len(choices) < 1:
+                raise Exception(f"LLM 响应缺少 choices: {str(data)[:800]}")
+            msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if not isinstance(content, str):
+                raise Exception(f"LLM 响应无有效 content: {str(data)[:800]}")
+            return content

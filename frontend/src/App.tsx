@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage'
 import ArchiveListPage from './pages/ArchiveListPage'
 import ArchiveDetailPage from './pages/ArchiveDetailPage'
 import MemberDetailPage from './pages/MemberDetailPage'
+import ChatImportProgressPage from './pages/ChatImportProgressPage'
 import DialoguePage from './pages/DialoguePage'
 import TimelinePage from './pages/TimelinePage'
 import StoryBookPage from './pages/StoryBookPage'
@@ -129,6 +130,7 @@ export default function App() {
               <Route path="archives" element={<ArchiveListPage />} />
               <Route path="archives/:id" element={<ArchiveDetailPage />} />
               <Route path="archives/:archiveId/members/:memberId" element={<MemberDetailPage />} />
+              <Route path="archives/:archiveId/members/:memberId/chat-import" element={<ChatImportProgressPage />} />
               <Route path="dialogue" element={<DialoguePage />} />
               <Route path="dialogue/:archiveId/:memberId" element={<DialoguePage />} />
               <Route path="timeline/:archiveId" element={<TimelinePage />} />

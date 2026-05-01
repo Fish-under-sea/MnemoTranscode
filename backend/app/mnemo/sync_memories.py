@@ -51,6 +51,8 @@ async def ensure_memory_engram(
     session: AsyncSession,
     memory: Memory,
     user_id: int,
+    *,
+    with_vector: bool = True,
 ) -> str | None:
     """单条 Memory 对应一个 Event Engram；已存在则返回已有 id。"""
     r = await session.execute(
@@ -62,6 +64,26 @@ async def ensure_memory_engram(
     )
     existing = r.scalar_one_or_none()
     if existing:
+        # 大批量导入可能跳过向量；后续对话/bootstrap 需补齐
+        if with_vector and not memory.vector_embedding_id:
+            try:
+                from app.services.vector_service import VectorService
+
+                title = memory.title or ""
+                body = memory.content_text or ""
+                embed_text = f"{title}\n{body}".strip()[:4000]
+                vs = VectorService()
+                vid = await vs.upsert_memory(
+                    memory.id,
+                    user_id,
+                    embed_text,
+                    engram_id=existing.id,
+                    member_id=memory.member_id,
+                    point_id=existing.id,
+                )
+                memory.vector_embedding_id = vid
+            except Exception as exc:
+                logger.debug("已有 Engram 补写向量跳过: %s", exc)
         return existing.id
 
     result = await session.execute(
@@ -99,23 +121,24 @@ async def ensure_memory_engram(
         )
         await graph.create_edge(ev_id, em_id, "EMOTIONALLY_LINKED", weight=0.7)
 
-    try:
-        from app.services.vector_service import VectorService
+    if with_vector:
+        try:
+            from app.services.vector_service import VectorService
 
-        vs = VectorService()
-        embed_text = f"{title}\n{body}".strip()[:4000]
-        vid = await vs.upsert_memory(
-            memory.id,
-            user_id,
-            embed_text,
-            engram_id=ev_id,
-            member_id=memory.member_id,
-            point_id=ev_id,
-        )
-        if not memory.vector_embedding_id:
-            memory.vector_embedding_id = vid
-    except Exception as exc:
-        logger.debug("engram Qdrant 写入跳过: %s", exc)
+            vs = VectorService()
+            embed_text = f"{title}\n{body}".strip()[:4000]
+            vid = await vs.upsert_memory(
+                memory.id,
+                user_id,
+                embed_text,
+                engram_id=ev_id,
+                member_id=memory.member_id,
+                point_id=ev_id,
+            )
+            if not memory.vector_embedding_id:
+                memory.vector_embedding_id = vid
+        except Exception as exc:
+            logger.debug("engram Qdrant 写入跳过: %s", exc)
 
     return ev_id
 

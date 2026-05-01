@@ -1,6 +1,5 @@
 // frontend/src/components/dialogue/ChatBubble.tsx
 import { cn } from '@/lib/utils'
-import { User } from 'lucide-react'
 import TypingIndicator from './TypingIndicator'
 import Avatar from '@/components/ui/Avatar'
 
@@ -10,6 +9,10 @@ interface ChatBubbleProps {
   memberName?: string
   /** 助手侧头像（成员自定义头像 URL） */
   assistantAvatarSrc?: string
+  /** 用户侧：当前登录用户头像 */
+  userAvatarSrc?: string
+  /** 用户侧：用于头像落款 / 无图时的首字母 */
+  userName?: string
   /** 当前正在打字机渲染的内容（仅最后一条 assistant 消息传入） */
   typingContent?: string
   /** 是否显示打字机 loading 状态（content 为空时） */
@@ -21,6 +24,8 @@ export default function ChatBubble({
   content,
   memberName,
   assistantAvatarSrc,
+  userAvatarSrc,
+  userName,
   typingContent,
   isTyping,
 }: ChatBubbleProps) {
@@ -32,14 +37,12 @@ export default function ChatBubble({
       {/* 头像 */}
       <div className="flex-shrink-0">
         {isUser ? (
-          <div
-            className={cn(
-              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
-              'bg-jade-100 text-jade-700',
-            )}
-          >
-            <User size={16} />
-          </div>
+          <Avatar
+            src={userAvatarSrc}
+            name={userName?.trim() || '我'}
+            size={32}
+            className="ring-1 ring-border-default"
+          />
         ) : (
           <Avatar
             src={assistantAvatarSrc}

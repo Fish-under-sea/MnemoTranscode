@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import get_current_user
 from app.core.config import get_settings
+from app.core.minio_object_response import streaming_response_for_object_key
 from app.core.minio_presign import minio_presign_endpoint
 from app.core.database import get_db
 from app.core.exceptions import DomainInternalError, DomainMediaError, DomainResourceError
@@ -416,6 +417,22 @@ async def get_download_url(
     expires_in = 3600
     url = presign.presigned_get_object(asset.bucket, asset.object_key, expires=timedelta(seconds=expires_in))
     return {"get_url": url, "expires_in": expires_in}
+
+
+@router.get("/{media_id}/file")
+async def get_media_file_stream(
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """经 API 鉴权从 MinIO 拉流，供浏览器在带 Bearer 的场景下用 Blob URL 展示（避免预签名主机不可达）。"""
+    result = await db.execute(select(MediaAsset).where(MediaAsset.id == media_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise DomainResourceError("MEDIA_STREAM_NOT_FOUND", "媒体资源不存在")
+    if asset.owner_id != current_user.id:
+        raise DomainMediaError("MEDIA_STREAM_FORBIDDEN", "无权限访问该媒体资源")
+    return streaming_response_for_object_key(asset.object_key, bucket=asset.bucket)
 
 
 # 旧直传接口保留一个兼容周期，后续由 B/C 前端切换完成后删除
