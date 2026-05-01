@@ -16,6 +16,9 @@ interface MemoryItem {
   created_at: string
   member_id: number
   archive_id?: number
+  /** 后端 MemoryResponse 展示字段；旧缓存无此字段时可用 archive 列表兜底档案名 */
+  member_name?: string | null
+  archive_name?: string | null
 }
 
 interface UsageStats {
@@ -69,7 +72,14 @@ export function useDashboardStats(): DashboardStats {
   })
 
   const archives = archivesQuery.data ?? []
-  const recentMemories = memoriesQuery.data ?? []
+  const rawRecent = memoriesQuery.data ?? []
+  const archiveNameById = new Map(archives.map((a) => [a.id, a.name]))
+  const recentMemories = rawRecent.map((m) => ({
+    ...m,
+    archive_name:
+      m.archive_name ??
+      (m.archive_id != null ? archiveNameById.get(m.archive_id) ?? null : null),
+  }))
   const usage = usageQuery.data ?? null
 
   const archiveCount = archives.length

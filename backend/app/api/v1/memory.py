@@ -48,6 +48,9 @@ router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+# 返回 MemoryResponse 时需带出档案名、角色名
+_MEMORY_MEMBER_ARCHIVE = selectinload(Memory.member).selectinload(Member.archive)
+
 
 async def _delete_engram_event_nodes_for_memories(
     db: AsyncSession,
@@ -73,6 +76,8 @@ def memory_to_response(m: Memory) -> MemoryResponse:
     """Memory ORM 无 archive_id 列，需从已加载的 member 填充。"""
     if m.member is None:
         raise ValueError("Memory.member must be loaded (use selectinload)")
+    arch = m.member.archive
+    archive_name = arch.name if arch is not None else None
     return MemoryResponse(
         id=m.id,
         title=m.title,
@@ -81,6 +86,8 @@ def memory_to_response(m: Memory) -> MemoryResponse:
         location=m.location,
         member_id=m.member_id,
         archive_id=m.member.archive_id,
+        member_name=m.member.name,
+        archive_name=archive_name,
         emotion_label=m.emotion_label,
         vector_embedding_id=m.vector_embedding_id,
         is_capsule=m.is_capsule,
@@ -360,7 +367,7 @@ async def search_memories(
             return MemorySearchResponse(results=[], query=search_request.query, total=0)
         stmt = (
             select(Memory)
-            .options(selectinload(Memory.member))
+            .options(_MEMORY_MEMBER_ARCHIVE)
             .join(Member, Memory.member_id == Member.id)
             .join(Archive, Member.archive_id == Archive.id)
             .where(Memory.id.in_(mem_ids), Archive.owner_id == current_user.id)
@@ -413,6 +420,10 @@ async def create_memory(
     except Exception as exc:
         logger.warning("记忆入 Engram 图失败（可稍后由对话预热补全）: %s", exc)
 
+    a_row = await db.execute(select(Archive).where(Archive.id == member.archive_id))
+    archive_for_name = a_row.scalar_one_or_none()
+    archive_display_name = archive_for_name.name if archive_for_name else None
+
     return MemoryResponse(
         id=memory.id,
         title=memory.title,
@@ -421,6 +432,8 @@ async def create_memory(
         location=memory.location,
         member_id=memory.member_id,
         archive_id=member.archive_id,
+        member_name=member.name,
+        archive_name=archive_display_name,
         emotion_label=memory.emotion_label,
         vector_embedding_id=memory.vector_embedding_id,
         is_capsule=memory.is_capsule,
@@ -444,7 +457,7 @@ async def list_memories(
     """获取记忆列表（支持按档案/成员/情绪筛选）"""
     query = (
         select(Memory)
-        .options(selectinload(Memory.member))
+        .options(_MEMORY_MEMBER_ARCHIVE)
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Archive.owner_id == current_user.id)
@@ -500,7 +513,7 @@ async def get_memory(
     """获取单条记忆详情"""
     result = await db.execute(
         select(Memory)
-        .options(selectinload(Memory.member))
+        .options(_MEMORY_MEMBER_ARCHIVE)
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Memory.id == memory_id, Archive.owner_id == current_user.id)
@@ -521,7 +534,7 @@ async def update_memory(
     """更新记忆条目"""
     result = await db.execute(
         select(Memory)
-        .options(selectinload(Memory.member))
+        .options(_MEMORY_MEMBER_ARCHIVE)
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Memory.id == memory_id, Archive.owner_id == current_user.id)
@@ -538,7 +551,7 @@ async def update_memory(
 
     res2 = await db.execute(
         select(Memory)
-        .options(selectinload(Memory.member))
+        .options(_MEMORY_MEMBER_ARCHIVE)
         .join(Member, Memory.member_id == Member.id)
         .join(Archive, Member.archive_id == Archive.id)
         .where(Memory.id == memory_id, Archive.owner_id == current_user.id)

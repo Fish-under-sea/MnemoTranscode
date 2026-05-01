@@ -26,6 +26,8 @@ export default function ArchiveListPage() {
   const [filterType, setFilterType] = useState<string>('')
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [archiveToDelete, setArchiveToDelete] = useState<{ id: number; name: string } | null>(null)
+  const [archiveToRename, setArchiveToRename] = useState<{ id: number; name: string } | null>(null)
+  const [renameName, setRenameName] = useState('')
   const [newArchive, setNewArchive] = useState({
     name: '',
     description: '',
@@ -54,6 +56,19 @@ export default function ArchiveListPage() {
       queryClient.invalidateQueries({ queryKey: ['archives'] })
       setArchiveToDelete(null)
       toast.success('档案已删除')
+    },
+    onError: (err) => show(err),
+  })
+
+  const renameArchiveMutation = useMutation({
+    mutationFn: ({ id: aid, name: nextName }: { id: number; name: string }) =>
+      archiveApi.update(aid, { name: nextName.trim() }) as Promise<unknown>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] })
+      queryClient.invalidateQueries({ queryKey: ['archive'] })
+      setArchiveToRename(null)
+      setRenameName('')
+      toast.success('档案名称已更新')
     },
     onError: (err) => show(err),
   })
@@ -140,6 +155,11 @@ export default function ArchiveListPage() {
                 archive_type={String(archive.archive_type ?? 'family')}
                 member_count={Number(archive.member_count ?? 0)}
                 memory_count={Number(archive.memory_count ?? 0)}
+                onRename={() => {
+                  const n = String(archive.name ?? '')
+                  setArchiveToRename({ id: Number(archive.id), name: n })
+                  setRenameName(n)
+                }}
                 onDelete={() =>
                   setArchiveToDelete({
                     id: Number(archive.id),
@@ -151,6 +171,61 @@ export default function ArchiveListPage() {
           ))}
         </motion.div>
       )}
+
+      <Modal
+        open={archiveToRename != null}
+        onClose={() => {
+          setArchiveToRename(null)
+          setRenameName('')
+        }}
+        title="重命名档案"
+      >
+        {archiveToRename ? (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const t = renameName.trim()
+              if (!t) {
+                toast.error('名称不能为空')
+                return
+              }
+              if (t === archiveToRename.name.trim()) {
+                setArchiveToRename(null)
+                setRenameName('')
+                return
+              }
+              renameArchiveMutation.mutate({ id: archiveToRename.id, name: t })
+            }}
+          >
+            <Input
+              label="档案名称"
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              placeholder="新的档案名称"
+              fullWidth
+              required
+              autoFocus
+            />
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="ghost"
+                type="button"
+                fullWidth
+                onClick={() => {
+                  setArchiveToRename(null)
+                  setRenameName('')
+                }}
+              >
+                取消
+              </Button>
+              <Button type="submit" variant="primary" fullWidth loading={renameArchiveMutation.isPending}>
+                保存
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
 
       <Modal open={archiveToDelete != null} onClose={() => setArchiveToDelete(null)} title="删除档案">
         {archiveToDelete ? (

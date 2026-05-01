@@ -6,7 +6,7 @@ import { motion } from 'motion/react'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
-import { Archive, FileHeart, Clock, HardDrive, MessageCircle, BookOpen, Plus, Users, type LucideIcon } from 'lucide-react'
+import { Archive, FileHeart, Clock, HardDrive, MessageCircle, BookOpen, Plus, Users, User, type LucideIcon } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { useDashboardStats } from '@/hooks/useDashboardStats'
 import { Card } from '@/components/ui/Card'
@@ -186,29 +186,54 @@ export default function DashboardPage() {
                   animate="visible"
                   className="space-y-3"
                 >
-                  {stats.recentMemories.map((m) => (
-                    <motion.li
-                      key={m.id}
-                      variants={fadeUp}
-                      className="flex items-start gap-3 p-3 rounded-lg hover:bg-warm-100/60 transition-colors cursor-pointer"
-                      onClick={() =>
-                        m.archive_id != null
-                          ? navigate(`/archives/${m.archive_id}`)
-                          : navigate('/archives')
-                      }
-                    >
-                      <div className="w-2 h-2 rounded-full bg-jade-500 mt-2 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-ink-primary font-medium truncate">{m.title}</h3>
-                        <p className="text-ink-secondary text-sm line-clamp-2 mt-1">
-                          {m.content_text}
-                        </p>
-                      </div>
-                      <span className="text-ink-muted text-xs whitespace-nowrap">
-                        {dayjs(m.created_at).fromNow()}
-                      </span>
-                    </motion.li>
-                  ))}
+                  {stats.recentMemories.map((m) => {
+                    const archiveLabel =
+                      m.archive_name ?? (m.archive_id != null ? `档案 #${m.archive_id}` : null)
+                    const memberLabel = m.member_name ?? `角色 #${m.member_id}`
+                    return (
+                      <motion.li
+                        key={m.id}
+                        variants={fadeUp}
+                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-warm-100/60 transition-colors cursor-pointer"
+                        onClick={() => {
+                          if (m.archive_id != null && m.member_id != null) {
+                            void navigate(`/archives/${m.archive_id}/members/${m.member_id}`)
+                            return
+                          }
+                          if (m.archive_id != null) {
+                            void navigate(`/archives/${m.archive_id}`)
+                            return
+                          }
+                          void navigate('/archives')
+                        }}
+                      >
+                        <div className="w-2 h-2 rounded-full bg-jade-500 mt-2 flex-shrink-0" aria-hidden />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-ink-primary font-medium truncate">{m.title}</h3>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {archiveLabel ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-jade-50/90 dark:bg-jade-950/35 px-2 py-0.5 text-caption text-jade-800 dark:text-jade-200 max-w-full">
+                                <Archive className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span className="truncate">{archiveLabel}</span>
+                              </span>
+                            ) : null}
+                            {memberLabel ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-warm-100/80 dark:bg-warm-900/25 px-2 py-0.5 text-caption text-ink-secondary max-w-full">
+                                <User className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span className="truncate">{memberLabel}</span>
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-ink-secondary text-sm line-clamp-2 mt-1.5">
+                            {m.content_text}
+                          </p>
+                        </div>
+                        <span className="text-ink-muted text-xs whitespace-nowrap shrink-0 pt-0.5">
+                          {dayjs(m.created_at).fromNow()}
+                        </span>
+                      </motion.li>
+                    )
+                  })}
                 </motion.ul>
               )}
             </Card>

@@ -5,7 +5,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { motion } from 'motion/react'
-import { Plus, MessageCircle, Clock, BookOpen, Users, FileText, Trash2 } from 'lucide-react'
+import { Plus, MessageCircle, Clock, BookOpen, Users, FileText, Trash2, PencilLine } from 'lucide-react'
 import { archiveApi, memoryApi } from '@/services/api'
 import { ARCHIVE_TYPE_OPTIONS, formatDate } from '@/lib/utils'
 import type { MemberStatus } from '@/lib/memberStatus'
@@ -54,6 +54,8 @@ export default function ArchiveDetailPage() {
   })
   const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
   const [confirmDeleteArchive, setConfirmDeleteArchive] = useState(false)
+  const [renameArchiveOpen, setRenameArchiveOpen] = useState(false)
+  const [renameArchiveName, setRenameArchiveName] = useState('')
   /** 二次确认删除成员（档案下的角色卡片） */
   const [confirmDeleteMember, setConfirmDeleteMember] = useState<{ id: number; name: string } | null>(null)
 
@@ -159,6 +161,27 @@ export default function ArchiveDetailPage() {
     },
   })
 
+  const renameArchiveMutation = useMutation({
+    mutationFn: (nextName: string) =>
+      archiveIdValid
+        ? (archiveApi.update(archiveId, { name: nextName.trim() }) as Promise<unknown>)
+        : Promise.reject(new Error('ARCHIVE_ID_INVALID')),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['archive', id] })
+      void queryClient.invalidateQueries({ queryKey: ['archives'] })
+      setRenameArchiveOpen(false)
+      setRenameArchiveName('')
+      toast.success('档案名称已更新')
+    },
+    onError: (err: unknown) => {
+      if (err instanceof Error && err.message === 'ARCHIVE_ID_INVALID') {
+        toast.error('档案无效，无法重命名')
+        return
+      }
+      show(err as Error)
+    },
+  })
+
   if (!archiveIdValid) {
     return <EmptyState title="无效的档案链接" description="请从档案库重新进入" />
   }
@@ -208,16 +231,30 @@ export default function ArchiveDetailPage() {
                 ) : null}
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="shrink-0 text-red-600 hover:bg-red-50"
-              leftIcon={<Trash2 size={16} />}
-              onClick={() => setConfirmDeleteArchive(true)}
-            >
-              删除档案
-            </Button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0 justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                leftIcon={<PencilLine size={16} />}
+                onClick={() => {
+                  setRenameArchiveName(String(archive.name))
+                  setRenameArchiveOpen(true)
+                }}
+              >
+                重命名
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="text-red-600 hover:bg-red-50"
+                leftIcon={<Trash2 size={16} />}
+                onClick={() => setConfirmDeleteArchive(true)}
+              >
+                删除档案
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
@@ -421,6 +458,60 @@ export default function ArchiveDetailPage() {
             : undefined
         }
       />
+
+      <Modal
+        open={renameArchiveOpen}
+        onClose={() => {
+          setRenameArchiveOpen(false)
+          setRenameArchiveName('')
+        }}
+        title="重命名档案"
+        size="md"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const t = renameArchiveName.trim()
+            if (!t) {
+              toast.error('名称不能为空')
+              return
+            }
+            if (t === String(archive.name).trim()) {
+              setRenameArchiveOpen(false)
+              setRenameArchiveName('')
+              return
+            }
+            renameArchiveMutation.mutate(t)
+          }}
+        >
+          <Input
+            label="档案名称"
+            value={renameArchiveName}
+            onChange={(e) => setRenameArchiveName(e.target.value)}
+            placeholder="新的档案名称"
+            fullWidth
+            required
+            autoFocus
+          />
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="ghost"
+              type="button"
+              fullWidth
+              onClick={() => {
+                setRenameArchiveOpen(false)
+                setRenameArchiveName('')
+              }}
+            >
+              取消
+            </Button>
+            <Button type="submit" variant="primary" fullWidth loading={renameArchiveMutation.isPending}>
+              保存
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={confirmDeleteArchive}

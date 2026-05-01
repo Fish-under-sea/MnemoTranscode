@@ -14,4 +14,6 @@ export interface Memory {
   emotion_label?: string | null
   member_id: number
   archive_id?: number
+  member_name?: string | null
+  archive_name?: string | null
 }

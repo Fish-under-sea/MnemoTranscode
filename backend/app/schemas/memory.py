@@ -278,6 +278,9 @@ class MemoryResponse(MemoryBase):
     id: int
     member_id: int
     archive_id: int
+    # 列表/详情展示用：由 API 在已加载 member + archive 时填充
+    member_name: str | None = None
+    archive_name: str | None = None
     emotion_label: str | None = None
     vector_embedding_id: str | None = None
     is_capsule: bool = False

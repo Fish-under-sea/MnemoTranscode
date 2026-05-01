@@ -12,11 +12,13 @@ interface ArchiveCardProps {
   archive_type: string
   member_count: number
   memory_count: number
+  onRename?: () => void
   onDelete?: () => void
 }
 
 export default function ArchiveCard({
   id, name, description, archive_type, member_count, memory_count,
+  onRename,
   onDelete,
 }: ArchiveCardProps) {
   const typeInfo = ARCHIVE_TYPE_OPTIONS.find((t) => t.value === archive_type)
@@ -63,6 +65,15 @@ export default function ArchiveCard({
         >
           查看详情
         </Link>
+        {onRename ? (
+          <button
+            type="button"
+            className="block w-full text-center py-2 text-sm text-ink-secondary hover:bg-warm-50 rounded-xl transition-colors"
+            onClick={onRename}
+          >
+            重命名
+          </button>
+        ) : null}
         {onDelete ? (
           <button
             type="button"
