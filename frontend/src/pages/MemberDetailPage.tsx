@@ -9,7 +9,7 @@ import { motion } from 'motion/react'
 import { archiveApi, memoryApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
-import { EMOTION_LABELS } from '@/lib/utils'
+import { EMOTION_LABELS, RADIX_SELECT_NONE } from '@/lib/utils'
 import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
 import type { Memory } from '@/services/memoryTypes'
@@ -42,9 +42,12 @@ export default function MemberDetailPage() {
   const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
 
   const EMOTION_OPTIONS = [
-    { value: '', label: '（无）' },
+    { value: RADIX_SELECT_NONE, label: '（无）' },
     ...EMOTION_LABELS.map((e) => ({ value: e.value, label: `● ${e.label}` })),
   ]
+
+  const emotionSelectValue =
+    newMemory.emotion_label === '' ? RADIX_SELECT_NONE : newMemory.emotion_label
 
   const { data: archive } = useQuery({
     queryKey: ['archive', archiveId],
@@ -258,8 +261,13 @@ export default function MemberDetailPage() {
           <Select
             label="情感基调（可选）"
             options={EMOTION_OPTIONS}
-            value={newMemory.emotion_label}
-            onValueChange={(v) => setNewMemory({ ...newMemory, emotion_label: v })}
+            value={emotionSelectValue}
+            onValueChange={(v) =>
+              setNewMemory({
+                ...newMemory,
+                emotion_label: v === RADIX_SELECT_NONE ? '' : v,
+              })
+            }
             fullWidth
           />
           <div className="flex gap-3 pt-2">

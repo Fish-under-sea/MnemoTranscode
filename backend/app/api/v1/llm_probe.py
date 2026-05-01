@@ -127,7 +127,14 @@ async def _fetch_openai_models(base: str, api_key: str | None) -> tuple[bool, st
         return False, f"网络错误：{e}", [], None
     ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        return False, _format_upstream_error(r.status_code, r.text), [], ms
+        detail = _format_upstream_error(r.status_code, r.text)
+        netloc = (urlparse(url).hostname or "").lower()
+        if r.status_code == 401 and "xiaomimimo.com" in netloc:
+            detail += (
+                " ｜ MiMo：token-plan-* 网关仅接受在小米平台「Token Plan（代币计划）」页签创建的密钥（通常以 tp- 开头）；"
+                "与 api.xiaomimimo.com 的按量付费密钥不通用。请在 platform.xiaomimimo.com 进入 Token Plan 重新创建或复制密钥。"
+            )
+        return False, detail, [], ms
     try:
         data: dict[str, Any] = r.json()
     except Exception:

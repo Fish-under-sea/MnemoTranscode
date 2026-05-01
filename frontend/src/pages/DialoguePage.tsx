@@ -1,9 +1,9 @@
 // frontend/src/pages/DialoguePage.tsx
 import { useRef, useEffect, KeyboardEvent } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
-import { Trash2, Send, ChevronRight } from 'lucide-react'
+import { Trash2, Send, ChevronRight, MessageCircle } from 'lucide-react'
 import { archiveApi } from '@/services/api'
 import { Button } from '@/components/ui/Button'
 import PageTransition from '@/components/ui/PageTransition'
@@ -22,8 +22,32 @@ const STARTER_PROMPTS = [
 
 export default function DialoguePage() {
   const { archiveId, memberId } = useParams<{ archiveId?: string; memberId?: string }>()
-  const archiveIdNum = archiveId ? Number(archiveId) : undefined
-  const memberIdNum = memberId ? Number(memberId) : undefined
+  const navigate = useNavigate()
+  const archiveParsed = archiveId ? Number(archiveId) : NaN
+  const memberParsed = memberId ? Number(memberId) : NaN
+  const hasChatContext =
+    Number.isFinite(archiveParsed) &&
+    archiveParsed > 0 &&
+    Number.isFinite(memberParsed) &&
+    memberParsed > 0
+  const archiveIdNum = hasChatContext ? archiveParsed : undefined
+  const memberIdNum = hasChatContext ? memberParsed : undefined
+
+  const needsMemberPicker = !hasChatContext
+
+  const { data: archivesForPicker = [], isLoading: loadingArchives } = useQuery({
+    queryKey: ['archives', 'dialogue-picker'],
+    queryFn: () => archiveApi.list() as any,
+    enabled: needsMemberPicker,
+  })
+
+  const memberQueries = useQueries({
+    queries: (archivesForPicker as { id: number; name?: string }[]).map((a) => ({
+      queryKey: ['members', a.id, 'dialogue-picker'],
+      queryFn: () => archiveApi.listMembers(Number(a.id)) as any,
+      enabled: needsMemberPicker && archivesForPicker.length > 0,
+    })),
+  })
 
   const { data: archive } = useQuery({
     queryKey: ['archive', archiveIdNum],
@@ -63,7 +87,60 @@ export default function DialoguePage() {
   }
 
   const memberName = (member as any)?.name || (archive as any)?.name || 'AI 助手'
-  const hasContext = !!memberIdNum
+
+  /** 侧边栏（及移动端）：从档案加载的可选对话成员 */
+  const pickerBody = (
+    <div className="space-y-4">
+      {loadingArchives ? (
+        <div className="py-6">
+          <LoadingState message="正在加载档案与成员…" />
+        </div>
+      ) : archivesForPicker.length === 0 ? (
+        <div className="text-caption text-ink-muted space-y-2">
+          <p>暂无档案。</p>
+          <Link to="/archives" className="text-brand hover:underline font-medium">
+            前往档案库创建档案并添加成员 →
+          </Link>
+        </div>
+      ) : (
+        (archivesForPicker as { id: number; name?: string }[]).map((a, idx) => {
+          const mq = memberQueries[idx]
+          const members = (mq?.data ?? []) as { id: number; name?: string }[]
+          const loadingMembers = mq?.isLoading ?? true
+          return (
+            <div key={a.id} className="space-y-1.5">
+              <div className="text-caption font-semibold text-ink-secondary truncate">{a.name ?? `档案 ${a.id}`}</div>
+              {loadingMembers ? (
+                <div className="text-caption text-ink-muted py-2">载入成员…</div>
+              ) : members.length === 0 ? (
+                <div className="text-caption text-ink-muted py-1 pl-1">
+                  暂无成员，{' '}
+                  <Link to={`/archives/${a.id}`} className="text-brand hover:underline">
+                    去档案里添加
+                  </Link>
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  {members.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        onClick={() => void navigate(`/dialogue/${a.id}/${m.id}`)}
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm text-ink-primary hover:bg-jade-50 hover:text-jade-800 border border-transparent hover:border-jade-200 transition-colors"
+                      >
+                        <MessageCircle size={16} className="text-jade-600 shrink-0" />
+                        <span className="truncate">{m.name ?? `成员 ${m.id}`}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })
+      )}
+    </div>
+  )
 
   return (
     <PageTransition>
@@ -90,9 +167,14 @@ export default function DialoguePage() {
             </div>
           </div>
 
-          <div className="p-4 flex-1">
-            {!hasContext ? (
-              <p className="text-caption text-ink-muted">从档案库选择一个成员开始对话</p>
+          <div className="p-4 flex-1 overflow-y-auto min-h-0">
+            {needsMemberPicker ? (
+              <>
+                <p className="text-caption text-ink-muted mb-3">
+                  从档案库中选择一位成员开启对话：
+                </p>
+                {pickerBody}
+              </>
             ) : !member ? (
               <LoadingState variant="skeleton-list" count={3} />
             ) : (
@@ -140,6 +222,12 @@ export default function DialoguePage() {
 
         {/* 对话主区 */}
         <div className="flex-1 flex flex-col min-w-0">
+          {needsMemberPicker && (
+            <div className="md:hidden shrink-0 max-h-[38vh] overflow-y-auto border-b border-border-default bg-subtle p-4">
+              <p className="text-caption text-ink-muted mb-3">选择要对话的成员</p>
+              {pickerBody}
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border-default bg-surface/80 backdrop-blur-sm flex-shrink-0">
             <div>
@@ -173,11 +261,11 @@ export default function DialoguePage() {
                 >
                   <div className="text-4xl mb-4">💬</div>
                   <p className="text-body-sm text-center mb-6">
-                    {hasContext
+                    {hasChatContext
                       ? `和 ${memberName} 开始对话吧，Ta 记得你们的故事`
-                      : '从左侧选择一位成员开始对话'}
+                      : '先选择对话成员'}
                   </p>
-                  {hasContext && (
+                  {hasChatContext && (
                     <motion.div
                       variants={staggerContainer(0.08)}
                       initial="hidden"
@@ -241,14 +329,16 @@ export default function DialoguePage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`对 ${memberName} 说些什么…`}
+                placeholder={
+                  hasChatContext ? `对 ${memberName} 说些什么…` : '请先在上方或左侧列表中选择成员'
+                }
                 rows={1}
-                disabled={isSending || isTyping}
+                disabled={!hasChatContext || isSending || isTyping}
                 className={cn(
                   'flex-1 resize-none outline-none text-body-sm bg-transparent',
                   'text-ink-primary placeholder:text-ink-muted',
                   'max-h-32 leading-relaxed',
-                  (isSending || isTyping) && 'opacity-50',
+                  (!hasChatContext || isSending || isTyping) && 'opacity-50',
                 )}
                 style={{ fieldSizing: 'content' } as React.CSSProperties}
               />
@@ -257,7 +347,9 @@ export default function DialoguePage() {
                 size="sm"
                 rightIcon={<Send size={14} />}
                 onClick={send}
-                disabled={!inputValue.trim() || isSending || isTyping}
+                disabled={
+                  !hasChatContext || !inputValue.trim() || isSending || isTyping
+                }
               >
                 发送
               </Button>

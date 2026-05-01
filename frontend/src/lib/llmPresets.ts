@@ -1,5 +1,5 @@
 /**
- * 与 docs/LLM.txt 表一致，顺序不可改（1–12）
+ * 与 docs/LLM.txt 表一致，顺序不可改（1–13）
  * 推荐/默认与表「系列」一一对应；listProbe 与后端 /llm-probe/check 的 mode 对齐
  */
 import type { LlmListProbe } from './llmProbeMode'
@@ -182,6 +182,19 @@ export const LLM_PRESETS: LlmPreset[] = [
     ],
     region: 'domestic',
     listProbe: 'openai',
+  },
+  {
+    index: 13,
+    id: 'xiaomi-mimo-token-cn',
+    name: '小米 MiMo（国内 Token Plan）',
+    modelSeries: 'MiMo V2.5 等',
+    baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+    defaultModel: 'mimo-v2.5-pro',
+    recommendedModels: ['mimo-v2.5-pro', 'mimo-v2.5'],
+    region: 'domestic',
+    listProbe: 'openai',
+    description:
+      '密钥须在 platform.xiaomimimo.com「Token Plan（代币计划）」创建，多为 tp- 前缀；与 api.xiaomimimo.com 按量密钥不通用',
   },
 ]
 

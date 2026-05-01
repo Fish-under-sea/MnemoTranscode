@@ -14,7 +14,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
-import { EMOTION_LABELS } from '@/lib/utils'
+import { EMOTION_LABELS, RADIX_SELECT_ALL } from '@/lib/utils'
 import { useApiError } from '@/hooks/useApiError'
 
 const LIMIT = 100
@@ -23,8 +23,8 @@ export default function TimelinePage() {
   const queryClient = useQueryClient()
   const { show } = useApiError()
   const { archiveId } = useParams<{ archiveId: string }>()
-  const [memberFilter, setMemberFilter] = useState('')
-  const [emotionFilter, setEmotionFilter] = useState('')
+  const [memberFilter, setMemberFilter] = useState(RADIX_SELECT_ALL)
+  const [emotionFilter, setEmotionFilter] = useState(RADIX_SELECT_ALL)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [activeMemory, setActiveMemory] = useState<Memory | null>(null)
@@ -49,7 +49,7 @@ export default function TimelinePage() {
 
   const memberOptions = useMemo(
     () => [
-      { value: '', label: '全部成员' },
+      { value: RADIX_SELECT_ALL, label: '全部成员' },
       ...((members as { id: number; name: string }[]).map((m) => ({
         value: String(m.id),
         label: m.name,
@@ -60,7 +60,7 @@ export default function TimelinePage() {
 
   const emotionOptions = useMemo(
     () => [
-      { value: '', label: '全部情感' },
+      { value: RADIX_SELECT_ALL, label: '全部情感' },
       ...EMOTION_LABELS.map((e) => ({ value: e.value, label: e.label })),
     ],
     [],
@@ -70,8 +70,9 @@ export default function TimelinePage() {
 
   const filteredMemories = useMemo(() => {
     return list.filter((m) => {
-      if (memberFilter && m.member_id !== Number(memberFilter)) return false
-      if (emotionFilter && m.emotion_label !== emotionFilter) return false
+      if (memberFilter !== RADIX_SELECT_ALL && m.member_id !== Number(memberFilter))
+        return false
+      if (emotionFilter !== RADIX_SELECT_ALL && m.emotion_label !== emotionFilter) return false
       if (dateFrom) {
         if (!m.timestamp) return false
         const t = new Date(m.timestamp)

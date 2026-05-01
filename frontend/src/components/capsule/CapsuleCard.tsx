@@ -87,7 +87,7 @@ export default function CapsuleCard({ capsule, onClick }: CapsuleCardProps) {
           {/* 底部时间信息 */}
           <div className="mt-3 pt-3 border-t border-border-default">
             <span className="text-caption text-ink-muted">
-              创建于 {formatDate(capsule.created_at)}
+              {capsule.created_at ? `创建于 ${formatDate(capsule.created_at)}` : ''}
             </span>
           </div>
         </Card>

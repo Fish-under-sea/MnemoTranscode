@@ -8,6 +8,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Radix Select.Item 禁止 value=""（库用空串表示清除选中）。筛选项「全部」、可选字段「未选」改用占位串。 */
+export const RADIX_SELECT_ALL = '__mtc_radix_all__'
+export const RADIX_SELECT_NONE = '__mtc_radix_none__'
+
 export function formatDate(date: string | Date, format: string = 'YYYY-MM-DD'): string {
   const d = typeof date === 'string' ? new Date(date) : date
   const pad = (n: number) => n.toString().padStart(2, '0')

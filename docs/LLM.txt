@@ -12,5 +12,6 @@
 | **月之暗面 (Moonshot)** | Kimi 2.6 等 | `https://api.moonshot.cn/v1` | `kimi-k2.6` |
 | **MiniMax** | MiniMax M2.7 等 | 国内: `https://api.minimaxi.com/v1` · 国际: `https://api.minimax.io/v1` | `MiniMax-M2.7`（见 [MiniMax 开放平台](https://www.minimaxi.com/)） |
 | **硅基流动** | 平台聚合 (DeepSeek, Qwen, GLM 等) | `https://api.siliconflow.cn/v1` | `Pro/zai-org/GLM-5` · `Qwen/Qwen3.5-397B-A17B` · `Pro/deepseek-ai/DeepSeek-V3.2` |
+| **小米 MiMo（国内 Token Plan）** | MiMo V2.5 等 | `https://token-plan-cn.xiaomimimo.com/v1`（另有 AMS 等区见控制台） | `mimo-v2.5-pro` · `mimo-v2.5`；**密钥须在平台「Token Plan」页创建（多为 `tp-` 前缀），与按量 **api.xiaomimimo.com** 密钥不通用** |
 
 > 与前端 `llmPresets.ts` 顺序一致。`defaultModel` 为每行**推荐首项**。检测：Google / Anthropic / 智谱为官方/兼容官方 lists；其余多为 OpenAI 式 `/v1/models`。
