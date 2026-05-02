@@ -115,6 +115,12 @@ Authorization: Bearer <token>
 
 ---
 
+### 1.5 用户头像展示（同源拉流）
+
+登录后 `GET /api/v1/auth/me` 等响应中的 `avatar_url` 为**可供 `<img src>` 使用的展示地址**（一般为同源路径 `/api/v1/auth/avatar-file?uid=&exp=&sig=`，或配置了 `APP_PUBLIC_ORIGIN` 时的绝对 URL）。**GET** `/api/v1/auth/avatar-file` **无需** Bearer，凭查询参数签名在有效期内拉取原图；后端从 MinIO 按对象 key 流式返回，避免浏览器直连对象存储。
+
+---
+
 ## 二、档案管理接口
 
 ### 2.1 创建档案
@@ -322,6 +328,20 @@ Authorization: Bearer <token>
 **DELETE** `/api/v1/archives/{archive_id}/members/{member_id}`
 
 删除成员及其所有记忆（级联删除）。
+
+---
+
+### 3.6 成员头像上传、移除与展示
+
+成员对象中的 `avatar_url` 在 **JSON 响应**里为**展示用地址**（同源 `/api/v1/archives/{archive_id}/members/{member_id}/avatar-file?exp=&sig=` 等），无自定义头像时为 `null`。库内仍保存 MinIO 对象 URL，由 `avatar_public_url.parse_object_key_from_stored_url` 解析 key。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| **POST** | `/api/v1/archives/{archive_id}/members/{member_id}/avatar` | `multipart/form-data` 上传图片，写入 MinIO 并更新成员 |
+| **DELETE** | `/api/v1/archives/{archive_id}/members/{member_id}/avatar` | 移除成员头像 |
+| **GET** | `/api/v1/archives/{archive_id}/members/{member_id}/avatar-file` | 供 `<img src>` 使用，查询参数 `exp`、`sig`；**无需** Bearer |
+
+国家记忆档案（`archive_type=nation`）下的「记忆实体」与普通成员共用上述接口与字段语义；前端将封面用于实体列表与详情展示。
 
 ---
 

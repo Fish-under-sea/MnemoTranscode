@@ -32,6 +32,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1 -
 
 **改 UI 后浏览器仍旧？** Compose 前端是**镜像构建时的静态包**，不是挂载源码。收口命令：仓库根 `powershell … -File .\scripts\rebuild-docker-frontend.ps1` 或 **`make docker-rebuild-frontend`**。开发期也可用 **`scripts\compose-watch-frontend.ps1`**（或 **`make docker-watch-frontend`**）常驻 **`docker compose watch frontend`**，保存即触发镜像重建。**Cursor**：相关改动交付前收尾见 **`.cursor/rules/mtc-docker-frontend-sync.mdc`**。
 
+重建成功后，用 **http://localhost:5173** 验收时建议 **Ctrl+F5**（硬刷新），减少 `index.html` 或旧指纹脚本的浏览器缓存干扰。
+
 **请勿**与 **`-KillPort8000` / `-KillPort5173`** 同时使用（脚本检测到后会自动忽略这两项），以免误结束 Docker 端口转发相关进程。
 
 `start-stable.ps1` 参数补充：
