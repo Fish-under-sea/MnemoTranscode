@@ -91,3 +91,16 @@ export function formatMemberLifespan(
   if (birthYear) return `${birthYear} 年出生`
   return null
 }
+
+/** 国家记忆档案下的实体：仅用年份字段承载「名目时间 / 批次 / 史实节点」，避免套用「出生」等人格化措辞 */
+export function formatNationalMemoryEntityYearLine(
+  birthYear?: number | null,
+  endYear?: number | null,
+): string | null {
+  const b = birthYear != null && Number.isFinite(Number(birthYear)) ? Number(birthYear) : null
+  const e = endYear != null && Number.isFinite(Number(endYear)) ? Number(endYear) : null
+  if (b != null && e != null) return `时间节点 · ${b}–${e}`
+  if (b != null) return `关键时间节点：${b}`
+  if (e != null) return `时间节点至：${e}`
+  return null
+}

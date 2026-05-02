@@ -23,9 +23,9 @@ class Archive(Base):
     - friend: 挚友记忆
     - relative: 至亲记忆
     - celebrity: 伟人/名人记忆
-    - nation: 国家/历史记忆（可作非遗等国家主题，著录发源地/名录层级等）
-
-    「国家历史」类型可在详情页扩展著录发源地与流传地域、名录层级、列入年份等（参考 UNESCO 名录字段口径）。
+    - nation: 国家/历史记忆（可作非遗等国家主题）；著录发源地/名录层级等挂在各「成员 / 记忆实体」上
+    
+    「国家历史」类型可在各记忆实体上扩展著录发源地与流传地域、名录层级、列入年份等（参考 UNESCO 名录字段口径）。
     """
 
     __tablename__ = "archives"
@@ -38,10 +38,6 @@ class Archive(Base):
     pinned_order = Column(Integer, default=0, nullable=False)
     # 未置顶档案的手动排序（升序）；置顶块内仍用 pinned_order
     manual_order = Column(Integer, default=0, nullable=False)
-    # 国家历史 / 非遗等主题的著录口径（发源地、名录层级、列入年份）；非 nation 亦可填写，产品层主要引导 nation
-    heritage_origin_regions = Column(Text, nullable=True)
-    heritage_listing_level = Column(String(160), nullable=True)
-    heritage_inscribed_year = Column(String(160), nullable=True)
     owner_id = Column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -78,6 +74,10 @@ class Member(Base):
     voice_profile_id = Column(String(255), nullable=True)
     # 成员展示头像（MinIO 对象 URL 存库；浏览器展示走 /archives/.../avatar-file 签名链）
     avatar_url = Column(String(500), nullable=True)
+    # 国家记忆 / 非遗等：发源地与流传地域、名录层级、列入年份；亦可用于历史人物等非非遗主题的著录口吻
+    heritage_origin_regions = Column(Text, nullable=True)
+    heritage_listing_level = Column(String(160), nullable=True)
+    heritage_inscribed_year = Column(String(160), nullable=True)
     emotion_tags = Column(JSON, default=list)
     # MnemoTranscode SelfCore 持久化（人格核心 JSON，可选）
     mnemo_self_core = Column(JSON, nullable=True)

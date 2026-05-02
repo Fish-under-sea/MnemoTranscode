@@ -1,13 +1,27 @@
-import Badge from '@/components/ui/Badge'
-import { STATUS_META, normalizeStatus, formatMemberLifespan, type MemberStatus } from '@/lib/memberStatus'
+import { Layers } from 'lucide-react'
+import {
+  STATUS_META,
+  normalizeStatus,
+  formatMemberLifespan,
+  formatNationalMemoryEntityYearLine,
+  type MemberStatus,
+} from '@/lib/memberStatus'
+import {
+  nationalCapsuleTagStaticClass,
+  nationalCapsuleTagStaticClassMd,
+  nationalCapsuleBadgeIconSize,
+} from '@/lib/nationalMemoryCapsuleClasses'
+
+export type MemberBadgePresentation = 'member' | 'national_memory_entity'
 
 export interface MemberStatusBadgeProps {
   status?: MemberStatus | string | null
   birthYear?: number | null
   endYear?: number | null
-  /** 是否同时展示生命周期文本（默认 true） */
   showLifespan?: boolean
   size?: 'sm' | 'md'
+  presentation?: MemberBadgePresentation
+  nationalEmptyYearText?: string
 }
 
 export default function MemberStatusBadge({
@@ -16,18 +30,44 @@ export default function MemberStatusBadge({
   endYear,
   showLifespan = true,
   size = 'sm',
+  presentation = 'member',
+  nationalEmptyYearText = '未填写关键年份',
 }: MemberStatusBadgeProps) {
+  const capsuleClass =
+    size === 'md' ? nationalCapsuleTagStaticClassMd() : nationalCapsuleTagStaticClass()
+  const layersPx = nationalCapsuleBadgeIconSize(size)
+
+  const isNationalEntity = presentation === 'national_memory_entity'
+
+  if (isNationalEntity) {
+    const yearLine = formatNationalMemoryEntityYearLine(birthYear, endYear)
+    return (
+      <div className="inline-flex items-center gap-2 flex-wrap">
+        <span className={capsuleClass}>
+          <Layers size={layersPx} className="shrink-0 opacity-90" aria-hidden />
+          记忆实体
+        </span>
+        {showLifespan ?
+          yearLine ?
+            <span className="text-caption text-ink-muted">{yearLine}</span>
+          : <span className="text-caption text-ink-muted">{nationalEmptyYearText}</span>
+
+        : null}
+      </div>
+    )
+  }
+
   const normalized: MemberStatus = normalizeStatus(status)
   const meta = STATUS_META[normalized]
-  const Icon = meta.icon
   const lifespan = showLifespan ? formatMemberLifespan(birthYear, endYear, normalized) : null
 
   return (
     <div className="inline-flex items-center gap-2 flex-wrap">
-      <Badge tone={meta.tone} size={size} icon={<Icon size={12} />}>
+      <span className={capsuleClass}>
+        <Layers size={layersPx} className="shrink-0 opacity-90" aria-hidden />
         {meta.label}
-      </Badge>
-      {lifespan && <span className="text-caption text-ink-muted">{lifespan}</span>}
+      </span>
+      {lifespan ? <span className="text-caption text-ink-muted">{lifespan}</span> : null}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 /**
- * 对话输入区：从当前成员表情包库多选（最多 8 张，与后端一致）
+ * 对话输入区：从当前关联节点（成员 / 国家记忆档案下的记忆实体）的表情包库多选（最多 8 张，与后端一致）
  */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -17,6 +17,8 @@ interface DialogueStickerPickerProps {
   disabled?: boolean
   selectedIds: number[]
   onChangeSelected: (ids: number[]) => void
+  /** 「国家记忆」语境：提示走向「实体」措辞 */
+  entityMode?: boolean
 }
 
 export default function DialogueStickerPicker({
@@ -24,6 +26,7 @@ export default function DialogueStickerPicker({
   disabled,
   selectedIds,
   onChangeSelected,
+  entityMode = false,
 }: DialogueStickerPickerProps) {
   const [open, setOpen] = useState(false)
 
@@ -53,8 +56,8 @@ export default function DialogueStickerPicker({
         size="sm"
         className="shrink-0 h-9 w-9 p-0"
         disabled={disabled}
-        aria-label="选择表情包"
-        title="从成员表情包库选择（可与文字同时发送）"
+        aria-label={entityMode ? '从实体表情包库选择' : '从成员表情包库选择'}
+        title={`从${entityMode ? '实体' : '成员'}表情包库选择（可与文字同时发送）`}
         onClick={() => setOpen(true)}
       >
         <Laugh size={20} className="text-ink-secondary" />
@@ -74,14 +77,16 @@ export default function DialogueStickerPicker({
         }
       >
         <p className="text-caption text-ink-muted mb-3">
-          点击选择，最多 {MAX} 张；需先在成员页上传表情包。
+          点击选择，最多 {MAX} 张；需先在{entityMode ? '实体详情页' : '成员页'}上传表情包。
         </p>
         {q.isLoading && <p className="text-caption text-ink-muted py-4 text-center">加载中…</p>}
         {q.isError && (
           <p className="text-caption text-rose-600 py-2">加载失败，请稍后重试</p>
         )}
         {!q.isLoading && !q.isError && list.length === 0 && (
-          <p className="text-caption text-ink-muted py-3">暂无表情包，请先到成员详情页上传。</p>
+          <p className="text-caption text-ink-muted py-3">
+            暂无表情包，请先{entityMode ? '在该记忆实体详情页' : '到成员详情页'}上传。
+          </p>
         )}
         <div className="grid grid-cols-4 gap-2 max-h-[min(50vh,280px)] overflow-y-auto pr-1">
           {list.map((m) => {

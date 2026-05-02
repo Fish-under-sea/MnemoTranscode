@@ -82,13 +82,10 @@ class TokenResponse(BaseModel):
 
 class ArchiveBase(BaseModel):
     """档案基础字段"""
+
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     archive_type: str = "family"  # family, lover, friend, relative, celebrity, nation
-    # 国家历史 / 非遗等：发源地与主要流传或申报地域、名录层级（人类代表作/急需保护等）、列入年份或批次简述
-    heritage_origin_regions: str | None = Field(None, max_length=4000)
-    heritage_listing_level: str | None = Field(None, max_length=160)
-    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class ArchiveCreate(ArchiveBase):
@@ -98,17 +95,16 @@ class ArchiveCreate(ArchiveBase):
 
 class ArchiveUpdate(BaseModel):
     """更新档案"""
+
     name: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = None
     archive_type: str | None = None
     is_pinned: bool | None = None
-    heritage_origin_regions: str | None = Field(None, max_length=4000)
-    heritage_listing_level: str | None = Field(None, max_length=160)
-    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class ArchiveResponse(ArchiveBase):
-    """档案响应"""
+    """档案响应；heritage_origin_preview 由服务端从旗下记忆实体著录推导（列表单行预览）"""
+
     id: int
     owner_id: int
     created_at: datetime
@@ -118,6 +114,7 @@ class ArchiveResponse(ArchiveBase):
     manual_order: int = 0
     member_count: int = 0
     memory_count: int = 0
+    heritage_origin_preview: str | None = None
 
     class Config:
         from_attributes = True
@@ -196,8 +193,10 @@ def _normalize_member_payload(raw: Any, mode: Literal["create", "update"]) -> An
 
     return data
 
+
 class MemberBase(BaseModel):
     """成员基础字段"""
+
     name: str = Field(..., min_length=1, max_length=100)
     relationship_type: str = Field(..., max_length=50)
     birth_year: int | None = None
@@ -206,6 +205,9 @@ class MemberBase(BaseModel):
     death_year: int | None = None
     is_alive: bool | None = None
     bio: str | None = None
+    heritage_origin_regions: str | None = Field(None, max_length=4000)
+    heritage_listing_level: str | None = Field(None, max_length=160)
+    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class MemberCreate(MemberBase):
@@ -219,6 +221,7 @@ class MemberCreate(MemberBase):
 
 class MemberUpdate(BaseModel):
     """更新成员"""
+
     name: str | None = Field(None, min_length=1, max_length=100)
     relationship_type: str | None = Field(None, max_length=50)
     birth_year: int | None = None
@@ -227,6 +230,9 @@ class MemberUpdate(BaseModel):
     death_year: int | None = None
     bio: str | None = None
     is_alive: bool | None = None
+    heritage_origin_regions: str | None = Field(None, max_length=4000)
+    heritage_listing_level: str | None = Field(None, max_length=160)
+    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
     @model_validator(mode="before")
     @classmethod
@@ -389,6 +395,9 @@ class ArchiveRolesBackupMemberV1Payload(BaseModel):
     emotion_tags: list[Any] = Field(default_factory=list)
     mnemo_self_core: Any | None = None
     avatar_url: str | None = Field(None, max_length=500)
+    heritage_origin_regions: str | None = Field(None, max_length=4000)
+    heritage_listing_level: str | None = Field(None, max_length=160)
+    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class ArchiveRolesBackupMemoryV1Payload(BaseModel):
