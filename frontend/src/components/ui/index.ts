@@ -12,6 +12,10 @@
 
 // ========== M3 · 输入类 ==========
 export { default as Button, type ButtonProps } from './Button'
+export {
+  default as NationalMemoryCapsuleButton,
+  type NationalMemoryCapsuleButtonProps,
+} from './NationalMemoryCapsuleButton'
 export { default as Input, type InputProps } from './Input'
 export { default as Textarea, type TextareaProps } from './Textarea'
 export { default as Select, type SelectProps, type SelectOption } from './Select'

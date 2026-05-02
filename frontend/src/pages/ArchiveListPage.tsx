@@ -61,7 +61,7 @@ export type ArchiveRow = {
   member_count: number
   memory_count: number
   is_pinned: boolean
-  heritage_origin_regions?: string | null
+  heritage_origin_preview?: string | null
 }
 
 function SortableArchiveRow(props: {
@@ -90,7 +90,7 @@ function SortableArchiveRow(props: {
         archive_type={props.row.archive_type}
         member_count={props.row.member_count}
         memory_count={props.row.memory_count}
-        heritageOriginPreview={props.row.heritage_origin_regions ?? undefined}
+        heritageOriginPreview={props.row.heritage_origin_preview ?? undefined}
         isPinned={props.row.is_pinned}
         pinBusy={props.pinBusy}
         onTogglePin={props.onTogglePin}
@@ -206,7 +206,7 @@ export default function ArchiveListPage() {
         member_count: Number(a.member_count ?? 0),
         memory_count: Number(a.memory_count ?? 0),
         is_pinned: Boolean(a.is_pinned),
-        heritage_origin_regions: a.heritage_origin_regions,
+        heritage_origin_preview: a.heritage_origin_preview,
       })),
     [filteredArchives],
   )
@@ -281,7 +281,7 @@ export default function ArchiveListPage() {
           archive_type={archive.archive_type}
           member_count={archive.member_count}
           memory_count={archive.memory_count}
-          heritageOriginPreview={archive.heritage_origin_regions ?? undefined}
+          heritageOriginPreview={archive.heritage_origin_preview ?? undefined}
           isPinned={archive.is_pinned}
           pinBusy={
             pinArchiveMutation.isPending &&
@@ -549,7 +549,7 @@ export default function ArchiveListPage() {
           </div>
           {newArchive.archive_type === 'nation' ? (
             <p className="text-caption text-ink-muted">
-              国家级/非遗等主题创建后，可在档案详情页补充发源地、名录层级、列入年份等着录信息。
+              「国家记忆」可收录非遗、历史人物、馆藏文献等多种主题；创建后请在各「记忆实体」上分别填写著录与说明，同一档案可容纳多个并列实体。
             </p>
           ) : null}
           <Textarea

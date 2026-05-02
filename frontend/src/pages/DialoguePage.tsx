@@ -16,7 +16,9 @@ import DialogueStickerPicker, {
 import { stickerMediaIdsFromExtras } from '@/lib/dialogueStickerExtras'
 import { useDialogue } from '@/hooks/useDialogue'
 import { fadeUp, staggerContainer } from '@/lib/motion'
-import { cn } from '@/lib/utils'
+import { cn, ARCHIVE_TYPE_OPTIONS } from '@/lib/utils'
+import { panelClassFromCardStyle, useThemeAppliedSnapshot } from '@/lib/theme'
+import { dialogueCopyPack } from '@/lib/dialogueArchiveCopy'
 import Avatar from '@/components/ui/Avatar'
 import toast from 'react-hot-toast'
 import { useApiError } from '@/hooks/useApiError'
@@ -61,6 +63,12 @@ export default function DialoguePage() {
   const archiveIdNum = hasChatContext ? archiveParsed : undefined
   const memberIdNum = hasChatContext ? memberParsed : undefined
 
+  const { cardStyle } = useThemeAppliedSnapshot()
+
+  const glassPanel = cn(panelClassFromCardStyle(cardStyle), 'backdrop-blur-xl')
+  const glassAside = cn(glassPanel, 'border-r md:!rounded-none md:rounded-br-3xl md:rounded-tr-3xl')
+  const glassBar = cn(glassPanel, '!rounded-none')
+
   const [extractMemoriesAfter, setExtractMemoriesAfter] = useState(false)
   const [selectedStickerIds, setSelectedStickerIds] = useState<number[]>([])
 
@@ -73,7 +81,7 @@ export default function DialoguePage() {
   })
 
   const memberQueries = useQueries({
-    queries: (archivesForPicker as { id: number; name?: string }[]).map((a) => ({
+    queries: (archivesForPicker as { id: number; name?: string; archive_type?: string }[]).map((a) => ({
       queryKey: ['members', a.id, 'dialogue-picker'],
       queryFn: () => archiveApi.listMembers(Number(a.id)) as any,
       enabled: needsMemberPicker && archivesForPicker.length > 0,
@@ -163,7 +171,7 @@ export default function DialoguePage() {
     }
   }
 
-  /** 切换成员后清空待发表情 */
+  /** 切换对话对象后清空待发表情 */
   useEffect(() => {
     setSelectedStickerIds([])
   }, [memberIdNum, archiveIdNum])
@@ -174,46 +182,66 @@ export default function DialoguePage() {
     await clear()
   }, [clear])
 
-  /** 回到成员选择并重置顶栏「AI 对话」记忆，便于换角色 */
+  /** 回到入口选择并清空顶栏「AI 对话」记忆 */
   const handleExitCurrentRole = () => {
     clearRememberedDialogueRoute()
     void navigate('/dialogue')
   }
+
+  const archiveTypeResolved =
+    hasChatContext &&
+    archive &&
+    typeof (archive as { archive_type?: string }).archive_type === 'string'
+      ? (archive as { archive_type: string }).archive_type
+      : undefined
+  const sessionCopy = dialogueCopyPack(hasChatContext ? archiveTypeResolved : undefined)
 
   const memberName = (member as any)?.name || (archive as any)?.name || 'AI 助手'
   const memberAvatarUrl = (member as { avatar_url?: string | null } | undefined)?.avatar_url ?? undefined
   const userAvatarUrl = authUser?.avatar_url?.trim() || undefined
   const userBubbleName = authUser?.username?.trim() || authUser?.email?.trim() || '我'
 
-  /** 侧边栏（及移动端）：从档案加载的可选对话成员 */
+  /** 侧边栏（及移动端）：从各档案加载的对话入口（成员 / 记忆实体） */
   const pickerBody = (
     <div className="space-y-4">
       {loadingArchives ? (
         <div className="py-6">
-          <LoadingState message="正在加载档案与成员…" />
+          <LoadingState message={sessionCopy.loadingBundled} />
         </div>
       ) : archivesForPicker.length === 0 ? (
         <div className="text-caption text-ink-muted space-y-2">
           <p>暂无档案。</p>
           <Link to="/archives" className="text-brand hover:underline font-medium">
-            前往档案库创建档案并添加成员 →
+            {sessionCopy.createArchiveCta}
           </Link>
         </div>
       ) : (
-        (archivesForPicker as { id: number; name?: string }[]).map((a, idx) => {
+        (archivesForPicker as { id: number; name?: string; archive_type?: string }[]).map((a, idx) => {
           const mq = memberQueries[idx]
           const members = (mq?.data ?? []) as { id: number; name?: string; avatar_url?: string | null }[]
           const loadingMembers = mq?.isLoading ?? true
+          const rowCx = dialogueCopyPack(a.archive_type)
+          const typeOpt = ARCHIVE_TYPE_OPTIONS.find((t) => t.value === String(a.archive_type))
           return (
             <div key={a.id} className="space-y-1.5">
-              <div className="text-caption font-semibold text-ink-secondary truncate">{a.name ?? `档案 ${a.id}`}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex-shrink-0 opacity-90 text-base" aria-hidden>
+                  {typeOpt?.icon ?? '📁'}
+                </span>
+                <div className="text-caption font-semibold text-ink-secondary truncate min-w-0">
+                  {a.name ?? `档案 ${a.id}`}
+                  {typeOpt ? (
+                    <span className="ml-1 font-normal text-ink-muted">· {typeOpt.label}</span>
+                  ) : null}
+                </div>
+              </div>
               {loadingMembers ? (
-                <div className="text-caption text-ink-muted py-2">载入成员…</div>
+                <div className="text-caption text-ink-muted py-2">{rowCx.loadingInline}</div>
               ) : members.length === 0 ? (
                 <div className="text-caption text-ink-muted py-1 pl-1">
-                  暂无成员，{' '}
+                  {rowCx.emptyListSuffix}{' '}
                   <Link to={`/archives/${a.id}`} className="text-brand hover:underline">
-                    去档案里添加
+                    去档案详情添加
                   </Link>
                 </div>
               ) : (
@@ -223,15 +251,15 @@ export default function DialoguePage() {
                       <button
                         type="button"
                         onClick={() => void navigate(`/dialogue/${a.id}/${m.id}`)}
-                        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm text-ink-primary hover:bg-jade-50 hover:text-jade-800 border border-transparent hover:border-jade-200 transition-colors"
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm text-ink-primary hover:bg-jade-500/12 hover:text-jade-800 dark:hover:bg-jade-900/20 border border-transparent hover:border-jade-300/50 transition-colors backdrop-blur-[2px]"
                       >
                         <Avatar
                           src={m.avatar_url ?? undefined}
-                          name={m.name ?? `成员 ${m.id}`}
+                          name={m.name ?? rowCx.fallbackName(m.id)}
                           size={28}
                           className="shrink-0 ring-1 ring-border-default"
                         />
-                        <span className="truncate">{m.name ?? `成员 ${m.id}`}</span>
+                        <span className="truncate">{m.name ?? rowCx.fallbackName(m.id)}</span>
                       </button>
                     </li>
                   ))}
@@ -247,9 +275,14 @@ export default function DialoguePage() {
   return (
     <PageTransition>
       <div className="flex h-[calc(100vh-56px)]">
-        {/* 成员侧边栏（仅桌面端） */}
-        <aside className="hidden md:flex flex-col w-60 border-r border-border-default bg-subtle overflow-y-auto flex-shrink-0">
-          <div className="p-4 border-b border-border-default">
+        {/* 对话入口侧栏（液态玻璃，桌面端） */}
+        <aside
+          className={cn(
+            'hidden md:flex flex-col w-60 flex-shrink-0 overflow-y-auto overflow-x-hidden min-h-0',
+            glassAside,
+          )}
+        >
+          <div className="p-4 border-b border-border-default/60">
             <div className="flex items-center gap-1.5 text-caption text-ink-muted">
               <Link to="/archives" className="hover:text-brand transition-colors">档案库</Link>
               {archiveIdNum && (
@@ -272,16 +305,15 @@ export default function DialoguePage() {
           <div className="p-4 flex-1 overflow-y-auto min-h-0">
             {needsMemberPicker ? (
               <>
-                <p className="text-caption text-ink-muted mb-3">
-                  从档案库中选择一位成员开启对话：
-                </p>
+                <p className="text-caption text-ink-primary mb-1 font-medium">{sessionCopy.pickerLead}</p>
+                <p className="text-caption text-ink-muted mb-3 leading-relaxed">{sessionCopy.pickerLeadHint}</p>
                 {pickerBody}
               </>
             ) : !member ? (
               <LoadingState variant="skeleton-list" count={3} />
             ) : (
               <div className="space-y-4">
-                {/* 成员信息 */}
+                {/* 侧边：对象档案与引导 */}
                 <div className="space-y-2">
                   <Avatar
                     src={memberAvatarUrl}
@@ -291,9 +323,15 @@ export default function DialoguePage() {
                   />
                   <div>
                     <div className="font-medium text-ink-primary">{(member as any).name}</div>
-                    <div className="text-caption text-ink-muted">{(member as any).relationship_type}</div>
+                    {(member as any).relationship_type ? (
+                      <div className="text-caption text-ink-muted">
+                        <span className="text-ink-muted/85 mr-1">{sessionCopy.metaLabelShort}</span>
+                        {(member as any).relationship_type}
+                      </div>
+                    ) : null}
                   </div>
                   <MemberStatusBadge
+                    presentation={archiveTypeResolved === 'nation' ? 'national_memory_entity' : 'member'}
                     status={(member as any).status}
                     birthYear={(member as any).birth_year}
                     endYear={(member as any).end_year}
@@ -309,7 +347,7 @@ export default function DialoguePage() {
 
                 {/* 引导问句 */}
                 <div className="space-y-2 pt-2 border-t border-border-default">
-                  <div className="text-caption text-ink-muted font-medium">试着问 Ta：</div>
+                  <div className="text-caption text-ink-muted font-medium">{sessionCopy.starterSectionTitle}</div>
                   {STARTER_PROMPTS.map((prompt) => (
                     <button
                       key={prompt}
@@ -325,7 +363,7 @@ export default function DialoguePage() {
           </div>
 
           {hasChatContext && (
-            <div className="p-4 border-t border-border-default bg-surface/90 backdrop-blur-sm shrink-0">
+            <div className="p-4 border-t border-border-default/60 shrink-0 backdrop-blur-sm">
               <Button
                 type="button"
                 variant="secondary"
@@ -334,7 +372,7 @@ export default function DialoguePage() {
                 leftIcon={<UserMinus size={14} aria-hidden />}
                 onClick={handleExitCurrentRole}
               >
-                退出当前角色
+                {sessionCopy.exitChat}
               </Button>
             </div>
           )}
@@ -343,20 +381,24 @@ export default function DialoguePage() {
         {/* 对话主区 */}
         <div className="flex-1 flex flex-col min-w-0">
           {needsMemberPicker && (
-            <div className="md:hidden shrink-0 max-h-[38vh] overflow-y-auto border-b border-border-default bg-subtle p-4">
-              <p className="text-caption text-ink-muted mb-3">选择要对话的成员</p>
+            <div className={cn('md:hidden shrink-0 max-h-[38vh] overflow-y-auto p-4 border-b border-border-default/65', glassBar)}>
+              <p className="text-caption font-medium text-ink-secondary mb-0.5">{sessionCopy.mobilePickTitle}</p>
+              <p className="text-caption text-ink-muted mb-3">{sessionCopy.pickerLeadHint}</p>
               {pickerBody}
             </div>
           )}
           {/* Header：标题与操作，模型信息在输入区下方展示 */}
-          <div className="shrink-0 border-b border-border-default bg-surface/80 backdrop-blur-sm px-4 py-3 space-y-3">
+          <div className={cn('shrink-0 border-b border-border-default/65 px-4 py-3 space-y-3', glassBar)}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-body font-semibold text-ink-primary">
                   与 {memberName} 对话
                 </h1>
                 {(member as any)?.relationship_type && (
-                  <p className="text-caption text-ink-muted">{(member as any).relationship_type}</p>
+                  <p className="text-caption text-ink-muted">
+                    <span className="text-ink-muted/85">{sessionCopy.metaLabelShort}</span>{' '}
+                    {(member as any).relationship_type}
+                  </p>
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end sm:justify-end">
@@ -369,7 +411,7 @@ export default function DialoguePage() {
                     leftIcon={<UserMinus size={14} aria-hidden />}
                     onClick={handleExitCurrentRole}
                   >
-                    退出当前角色
+                    {sessionCopy.exitChat}
                   </Button>
                 )}
                 <Button
@@ -432,8 +474,10 @@ export default function DialoguePage() {
                   <div className="text-4xl mb-4">💬</div>
                   <p className="text-body-sm text-center mb-6">
                     {hasChatContext
-                      ? `和 ${memberName} 开始对话吧，Ta 记得你们的故事`
-                      : '先选择对话成员'}
+                      ? archiveTypeResolved === 'nation'
+                        ? `向「${memberName}」发问或接续叙事吧`
+                        : `和 ${memberName} 开始对话吧，Ta 记得你们的故事`
+                      : sessionCopy.emptyStateSelectFirst}
                   </p>
                   {hasChatContext && (
                     <motion.div
@@ -528,7 +572,7 @@ export default function DialoguePage() {
           </div>
 
           {/* 输入区：与消息列表同为 px-4，避免横向「出格」 */}
-          <div className="flex-shrink-0 border-t border-border-default bg-surface px-4 pb-4 pt-3">
+          <div className={cn('flex-shrink-0 border-t border-border-default/65 px-4 pb-4 pt-3', glassBar)}>
             {hasChatContext && memberIdNum != null ? (
               <SelectedStickerChips
                 ids={selectedStickerIds}
@@ -539,7 +583,7 @@ export default function DialoguePage() {
             ) : null}
             <div
               className={cn(
-                'flex gap-2 items-center rounded-xl border border-border-default bg-canvas pl-3 py-1.5 shadow-e1',
+                'flex gap-2 items-center rounded-xl border border-border-default/75 bg-muted/35 backdrop-blur-md pl-3 py-1.5 shadow-e1',
                 DIALOGUE_INPUT_COMPOSER_INNER_PR,
                 (!hasChatContext || isSending || isTyping) && 'opacity-60',
               )}
@@ -550,6 +594,7 @@ export default function DialoguePage() {
                   disabled={!hasChatContext || isSending || isTyping}
                   selectedIds={selectedStickerIds}
                   onChangeSelected={setSelectedStickerIds}
+                  entityMode={archiveTypeResolved === 'nation'}
                 />
               ) : null}
               <textarea
@@ -558,7 +603,9 @@ export default function DialoguePage() {
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  hasChatContext ? `对 ${memberName} 说些什么…` : '请先在上方或左侧列表中选择成员'
+                  hasChatContext
+                    ? `对 ${memberName} 说些什么…`
+                    : sessionCopy.placeholderNoSelection
                 }
                 rows={1}
                 disabled={!hasChatContext || isSending || isTyping}
@@ -591,7 +638,10 @@ export default function DialoguePage() {
             {hasChatContext ? (
               <div className="mt-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
                 <div
-                  className="min-w-0 rounded-xl border border-border-default bg-subtle/70 dark:bg-subtle/60 px-3.5 py-2.5 shadow-e1 sm:max-w-xl"
+                  className={cn(
+                    glassPanel,
+                    'min-w-0 rounded-xl border border-border-default/65 px-3.5 py-2.5 shadow-e1 backdrop-blur-md sm:max-w-xl',
+                  )}
                   aria-live="polite"
                 >
                   <p className="text-body-sm leading-snug">

@@ -52,6 +52,38 @@ router = APIRouter(prefix="/archives", tags=["档案"])
 settings = get_settings()
 
 
+def _heritage_preview_from_members(members: list[Member] | None) -> str | None:
+    """取档案卡片列表用：第一家有「发源地」著录的非空预览。"""
+    if not members:
+        return None
+    for mem in sorted(members, key=lambda x: int(x.id)):
+        raw = getattr(mem, "heritage_origin_regions", None)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    return None
+
+
+def _archive_response(
+    archive: Archive,
+    *,
+    member_count: int,
+    memory_count: int,
+    heritage_preview: str | None = None,
+    derive_heritage_preview_from_members: bool = False,
+) -> ArchiveResponse:
+    base = ArchiveResponse.model_validate(archive)
+    preview = heritage_preview
+    if derive_heritage_preview_from_members:
+        preview = _heritage_preview_from_members(list(archive.members or []))
+    return base.model_copy(
+        update={
+            "member_count": member_count,
+            "memory_count": memory_count,
+            "heritage_origin_preview": preview,
+        }
+    )
+
+
 def _resp_ts(a: ArchiveResponse) -> float:
     """用于列表排序：将 updated_at 规整为单调时间戳"""
     dt = a.updated_at
@@ -100,15 +132,11 @@ async def create_archive(
         description=archive_data.description,
         archive_type=archive_data.archive_type,
         owner_id=current_user.id,
-        heritage_origin_regions=archive_data.heritage_origin_regions,
-        heritage_listing_level=archive_data.heritage_listing_level,
-        heritage_inscribed_year=archive_data.heritage_inscribed_year,
     )
     db.add(archive)
     await db.commit()
     await db.refresh(archive)
-    base = ArchiveResponse.model_validate(archive)
-    return base.model_copy(update={"member_count": 0, "memory_count": 0})
+    return _archive_response(archive, member_count=0, memory_count=0)
 
 
 @router.get("", response_model=list[ArchiveResponse])
@@ -136,9 +164,12 @@ async def list_archives(
     for archive in archives:
         member_count = len(archive.members) if archive.members else 0
         memory_count = sum(len(m.memories) for m in archive.members) if archive.members else 0
-        resp = ArchiveResponse.model_validate(archive)
-        resp.member_count = member_count
-        resp.memory_count = memory_count
+        resp = _archive_response(
+            archive,
+            member_count=member_count,
+            memory_count=memory_count,
+            derive_heritage_preview_from_members=True,
+        )
         responses.append(resp)
     _sort_archive_responses(responses, sort)
     return responses
@@ -203,10 +234,12 @@ async def get_archive(
     archive = result.scalar_one_or_none()
     if not archive:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="档案不存在")
-    resp = ArchiveResponse.model_validate(archive)
-    resp.member_count = len(archive.members)
-    resp.memory_count = sum(len(m.memories) for m in archive.members)
-    return resp
+    return _archive_response(
+        archive,
+        member_count=len(archive.members),
+        memory_count=sum(len(m.memories) for m in archive.members),
+        derive_heritage_preview_from_members=True,
+    )
 
 
 @router.patch("/{archive_id}", response_model=ArchiveResponse)
@@ -247,11 +280,13 @@ async def update_archive(
         setattr(archive, field, value)
     await db.commit()
     await db.refresh(archive)
-    
-    resp = ArchiveResponse.model_validate(archive)
-    resp.member_count = member_count
-    resp.memory_count = memory_count
-    return resp
+
+    return _archive_response(
+        archive,
+        member_count=member_count,
+        memory_count=memory_count,
+        derive_heritage_preview_from_members=True,
+    )
 
 
 @router.delete("/{archive_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -295,6 +330,9 @@ async def create_member(
         status=member_data.status or "active",
         end_year=member_data.end_year,
         bio=member_data.bio,
+        heritage_origin_regions=member_data.heritage_origin_regions,
+        heritage_listing_level=member_data.heritage_listing_level,
+        heritage_inscribed_year=member_data.heritage_inscribed_year,
     )
     db.add(member)
     await db.commit()
@@ -434,6 +472,9 @@ async def backup_archive_roles(
                 "emotion_tags": etags,
                 "mnemo_self_core": mem.mnemo_self_core,
                 "avatar_url": mem.avatar_url,
+                "heritage_origin_regions": mem.heritage_origin_regions,
+                "heritage_listing_level": mem.heritage_listing_level,
+                "heritage_inscribed_year": mem.heritage_inscribed_year,
             }
         )
 
@@ -575,6 +616,9 @@ async def clone_archive_roles(
             avatar_url=src.avatar_url,
             emotion_tags=list(etags_src),
             mnemo_self_core=src.mnemo_self_core,
+            heritage_origin_regions=src.heritage_origin_regions,
+            heritage_listing_level=src.heritage_listing_level,
+            heritage_inscribed_year=src.heritage_inscribed_year,
             voice_profile_id=None,
         )
         db.add(nm)
@@ -643,6 +687,9 @@ async def restore_archive_roles(
             emotion_tags=list(et),
             mnemo_self_core=pm.mnemo_self_core,
             voice_profile_id=None,
+            heritage_origin_regions=pm.heritage_origin_regions,
+            heritage_listing_level=pm.heritage_listing_level,
+            heritage_inscribed_year=pm.heritage_inscribed_year,
         )
         db.add(nm)
         await db.flush()

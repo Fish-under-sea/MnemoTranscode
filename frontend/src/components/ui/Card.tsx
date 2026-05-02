@@ -8,11 +8,15 @@ import { forwardRef, useMemo, type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 import { panelClassFromCardStyle, useThemeAppliedSnapshot } from '@/lib/theme'
 
-type Variant = 'plain' | 'glass' | 'accent'
+type Variant = 'plain' | 'glass' | 'accent' | 'flat'
 
 /** 与设计系统 Accent 渐变块一致；不受 DIY 卡片风格切换 */
 const accentClasses =
   'bg-gradient-to-br from-brand/12 to-brand-accent/8 border border-brand/20 shadow-e2 dark:border-brand/25'
+
+/** 实底卡片：不套用 DIY「液态玻璃」，用于须与 .mtc-liquid-glass 脱钩的区域 */
+const flatClasses =
+  'bg-surface border border-default shadow-none ring-1 ring-black/[0.04] dark:border-amber-400/12 dark:ring-white/[0.06]'
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: Variant
@@ -36,6 +40,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   const variantClasses = useMemo(() => {
     if (variant === 'accent') return accentClasses
     if (variant === 'glass') return panelClassFromCardStyle('glass')
+    if (variant === 'flat') return flatClasses
     return panelClassFromCardStyle(cardStyle)
   }, [variant, cardStyle])
 

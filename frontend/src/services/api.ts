@@ -156,9 +156,6 @@ export const archiveApi = {
     name: string
     description?: string
     archive_type: string
-    heritage_origin_regions?: string | null
-    heritage_listing_level?: string | null
-    heritage_inscribed_year?: string | null
   }) => api.post('/archives', data),
 
   update: (
@@ -168,9 +165,6 @@ export const archiveApi = {
       description?: string
       archive_type?: string
       is_pinned?: boolean
-      heritage_origin_regions?: string | null
-      heritage_listing_level?: string | null
-      heritage_inscribed_year?: string | null
     },
   ) => api.patch(`/archives/${id}`, data),
 
@@ -193,6 +187,9 @@ export const archiveApi = {
       status?: 'active' | 'passed' | 'distant' | 'pet' | 'other' | 'alive' | 'deceased' | 'unknown'
       end_year?: number
       bio?: string
+      heritage_origin_regions?: string | null
+      heritage_listing_level?: string | null
+      heritage_inscribed_year?: string | null
     },
   ) => {
     const n = Math.trunc(Number(archiveId))
@@ -219,6 +216,9 @@ export const archiveApi = {
       status?: 'alive' | 'deceased' | 'unknown'
       end_year?: number
       bio?: string
+      heritage_origin_regions?: string | null
+      heritage_listing_level?: string | null
+      heritage_inscribed_year?: string | null
     },
   ) => api.patch(`/archives/${archiveId}/members/${memberId}`, data),
 

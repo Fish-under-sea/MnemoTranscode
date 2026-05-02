@@ -76,6 +76,29 @@ const tabs = [
   { id: 'cloud', label: '云端存储', icon: Cloud },
 ]
 
+/**
+ * 个人中心内容与全局 DIY「卡片风格」对齐（等价于 ui/Card variant="plain"），
+ * 默认液态玻璃在用户上传背景透出层次。
+ */
+function usePersonalCenterPanels() {
+  const { cardStyle } = useThemeAppliedSnapshot()
+  const shell = panelClassFromCardStyle(cardStyle)
+  return {
+    cardStyle,
+    panelBase: shell,
+    /** 大块面板：概览用量、订阅方案卡、表单分区等 */
+    section: cn(shell, 'rounded-2xl p-6'),
+    /** 紧凑型面板 */
+    sectionCompact: cn(shell, 'rounded-2xl p-5'),
+    /** 网格内快捷入口 */
+    tile: cn(
+      shell,
+      'rounded-xl p-4',
+      'transition-[box-shadow,border-color] duration-200 hover:shadow-e2 hover:border-brand/35',
+    ),
+  }
+}
+
 // ========== 子组件 ==========
 
 /** 用量环形图 */
@@ -120,6 +143,7 @@ type OverviewUsageSnapshot = {
 
 /** 概览面板 */
 function OverviewPanel() {
+  const panels = usePersonalCenterPanels()
   const { user } = useAuthStore()
   const { data: stats, isLoading: loading } = useQuery({
     queryKey: ['dashboard', 'usage'],
@@ -146,9 +170,13 @@ function OverviewPanel() {
 
   return (
     <div className="space-y-6">
-      {/* 用户卡片 */}
-      <div className="rounded-2xl p-6 border border-brand/25 bg-gradient-to-br from-brand/12 via-brand/8 to-muted">
-        <div className="flex items-center gap-4">
+      {/* 用户卡片：玻璃壳 + 轻量翠色覆层 */}
+      <div className={cn(panels.section, 'relative overflow-hidden')}>
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/16 via-transparent to-brand/10"
+          aria-hidden
+        />
+        <div className="relative flex items-center gap-4">
           <div className="shrink-0 self-center flex h-16 w-16 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand/30 shadow-e2">
             <Avatar
               size={64}
@@ -173,7 +201,7 @@ function OverviewPanel() {
       </div>
 
       {/* 用量卡片 */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <h3 className="font-semibold text-ink-primary mb-4">本月 AI 用量</h3>
         {loading ? (
           <div className="flex items-center gap-6">
@@ -233,7 +261,7 @@ function OverviewPanel() {
       </div>
 
       {/* 云存储用量：与仪表盘同源 GET /usage/stats */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <div className="flex items-center gap-2 mb-4">
           <div className="w-9 h-9 rounded-full bg-brand/15 flex items-center justify-center shrink-0">
             <HardDrive className="w-4 h-4 text-brand" aria-hidden />
@@ -297,7 +325,7 @@ function OverviewPanel() {
       <div className="grid grid-cols-2 gap-4">
         <Link
           to="/personal-center?tab=subscription"
-          className="rounded-xl border border-default bg-surface p-4 text-left shadow-e1 hover:border-brand/35 hover:shadow-e2 transition-all cursor-pointer no-underline text-inherit block"
+          className={cn(panels.tile, 'block text-left no-underline text-inherit cursor-pointer')}
         >
           <CreditCard size={20} className="text-brand mb-2" />
           <div className="font-semibold text-ink-primary text-sm">升级方案</div>
@@ -305,7 +333,7 @@ function OverviewPanel() {
         </Link>
         <Link
           to="/personal-center?tab=cloud"
-          className="rounded-xl border border-default bg-surface p-4 text-left shadow-e1 hover:border-brand/35 hover:shadow-e2 transition-all cursor-pointer no-underline text-inherit block"
+          className={cn(panels.tile, 'block text-left no-underline text-inherit cursor-pointer')}
         >
           <Download size={20} className="text-brand mb-2" />
           <div className="font-semibold text-ink-primary text-sm">导出数据</div>
@@ -318,6 +346,7 @@ function OverviewPanel() {
 
 /** 订阅管理面板 */
 function SubscriptionPanel() {
+  const panels = usePersonalCenterPanels()
   const { user, updateUser } = useAuthStore()
   const queryClient = useQueryClient()
   const [sub, setSub] = useState<any>(null)
@@ -422,7 +451,7 @@ function SubscriptionPanel() {
       color: 'slate',
       features: [
         '基础 AI（订阅 tokens）',
-        '档案与成员管理',
+        '档案库与各类记忆入口（关系成员、国家记忆实体等）',
         '记忆录入与语义搜索',
         '存储方案 · 云空间 1GB',
       ],
@@ -479,7 +508,13 @@ function SubscriptionPanel() {
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-56 rounded-2xl bg-muted animate-pulse md:min-h-[22rem]" />
+          <div
+            key={i}
+            className={cn(
+              panels.panelBase,
+              'rounded-2xl min-h-[22rem] h-56 animate-pulse bg-muted/55 border border-default/70',
+            )}
+          />
         ))}
       </div>
     )
@@ -499,20 +534,22 @@ function SubscriptionPanel() {
           <div
             key={plan.id}
             className={cn(
+              panels.panelBase,
               'relative flex flex-col rounded-2xl border-2 p-5 transition-all h-full min-h-[22rem]',
               currentTier === plan.id
-                ? 'border-brand border-2 bg-brand/12 shadow-e2 ring-1 ring-brand/25'
-                : 'border-default bg-surface hover:border-brand/40',
+                ? 'border-brand shadow-e2 ring-1 ring-brand/25 bg-brand/[0.07] dark:bg-brand/[0.12]'
+                : 'border-default/80 hover:border-brand/45',
               plan.popular && 'md:scale-[1.02] z-[1]',
             )}
           >
-            {plan.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+            {/* 「最受欢迎」内置在留白内：液态玻璃 (.mtc-liquid-glass) 使用 overflow:hidden，负向绝对定位会被裁切 */}
+            {plan.popular ?
+              <div className="flex justify-center shrink-0 mb-2">
                 <span className="bg-brand text-ink-inverse text-xs px-3 py-1 rounded-full font-medium shadow-e2">
                   最受欢迎
                 </span>
               </div>
-            )}
+            : null}
 
             <div className="text-center mb-4">
               <h4 className="font-bold text-ink-primary">{plan.name}</h4>
@@ -559,13 +596,20 @@ function SubscriptionPanel() {
 
       {/* 用量警告 */}
       {sub && sub.usage_percent > 70 && (
-        <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/80 rounded-xl">
+        <div
+          className={cn(
+            panels.panelBase,
+            'rounded-xl border-amber-300/70 dark:border-amber-700/85 bg-amber-50/75 dark:bg-amber-950/35 p-4',
+          )}
+        >
+          <div className="flex items-start gap-3">
           <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
             <div className="font-medium text-amber-800 dark:text-amber-200 text-sm">用量即将达到上限</div>
             <div className="text-amber-700 dark:text-amber-300/95 text-xs mt-1">
               已使用 {sub.usage_percent.toFixed(1)}%，建议升级到更高订阅方案以获得更多订阅 tokens。
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -575,6 +619,7 @@ function SubscriptionPanel() {
 
 /** 账号与安全（头像、用户名、密码等） */
 function AccountPanel() {
+  const panels = usePersonalCenterPanels()
   const { user, updateUser } = useAuthStore()
   const [username, setUsername] = useState(user?.username || '')
   const [saving, setSaving] = useState(false)
@@ -725,7 +770,7 @@ function AccountPanel() {
   return (
     <div className="space-y-6">
       {/* 基本信息 */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <h3 className="font-semibold text-ink-primary mb-4">基本信息</h3>
         <div className="space-y-4">
           {/* 头像上传：渐变外环 + 内嵌图（同域 /api 代理，避免直连 MinIO 裂图）*/}
@@ -830,7 +875,7 @@ function AccountPanel() {
       </div>
 
       {/* 修改密码 */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <h3 className="font-semibold text-ink-primary mb-4">修改密码</h3>
         <div className="space-y-4">
           <div>
@@ -884,7 +929,12 @@ function AccountPanel() {
       </div>
 
       {/* 危险操作 */}
-      <div className="rounded-2xl border border-red-300 dark:border-red-800/90 bg-surface p-6">
+      <div
+        className={cn(
+          panels.panelBase,
+          'rounded-2xl p-6 border-2 border-red-300/95 dark:border-red-800/90 bg-red-50/35 dark:bg-red-950/25',
+        )}
+      >
         <h3 className="font-semibold text-red-600 mb-2">危险操作</h3>
         <p className="text-sm text-ink-muted mb-4">注销账号后，所有数据将被永久删除且无法恢复。</p>
         <button className="px-5 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium hover:bg-red-100 transition-all text-sm cursor-pointer">
@@ -1267,6 +1317,7 @@ async function restoreRolesPackagesAsNewArchives(pkgs: Record<string, unknown>[]
 
 /** 云端存储面板 */
 function CloudPanel() {
+  const panels = usePersonalCenterPanels()
   const { summaries, lastUpdated, syncEnabled, syncing, toggleSync, forceSync, clearMemory } = useAIContext()
   const queryClient = useQueryClient()
   const [archiveExportBusy, setArchiveExportBusy] = useState(false)
@@ -1354,7 +1405,7 @@ function CloudPanel() {
   return (
     <div className="space-y-6">
       {/* 账号级档案备份（服务端数据） */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <div className="flex items-start gap-3 mb-4">
           <div className="rounded-lg bg-brand/12 p-2 text-brand shrink-0">
             <HardDrive className="h-5 w-5" aria-hidden />
@@ -1405,7 +1456,7 @@ function CloudPanel() {
       </div>
 
       {/* AI 记忆同步 */}
-      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+      <div className={panels.section}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold text-ink-primary">AI 模型记忆同步</h3>
@@ -1452,7 +1503,10 @@ function CloudPanel() {
             {summaries.length > 0 && (
               <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
                 {summaries.slice(-5).reverse().map((s, i) => (
-                  <div key={s.id || i} className="bg-muted rounded-xl p-3 text-sm">
+                  <div
+                    key={s.id || i}
+                    className="rounded-xl border border-default/60 bg-muted/40 p-3 text-sm backdrop-blur-sm"
+                  >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-ink-secondary text-xs">
                         {s.memberName || '通用对话'} · {new Date(s.date).toLocaleDateString('zh-CN')}
@@ -1477,7 +1531,7 @@ function CloudPanel() {
       </div>
 
       {/* 同步说明 */}
-      <div className="bg-subtle rounded-2xl border border-default p-5">
+      <div className={panels.sectionCompact}>
         <h4 className="font-medium text-ink-secondary text-sm mb-2">关于 AI 记忆同步</h4>
         <ul className="text-xs text-ink-muted space-y-1.5">
           <li>· 每次对话结束后，系统会自动生成对话摘要并保存</li>
@@ -1509,7 +1563,7 @@ function CloudPanel() {
 // ========== 主组件 ==========
 
 export default function PersonalCenterPage() {
-  useThemeAppliedSnapshot()
+  const tabShell = usePersonalCenterPanels()
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<TabId>(() => parseTabParam(searchParams))
 
@@ -1522,7 +1576,7 @@ export default function PersonalCenterPage() {
     setSearchParams(id === 'overview' ? {} : { tab: id }, { replace: true })
   }
 
-  const panels: Record<TabId, React.ReactNode> = {
+  const tabContent: Record<TabId, React.ReactNode> = {
     overview: <OverviewPanel />,
     subscription: <SubscriptionPanel />,
     account: <AccountPanel />,
@@ -1544,10 +1598,13 @@ export default function PersonalCenterPage() {
                   type="button"
                   onClick={() => selectTab(tab.id as TabId)}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap cursor-pointer',
+                    'flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-[box-shadow,color,background-color] whitespace-nowrap cursor-pointer',
                     activeTab === tab.id
-                      ? 'bg-subtle text-ink-secondary font-semibold shadow-e1 ring-1 ring-border-default'
-                      : 'text-ink-muted hover:bg-muted/70 hover:text-ink-secondary'
+                      ? cn(
+                          tabShell.panelBase,
+                          'text-ink-secondary font-semibold shadow-e2 ring-1 ring-border-default',
+                        )
+                      : 'text-ink-muted hover:bg-muted/60 hover:text-ink-secondary hover:backdrop-blur-[2px]',
                   )}
                 >
                   <Icon size={16} />
@@ -1560,7 +1617,7 @@ export default function PersonalCenterPage() {
 
         {/* 内容区 */}
         <div className="flex-1 min-w-0">
-          {panels[activeTab]}
+          {tabContent[activeTab]}
         </div>
       </div>
     </div>

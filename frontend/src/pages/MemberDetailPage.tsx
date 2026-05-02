@@ -1,5 +1,5 @@
 /**
- * 成员详情页
+ * 成员 / 国家记忆「实体」详情页：关系成员与 nation 实体在文案与顶栏信息结构上分离
  */
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -20,7 +20,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
 import Select from '@/components/ui/Select'
-import { LoadingState, ErrorState, EmptyState, ConfirmDialog } from '@/components/ui'
+import { LoadingState, ErrorState, EmptyState, ConfirmDialog, NationalMemoryCapsuleButton } from '@/components/ui'
 import { useApiError } from '@/hooks/useApiError'
 import MemberProfile from '@/components/member/MemberProfile'
 import { fadeUp, staggerContainer } from '@/lib/motion'
@@ -66,6 +66,20 @@ export default function MemberDetailPage() {
   /** 与后端 ChatImportRequest.raw_text max_length 对齐 */
   const CHAT_IMPORT_MAX_CHARS = 500_000
 
+  const { data: archive } = useQuery({
+    queryKey: ['archive', archiveId],
+    queryFn: () => archiveApi.get(Number(archiveId)) as any,
+    enabled: !!archiveId,
+  })
+
+  const archiveType = String((archive as { archive_type?: string } | undefined)?.archive_type ?? '')
+  const entityKindNation = archiveType === 'nation'
+
+  useEffect(() => {
+    if (!entityKindNation || importSource !== 'wechat') return
+    setImportSource('auto')
+  }, [entityKindNation, importSource])
+
   const applyImportedTxt = (text: string, filename: string | null) => {
     if (text.length > CHAT_IMPORT_MAX_CHARS) {
       toast.error(`文本过长（>${CHAT_IMPORT_MAX_CHARS} 字），请删减或分批导入`)
@@ -89,7 +103,7 @@ export default function MemberDetailPage() {
       file.type.startsWith('text/') ||
       file.type === 'application/octet-stream'
     if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-      toast.error('请使用聊天记录导出的 .txt 文本')
+      toast.error(entityKindNation ? '请载入 .txt 文本史料（非图片或音视频文件）' : '请使用聊天记录导出的 .txt 文本')
       return
     }
     if (!isTxtName && !isTextLike) {
@@ -116,7 +130,7 @@ export default function MemberDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['member', archiveId, memberId] })
       void queryClient.invalidateQueries({ queryKey: ['members', archiveId] })
-      toast.success('头像已更新')
+      toast.success(entityKindNation ? '封面图已更新' : '头像已更新')
     },
     onError: (err) => show(err),
   })
@@ -126,7 +140,7 @@ export default function MemberDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['member', archiveId, memberId] })
       void queryClient.invalidateQueries({ queryKey: ['members', archiveId] })
-      toast.success('已恢复默认头像')
+      toast.success(entityKindNation ? '已恢复默认封面图' : '已恢复默认头像')
     },
     onError: (err) => show(err),
   })
@@ -147,7 +161,11 @@ export default function MemberDetailPage() {
       setImportTxtName(null)
       toast.success(
         `已导入 ${data.created_count} 条记忆；时间链边 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}` +
-          (data.vectors_deferred ? '（大批量已暂缓写入语义向量，对话时会逐步补齐）' : ''),
+          (data.vectors_deferred ?
+            `（大批量已暂缓写入语义向量，${
+              entityKindNation ? '检索与对话时会逐步补齐' : '对话时会逐步补齐'
+            }）`
+          : ''),
       )
     },
     onError: (err) => show(err),
@@ -155,7 +173,7 @@ export default function MemberDetailPage() {
 
   const startChatImportOnProgressPage = () => {
     if (!importRaw.trim()) {
-      toast.error('请先粘贴或载入聊天记录文本')
+      toast.error(entityKindNation ? '请先粘贴或载入文本史料' : '请先粘贴或载入聊天记录文本')
       return
     }
     if (!archiveId || !memberId) return
@@ -203,11 +221,6 @@ export default function MemberDetailPage() {
   const emotionSelectValue =
     newMemory.emotion_label === '' ? RADIX_SELECT_NONE : newMemory.emotion_label
 
-  const { data: archive } = useQuery({
-    queryKey: ['archive', archiveId],
-    queryFn: () => archiveApi.get(Number(archiveId)) as any,
-    enabled: !!archiveId,
-  })
 
   const { data: member, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['member', archiveId, memberId],
@@ -308,11 +321,57 @@ export default function MemberDetailPage() {
     onError: (err) => show(err),
   })
 
+  const [entityHeritage, setEntityHeritage] = useState({
+    heritage_origin_regions: '',
+    heritage_listing_level: '',
+    heritage_inscribed_year: '',
+  })
+
+  useEffect(() => {
+    if (!member || typeof member !== 'object') return
+    const m = member as Record<string, unknown>
+    setEntityHeritage({
+      heritage_origin_regions: String(m.heritage_origin_regions ?? ''),
+      heritage_listing_level: String(m.heritage_listing_level ?? ''),
+      heritage_inscribed_year: String(m.heritage_inscribed_year ?? ''),
+    })
+  }, [member])
+
+  const saveEntityHeritageMutation = useMutation({
+    mutationFn: () => {
+      if (!archiveId || !memberId) {
+        return Promise.reject(new Error('missing_route'))
+      }
+      const trimNull = (s: string) => {
+        const t = s.trim()
+        return t.length > 0 ? t : null
+      }
+      return archiveApi.updateMember(Number(archiveId), Number(memberId), {
+        heritage_origin_regions: trimNull(entityHeritage.heritage_origin_regions),
+        heritage_listing_level: trimNull(entityHeritage.heritage_listing_level),
+        heritage_inscribed_year: trimNull(entityHeritage.heritage_inscribed_year),
+      }) as Promise<unknown>
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['member', archiveId, memberId] })
+      void queryClient.invalidateQueries({ queryKey: ['members', archiveId] })
+      void queryClient.invalidateQueries({ queryKey: ['archives'] })
+      void queryClient.invalidateQueries({ queryKey: ['archive', archiveId] })
+      toast.success('实体著录已保存')
+    },
+    onError: (err: unknown) => show(err instanceof Error ? err : new Error(String(err))),
+  })
+
   if (isLoading) {
-    return <LoadingState message="正在加载成员信息…" />
+    return <LoadingState message={entityKindNation ? '正在加载记忆实体…' : '正在加载成员信息…'} />
   }
   if (isError || !member) {
-    return <ErrorState error={error ?? '未找到该成员'} onRetry={() => void refetch()} />
+    return (
+      <ErrorState
+        error={entityKindNation ? '未找到该记忆实体' : (error ?? '未找到该成员')}
+        onRetry={() => void refetch()}
+      />
+    )
   }
 
   return (
@@ -335,9 +394,10 @@ export default function MemberDetailPage() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
-        <Card variant="plain" className="mb-6">
+        <Card variant={entityKindNation ? 'glass' : 'plain'} className="mb-6">
           <MemberProfile
             member={member}
+            presentation={entityKindNation ? 'national_memory_entity' : 'member'}
             actions={
               <>
                 <input
@@ -352,25 +412,26 @@ export default function MemberDetailPage() {
                     if (f) uploadMemberAvatarMutation.mutate(f)
                   }}
                 />
-                <Button
-                  size="sm"
-                  variant="secondary"
+                <NationalMemoryCapsuleButton
                   type="button"
                   loading={uploadMemberAvatarMutation.isPending}
                   onClick={() => avatarFileRef.current?.click()}
                 >
-                  更换头像
-                </Button>
+                  {entityKindNation ? '更换封面图' : '更换头像'}
+                </NationalMemoryCapsuleButton>
                 {Boolean((member as { avatar_url?: string | null }).avatar_url) && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  <button
                     type="button"
-                    loading={deleteMemberAvatarMutation.isPending}
+                    disabled={deleteMemberAvatarMutation.isPending}
+                    className={cn(
+                      'text-body-sm font-semibold text-brand hover:text-brand-hover hover:underline',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas rounded-md px-1',
+                      deleteMemberAvatarMutation.isPending && 'opacity-50 cursor-not-allowed',
+                    )}
                     onClick={() => deleteMemberAvatarMutation.mutate()}
                   >
-                    移除头像
-                  </Button>
+                    {entityKindNation ? '移除封面图' : '移除头像'}
+                  </button>
                 )}
               </>
             }
@@ -380,21 +441,70 @@ export default function MemberDetailPage() {
               leftIcon={<MessageCircle size={18} />}
               onClick={() => void navigate(`/dialogue/${archiveId}/${memberId}`)}
             >
-              与 Ta 对话
+              {entityKindNation ? '与实体对话' : '与 Ta 对话'}
             </Button>
             <Button
               variant="secondary"
               leftIcon={<MessageSquareShare size={18} />}
               onClick={() => setImportChatOpen(true)}
             >
-              导入聊天记录
+              {entityKindNation ? '导入文本史料' : '导入聊天记录'}
             </Button>
             <span className="text-body-sm text-ink-muted self-center ml-auto">
-              {memoriesIsError ? '记忆列表加载失败' : `${memoriesList.length} 条记忆`}
+              {memoriesIsError ? '记忆列表加载失败' : `${memoriesList.length} 条${entityKindNation ? '关联' : ''}记忆`}
             </span>
           </div>
         </Card>
       </motion.div>
+
+      {entityKindNation ? (
+        <motion.div variants={fadeUp} className="mb-6">
+          <Card variant="glass">
+            <h2 className="text-body-lg font-medium text-ink-primary">著录与索引（本实体）</h2>
+            <p className="text-caption text-ink-muted mt-1 mb-4 max-w-3xl">
+              可用于对齐官方非遗名录、历史人物考证、馆藏文献档号等通用著录口吻；与同一档案内其它记忆实体相互独立。
+            </p>
+            <div className="space-y-3 max-w-2xl">
+              <Textarea
+                label="发源地与主要流传 / 申报地域"
+                rows={3}
+                value={entityHeritage.heritage_origin_regions}
+                onChange={(e) =>
+                  setEntityHeritage((h) => ({ ...h, heritage_origin_regions: e.target.value }))
+                }
+                placeholder="例：福建泉州；多国联合申报可逐条写出"
+                fullWidth
+              />
+              <Input
+                label="名录层级"
+                value={entityHeritage.heritage_listing_level}
+                onChange={(e) =>
+                  setEntityHeritage((h) => ({ ...h, heritage_listing_level: e.target.value }))
+                }
+                placeholder="例：国家级非物质文化遗产代表作名录"
+                fullWidth
+              />
+              <Input
+                label="列入年份或批次"
+                value={entityHeritage.heritage_inscribed_year}
+                onChange={(e) =>
+                  setEntityHeritage((h) => ({ ...h, heritage_inscribed_year: e.target.value }))
+                }
+                placeholder="例：2006 · 第一批"
+                fullWidth
+              />
+            </div>
+            <NationalMemoryCapsuleButton
+              className="mt-4"
+              type="button"
+              loading={saveEntityHeritageMutation.isPending}
+              onClick={() => void saveEntityHeritageMutation.mutate()}
+            >
+              保存著录
+            </NationalMemoryCapsuleButton>
+          </Card>
+        </motion.div>
+      ) : null}
 
       <motion.div variants={fadeUp}>
         <Card variant="plain" className="mb-6">
@@ -478,7 +588,9 @@ export default function MemberDetailPage() {
         <Card variant="plain" className="mb-6">
           <h2 className="text-body-lg font-medium text-ink-primary mb-3">记忆神经网络</h2>
           <p className="text-caption text-ink-muted mb-4">
-            导入 txt 或粘贴记录后，系统写入记忆并由 AI 推断联结；下图按力导向排布，边的颜色表示关系类型（时间链 / 因果 / 主题等）。
+            {entityKindNation ?
+              '载入史料节选、书目或会议纪要等文本后，系统拆条建档并由 AI 推断实体间联结；下图按力导向排布，边的颜色表示关系类型（时间链 / 因果 / 主题等）。'
+            : '导入 txt 或粘贴记录后，系统写入记忆并由 AI 推断联结；下图按力导向排布，边的颜色表示关系类型（时间链 / 因果 / 主题等）。'}
           </p>
           <Suspense fallback={<LoadingState message="载入记忆网络…" />}>
             <MemoryRelationGraph memberId={Number(memberId)} />
@@ -505,13 +617,17 @@ export default function MemberDetailPage() {
               <EmptyState
                 icon={FileText}
                 title="还没有记忆条目"
-                description="可「添加记忆」手写；或「导入聊天记录」拖拽/选择 .txt 或粘贴全文，解析后由 AI 绘制记忆网络。"
+                description={
+                  entityKindNation ?
+                    '可「添加记忆」录入考证段落；或通过「导入文本史料」载入 .txt 或粘贴全文，由 AI 拆条并绘制记忆网络。'
+                  : '可「添加记忆」手写；或「导入聊天记录」拖拽/选择 .txt 或粘贴全文，解析后由 AI 绘制记忆网络。'
+                }
                 action={{ label: '添加记忆', onClick: () => setCreateMemoryModal(true) }}
               />
               <div className="flex justify-center -mt-4 mb-4">
-                <Button variant="secondary" size="sm" onClick={() => setImportChatOpen(true)}>
-                  导入聊天记录
-                </Button>
+                <NationalMemoryCapsuleButton type="button" onClick={() => setImportChatOpen(true)}>
+                  {entityKindNation ? '导入文本史料' : '导入聊天记录'}
+                </NationalMemoryCapsuleButton>
               </div>
             </div>
           ) : (
@@ -549,7 +665,7 @@ export default function MemberDetailPage() {
                 </Button>
               </div>
               <p className="text-caption text-ink-muted -mt-2 mb-4">
-                当前列表最多加载 500 条；若成员下记忆更多，请分批删除或后续再扩展分页。
+                当前列表最多加载 500 条；若{entityKindNation ? '本实体' : '成员'}下记忆更多，请分批删除或后续再扩展分页。
               </p>
               <div className="space-y-4">
                 {memoriesList.map((memory: Record<string, unknown>) => {
@@ -721,7 +837,7 @@ export default function MemberDetailPage() {
           setImportChatOpen(false)
           setImportDropActive(false)
         }}
-        title="导入聊天记录"
+        title={entityKindNation ? '导入文本史料' : '导入聊天记录'}
         size="lg"
       >
         <div className="space-y-4">
@@ -738,11 +854,21 @@ export default function MemberDetailPage() {
             }}
           />
           <p className="text-caption text-ink-muted leading-relaxed">
-            可<strong className="font-medium text-ink-secondary"> 拖拽或选择 .txt </strong>
-            （微信/QQ 导出），也可在下方粘贴全文。
-            <strong className="font-medium text-ink-secondary"> 推荐 </strong>
-            使用「跳转 AI 导入进度页」：规则分段后由多批 LLM 提炼为记忆条目（类「分析—写入」管线），并
-            <strong className="font-medium text-ink-secondary"> 实时显示进度</strong>。
+            {entityKindNation ?
+              <>
+                可<strong className="font-medium text-ink-secondary"> 拖拽或选择 .txt </strong>
+                Plain 文本（史料摘录、访谈整理、名录说明、参考文献列表等），也可在下方粘贴全文。
+                <strong className="font-medium text-ink-secondary"> 推荐 </strong>
+                使用「跳转 AI 导入进度页」：分段后由 LLM 提炼为记忆条目并绘制关系网。
+              </>
+            : <>
+                可<strong className="font-medium text-ink-secondary"> 拖拽或选择 .txt </strong>
+                （微信/QQ 导出），也可在下方粘贴全文。
+                <strong className="font-medium text-ink-secondary"> 推荐 </strong>
+                使用「跳转 AI 导入进度页」：规则分段后由多批 LLM 提炼为记忆条目（类「分析—写入」管线），并
+                <strong className="font-medium text-ink-secondary">实时显示进度</strong>。
+              </>
+            }
             单篇上限 {CHAT_IMPORT_MAX_CHARS.toLocaleString()} 字。
           </p>
           <div
@@ -780,7 +906,7 @@ export default function MemberDetailPage() {
           >
             <Upload className="mx-auto mb-2 h-8 w-8 text-ink-muted" aria-hidden />
             <p className="text-body-sm text-ink-secondary">
-              将聊天记录 .txt 拖到此处
+              {entityKindNation ? '将 .txt 史料或清单拖到此处' : '将聊天记录 .txt 拖到此处'}
             </p>
             <Button
               type="button"
@@ -799,11 +925,18 @@ export default function MemberDetailPage() {
           </div>
           <Select
             label="解析模式"
-            options={[
-              { value: 'auto', label: '自动识别（推荐）' },
-              { value: 'wechat', label: '微信风格（日期/昵称行）' },
-              { value: 'plain', label: '纯文本：按空行分段' },
-            ]}
+            options={
+              entityKindNation ?
+                [
+                  { value: 'auto', label: '自动识别（推荐）' },
+                  { value: 'plain', label: '纯文本：按空行分段' },
+                ]
+              : [
+                  { value: 'auto', label: '自动识别（推荐）' },
+                  { value: 'wechat', label: '微信风格（日期/昵称行）' },
+                  { value: 'plain', label: '纯文本：按空行分段' },
+                ]
+            }
             value={importSource}
             onValueChange={(v) => setImportSource(v as 'auto' | 'wechat' | 'plain')}
             fullWidth
@@ -831,14 +964,16 @@ export default function MemberDetailPage() {
             </label>
           </div>
           <Textarea
-            label="聊天原文（可编辑）"
+            label={entityKindNation ? '文本原文（可编辑）' : '聊天原文（可编辑）'}
             value={importRaw}
             onChange={(e) => {
               setImportRaw(e.target.value)
               setImportTxtName(null)
             }}
             rows={12}
-            placeholder="粘贴全文，或从上方载入 txt…"
+            placeholder={
+              entityKindNation ? '粘贴全文，或从上方载入史料 txt…' : '粘贴全文，或从上方载入 txt…'
+            }
             fullWidth
           />
           <div className="flex flex-col gap-3 sm:flex-row">
