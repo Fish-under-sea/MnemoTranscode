@@ -275,12 +275,14 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* 页脚 */}
-      <footer className="bg-muted/70 border-t border-default py-5 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-ink-muted">
-          MTC — Memory To Code · 用 AI 守护每一段珍贵的记忆
-        </div>
-      </footer>
+      {/* AI 对话为沉浸布局，省去底部标语条 */}
+      {!location.pathname.startsWith('/dialogue') && (
+        <footer className="bg-muted/70 border-t border-default py-5 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 text-center text-sm text-ink-muted">
+            MTC — Memory To Code · 用 AI 守护每一段珍贵的记忆
+          </div>
+        </footer>
+      )}
     </div>
   )
 }
