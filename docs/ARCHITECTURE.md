@@ -80,6 +80,7 @@ flowchart TB
 - **用量与订阅**：`GET /usage/stats` 经 `usageApi` 进入 **`queryKey: ['dashboard', 'usage']`**，个人中心概览与仪表盘存储卡片同源；档位与上限真源见 **[USAGE_AND_SUBSCRIPTION.md](./USAGE_AND_SUBSCRIPTION.md)**。
 - **Axios 全局 401**：拦截器仅 **`clearAuth()`**，未再强制 **`window.location`** 整页跳转，由 React Router 处理未登录视图，减少与 SPA 导航的竞态。
 - **AI 对话页打字机**：服务端一次返回完整 `reply`；`listMessages` 在窗口聚焦等时会 refetch，若在补水前未停止打字机动效，可能出现「半截正文 + 伪光标」——实现上在服务端覆盖 `messages` 前须 **`stopTypewriter()`**。
+- **用户与成员头像（同源拉流）**：库内 `User.avatar_url` / `Member.avatar_url` 存 MinIO 侧对象引用；响应里面向浏览器的是受 `exp` + HMAC `sig` 保护的 **同源 GET**（如 `/api/v1/auth/avatar-file`、`/api/v1/archives/{archive_id}/members/{member_id}/avatar-file`），由 `avatar_public_url` 生成路径并由路由从 MinIO **流式读出**（`minio_object_response.streaming_response_for_object_key`）。前后端分离且 API 不同域时可用配置项 **`app_public_origin`**（见 `Settings`）拼出浏览器可达的绝对根。前端侧：个人中心与导航用户头像走 `components/ui/Avatar`；**国家记忆**（`archive_type=nation`）档案下的实体在 **档案列表卡**与 **成员/实体详情顶栏**展示封面时，采用原生 `<img>` + `onError` 回落占位，避免 Radix `Avatar.Fallback`（如 Layers 图标）与真实图片在同一时刻争显。
 
 **目录结构：**
 

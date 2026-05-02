@@ -30,7 +30,7 @@ LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架
 | **记忆管理** | 为每位成员记录记忆条目，支持情感标签、时间、地点等元数据 |
 | **媒体存档** | 照片、视频、音频两阶段预签名上传，私有桶安全存储（MinIO） |
 | **Mnemo / 记忆图谱** | 后端 `app/mnemo/`：对话巩固、Engram 关系、有意识召回（conscious recall）等；前端成员详情 **记忆关系图**（`MemoryRelationGraph` + `react-force-graph-2d`）。**技术说明**： [docs/memory-relation-network.md](./docs/memory-relation-network.md)（含图谱 API、`client_llm` 流式导入衔接、力导向开启后停表锚点对齐） |
-| **成员头像** | MinIO 存储 + 预签名；受控尺寸/类型（`avatar_image` / `upload_bounded`）；详情见 API 与 `Member.avatar_url` |
+| **成员头像 / 国家记忆实体封面** | 成员图存 MinIO，库内为对象 URL；列表与 `GET` 响应中的 `avatar_url` 为**同源可展示地址**（`/api/v1/archives/.../members/.../avatar-file?exp&sig` 或 `APP_PUBLIC_ORIGIN` 前缀），由后端从 MinIO **流式回源**，浏览器无需直连对象存储。关系成员用设计系统 `Avatar`；**国家记忆**档案下实体列表与详情顶栏封面用原生 `<img>` + 失败回落（避免 Radix Avatar 与固定占位争层）。实现见 `backend/app/core/avatar_public_url.py` |
 | **AI 对话** | 与档案成员角色对话；服务端一次返回完整 `reply`，前端打字机为本地模拟。**对话列表** `GET /dialogue/messages` 在窗口聚焦等场景会 refetch，与打字机状态需协调（见 **[USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**） |
 | **故事书生成** | 基于记忆条目 AI 自动生成生命故事，支持怀旧温情、文学风格等四种写作风格，可导出 PDF |
 | **交互时间线** | 按年份聚合的可视化记忆时间线，支持情感/成员/时间范围三维筛选 |
@@ -202,6 +202,8 @@ npm run dev
 | Qdrant 控制台 | http://localhost:6333/dashboard |
 
 **部署注意**：改 `frontend/default.conf.template` 或 `nginx-snippets/*` 后需**重新构建**前端镜像；`502` 常见原因是 Nginx 上游 `API_UPSTREAM` 指向的 backend 未就绪。本地纯 npm 开发时仍用 Vite 默认端口，无需 Nginx。
+
+**Compose 内的 `frontend` 服务**：镜像内为 `npm run build` 的静态产物，**不挂载**宿主 `frontend/`。若改动了 TypeScript/CSS 却未重建镜像，浏览器访问 **http://localhost:5173**（容器 Nginx）仍会看到旧包。请在仓库根执行 **`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\rebuild-docker-frontend.ps1`**（或 `cd infra` 后 `docker compose build frontend && docker compose up -d --no-deps --force-recreate frontend`），交付规范见 **`.cursor/rules/mtc-docker-frontend-sync.mdc`**。验收后建议 **Ctrl+F5** 强刷，避免缓存旧 chunk。
 
 ---
 
