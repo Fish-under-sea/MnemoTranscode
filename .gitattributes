@@ -1,15 +1,35 @@
-# Explicitly declare files that should have CRLF line endings on checkout
+# 仓库内源码以 LF 为准；脚本在 Windows 上检出为 CRLF 便于记事本等工具编辑
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+*.cmd text eol=crlf
+
 *.sh text eol=lf
 *.py text eol=lf
+*.pyi text eol=lf
 *.ts text eol=lf
 *.tsx text eol=lf
 *.js text eol=lf
 *.jsx text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
 *.json text eol=lf
 *.html text eol=lf
+*.htm text eol=lf
 *.css text eol=lf
+*.scss text eol=lf
+*.md text eol=lf
+*.mdx text eol=lf
+*.mdc text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+*.template text eol=lf
+*.conf text eol=lf
+
+# SVG 一般为文本矢量；按文本归档便于 diff/review（超大资源可单独放二进制目录并改规则）
+*.svg text eol=lf
 
 # Binary files - no conversion
 *.ico binary
@@ -17,13 +37,13 @@
 *.jpg binary
 *.gif binary
 *.jpeg binary
-*.svg binary
 *.woff binary
 *.woff2 binary
 *.ttf binary
 *.eot binary
 *.mp3 binary
 *.mp4 binary
+*.webm binary
 *.wav binary
 *.pdf binary
 *.zip binary

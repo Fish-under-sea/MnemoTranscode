@@ -73,6 +73,8 @@ kourichat/wxauto_logs/
 # Node
 node_modules/
 frontend/node_modules/
+.npm/
+frontend/.vite/
 *.tsbuildinfo
 
 # Build
@@ -82,6 +84,34 @@ backend/dist/
 # Test cache
 .pytest_cache/
 backend/.pytest_cache/
+.pytest_tmp/
+**/coverage/
+
+# Python 静态检查 / 类型缓存
+.mypy_cache/
+.ruff_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# 勿将私钥误入库（按需调整 negation）
+*.pem
+id_rsa
+id_ed25519
+*.p12
+
+# SQLite / 本地 DB 侧文件
+*.db-wal
+*.db-shm
+
+# Playwright / E2E 报告（若后续接入）
+/test-results/
+/playwright-report/
+
+# Turbopack（若启用）
+.turbo/
+
+# Windows 额外缩略图
+ehthumbs.db
 
 # Celery beat（本机跑出 schedule 时不要提交）
 celerybeat-schedule
