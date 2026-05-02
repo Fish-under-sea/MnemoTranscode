@@ -2,7 +2,7 @@
 # MTC (Memory To Code) - 常用命令集合
 # ============================================================
 
-.PHONY: help install dev backend frontend test lint clean docker-up docker-down docker-logs docker-restart start-services stable-backend stable-full
+.PHONY: help install dev backend frontend dev-hot dev-hot-rebuild test lint clean docker-up docker-down docker-logs docker-restart docker-rebuild-frontend docker-watch-frontend start-services stable-backend stable-full
 
 # 默认目标
 help:
@@ -19,10 +19,15 @@ help:
 	@echo "  make docker-down   停止 Docker 容器"
 	@echo "  make docker-logs   查看容器日志"
 	@echo "  make docker-restart 重启所有 compose 服务（cd infra && compose restart）"
+	@echo "  make docker-rebuild-frontend 仅重建「前端 nginx 镜像」并替换 frontend 容器（改 UI 后必跑；Compose 无前挂载）。Windows 等价：powershell -File scripts/rebuild-docker-frontend.ps1"
+	@echo "  make docker-watch-frontend  【可选】infra 下 docker compose watch frontend（改 frontend 源码自动触发重建；常驻前台）；规则见 .cursor/rules/mtc-docker-frontend-sync.mdc"
 	@echo "  make stable-backend 仅用 Docker 拉起 DB+Redis+Qdrant+MinIO+backend（稳定开发拓扑，详见 docs/stable-dev-windows.md）"
 	@echo "  make stable-full     Windows：PowerShell 一键全栈 Compose（frontend 容器 + celery + 依赖），见 scripts/start-stable.ps1 -FullStack"
+	@echo "  make dev-hot         Windows：停 Compose 前端 + 混合栈并新开本机 Vite（热更新），见 scripts/dev-vite-hybrid.ps1"
+	@echo "  make dev-hot-rebuild 同上且 compose --build（重建 backend 等镜像）"
 	@echo "  make start-services 一键启动 Docker 栈（bash scripts/start-services.sh）"
-	@echo "  make db-migrate    运行数据库迁移"
+	@echo "  make db-migrate    运行数据库迁移（本机 backend 目录 alembic，需能连上 DB）"
+	@echo "  make db-migrate-docker 在运行中的 backend 容器内执行 alembic upgrade head"
 	@echo "  make db-reset      重置数据库"
 
 # ========== 安装 ==========
@@ -102,6 +107,15 @@ docker-logs:
 docker-restart:
 	cd infra && docker compose restart
 
+# 前端 Compose 镜像 = 构建时的 dist，无宿主 bind；改源码后务必重建并替换容器。
+# 同时默认 restart backend（后端目录有挂载，restart 后即加载新版 Python）。
+docker-rebuild-frontend:
+	cd infra && docker compose build frontend && docker compose up -d --no-deps --force-recreate frontend && docker compose restart backend
+
+# 开发期：Compose develop.watch → 镜像 rebuild（需在另一终端常驻；Compose v2）
+docker-watch-frontend:
+	cd infra && docker compose watch frontend
+
 # 与 scripts/start-services.sh 一致：infra 下 compose up -d（完整栈）
 start-services:
 	bash scripts/start-services.sh
@@ -115,10 +129,22 @@ stable-backend:
 stable-full:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-stable.ps1 -FullStack
 
+# Windows：释放 5173、混合栈 + 本机 npm run dev 新窗口（日常改 UI）
+dev-hot:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-vite-hybrid.ps1
+
+# 首次或 Dockerfile / 依赖变更后：带 compose --build
+dev-hot-rebuild:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-vite-hybrid.ps1 -Build
+
 # ========== 数据库 ==========
 
 db-migrate:
 	cd backend && alembic upgrade head
+
+# Docker 已拉起 backend 时使用（Windows/Linux 均可，需 docker compose v2）
+db-migrate-docker:
+	cd infra && docker compose exec -T backend alembic upgrade head
 
 db-reset:
 	cd infra && docker compose exec postgres psql -U mtc -d mtc_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"

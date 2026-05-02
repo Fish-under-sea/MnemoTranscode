@@ -5,7 +5,7 @@ import Drawer from '@/components/ui/Drawer'
 import Button from '@/components/ui/Button'
 import MediaGallery from '@/components/media/MediaGallery'
 import { Edit, Trash, MapPin, Calendar } from 'lucide-react'
-import { formatDate, EMOTION_LABELS } from '@/lib/utils'
+import { formatMemoryTimestamp, EMOTION_LABELS } from '@/lib/utils'
 import type { Memory } from '@/services/memoryTypes'
 
 export interface MemoryDetailDrawerProps {
@@ -35,10 +35,13 @@ export default function MemoryDetailDrawer({
       width="w-[min(480px,92vw)]"
     >
       <div className="flex flex-wrap items-center gap-3 text-caption text-ink-muted mb-4">
-        {memory.timestamp && (
-          <span className="inline-flex items-center gap-1">
+        {(memory.timestamp || memory.created_at) && (
+          <span
+            className="inline-flex items-center gap-1 tabular-nums"
+            title={memory.timestamp ? '发生时间（精确到秒）' : '记录时间（精确到秒）'}
+          >
             <Calendar size={12} />
-            {formatDate(memory.timestamp)}
+            {formatMemoryTimestamp(memory.timestamp ?? memory.created_at)}
           </span>
         )}
         {memory.location && (

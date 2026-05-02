@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const isEmpty = !stats.isLoading && stats.archiveCount === 0 && !stats.isError
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="container mx-auto px-4 py-8 max-w-7xl text-ink-primary min-h-[min(60vh,720px)]">
       <motion.header
         variants={staggerContainer(0.05)}
         initial="hidden"
@@ -194,7 +194,7 @@ export default function DashboardPage() {
                       <motion.li
                         key={m.id}
                         variants={fadeUp}
-                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-warm-100/60 transition-colors cursor-pointer"
+                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
                         onClick={() => {
                           if (m.archive_id != null && m.member_id != null) {
                             void navigate(`/archives/${m.archive_id}/members/${m.member_id}`)
@@ -207,18 +207,18 @@ export default function DashboardPage() {
                           void navigate('/archives')
                         }}
                       >
-                        <div className="w-2 h-2 rounded-full bg-jade-500 mt-2 flex-shrink-0" aria-hidden />
+                        <div className="w-2 h-2 rounded-full bg-brand mt-2 flex-shrink-0" aria-hidden />
                         <div className="flex-1 min-w-0">
                           <h3 className="text-ink-primary font-medium truncate">{m.title}</h3>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                             {archiveLabel ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-jade-50/90 dark:bg-jade-950/35 px-2 py-0.5 text-caption text-jade-800 dark:text-jade-200 max-w-full">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-brand/12 dark:bg-brand/18 px-2 py-0.5 text-caption text-ink-secondary max-w-full">
                                 <Archive className="w-3.5 h-3.5 shrink-0" aria-hidden />
                                 <span className="truncate">{archiveLabel}</span>
                               </span>
                             ) : null}
                             {memberLabel ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-warm-100/80 dark:bg-warm-900/25 px-2 py-0.5 text-caption text-ink-secondary max-w-full">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-caption text-ink-secondary max-w-full">
                                 <User className="w-3.5 h-3.5 shrink-0" aria-hidden />
                                 <span className="truncate">{memberLabel}</span>
                               </span>
@@ -273,8 +273,8 @@ function KPICard(props: {
     <motion.div variants={fadeUp} className="h-full">
       <Card variant="plain" padding="sm" hoverable className="h-full flex flex-col">
         <div className="flex items-center gap-2 mb-2 shrink-0">
-          <div className="w-8 h-8 rounded-full bg-jade-50 flex items-center justify-center shrink-0">
-            <Icon className="w-4 h-4 text-jade-600" />
+          <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-brand" />
           </div>
           <span className="text-ink-secondary text-sm">{props.label}</span>
         </div>
@@ -286,18 +286,18 @@ function KPICard(props: {
         <div className="mt-auto pt-2 min-h-[3rem] flex flex-col justify-end gap-0.5 shrink-0">
           {barWidth != null ? (
             <>
-              <div className="h-1 w-full rounded-full bg-warm-200/90 overflow-hidden">
+              <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all',
-                    overCap ? 'bg-amber-500' : 'bg-jade-500',
+                    overCap ? 'bg-amber-500' : 'bg-brand',
                   )}
                   style={{ width: `${barWidth}%` }}
                 />
               </div>
               <div className="text-caption text-ink-muted tabular-nums flex justify-between gap-2 min-h-[1.25rem]">
                 <span>{props.progressPercent != null ? `已用 ${props.progressPercent.toFixed(1)}%` : null}</span>
-                {overCap && <span className="text-amber-700 shrink-0">已超出档位配额</span>}
+                {overCap && <span className="text-amber-700 dark:text-amber-300 shrink-0">已超出档位配额</span>}
               </div>
             </>
           ) : (
@@ -318,10 +318,10 @@ function QuickAction(props: { icon: LucideIcon; label: string; onClick: () => vo
     <button
       type="button"
       onClick={props.onClick}
-      className="flex flex-col items-center gap-2 p-4 rounded-lg bg-warm-100/60 hover:bg-jade-50 transition-colors group"
+      className="flex flex-col items-center gap-2 p-4 rounded-lg bg-muted/70 hover:bg-subtle transition-colors group"
     >
-      <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center group-hover:bg-jade-100 transition-colors">
-        <Icon className="w-5 h-5 text-jade-600" />
+      <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center group-hover:bg-brand/15 transition-colors">
+        <Icon className="w-5 h-5 text-brand" />
       </div>
       <span className="text-sm text-ink-secondary">{props.label}</span>
     </button>

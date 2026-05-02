@@ -16,4 +16,6 @@ export interface Memory {
   archive_id?: number
   member_name?: string | null
   archive_name?: string | null
+  /** 记录在册时间（发生时间缺失时用于展示精确到秒的节点） */
+  created_at?: string | null
 }

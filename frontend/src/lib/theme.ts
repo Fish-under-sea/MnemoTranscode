@@ -2,11 +2,67 @@
  * 主题系统 — 动态 CSS 变量注入
  * 根据用户偏好在根元素上注入主题变量
  */
+import { useSyncExternalStore } from 'react'
 
 export type PrimaryColor = 'jade' | 'amber' | 'rose' | 'sky' | 'violet' | 'forest'
 export type ThemeMode = 'light' | 'dark' | 'auto'
 export type CardStyle = 'glass' | 'minimal' | 'elevated'
 export type FontSize = 'small' | 'medium' | 'large'
+
+/** 全屏背景运行时：图片走 CSS 变量；视频/GIF 外链 MP4 等走 <video> */
+export type AppBackgroundMode = 'none' | 'image' | 'video'
+
+export type AppBackgroundRuntime = {
+  mode: AppBackgroundMode
+  /** 已解析的可直接用于 CSS url() 或 <video src> */
+  src: string | null
+}
+
+let bgRuntime: AppBackgroundRuntime = { mode: 'none', src: null }
+const bgListeners = new Set<() => void>()
+
+export function getAppBackgroundRuntime(): AppBackgroundRuntime {
+  return bgRuntime
+}
+
+export function subscribeAppBackground(onStoreChange: () => void): () => void {
+  bgListeners.add(onStoreChange)
+  return () => bgListeners.delete(onStoreChange)
+}
+
+function emitAppBackground() {
+  bgListeners.forEach((fn) => fn())
+}
+
+function setAppBackgroundRuntime(next: AppBackgroundRuntime) {
+  bgRuntime = next
+  emitAppBackground()
+}
+
+export function useAppBackgroundRuntime(): AppBackgroundRuntime {
+  return useSyncExternalStore(
+    subscribeAppBackground,
+    getAppBackgroundRuntime,
+    () => ({ mode: 'none', src: null }),
+  )
+}
+
+/** 据 URL / data URI 推断动静类型（GIF 仍为 image，由 CSS 动画） */
+export function inferAppBackgroundKind(url: string): 'image' | 'video' {
+  const trimmed = url.trim()
+  const lower = trimmed.toLowerCase()
+  const path = lower.split(/[?#]/)[0]
+  if (lower.startsWith('data:video/')) return 'video'
+  if (/\.(mp4|webm|mov|m4v|ogv)(\?.*)?$/i.test(path)) return 'video'
+  return 'image'
+}
+
+function cssBackgroundImageValue(raw: string): string {
+  const s = raw.trim()
+  if (!s) return 'none'
+  const escaped = s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `url("${escaped}")`
+}
 
 const COLOR_MAP: Record<PrimaryColor, Record<string, string>> = {
   jade: {
@@ -64,8 +120,70 @@ export interface ThemeConfig {
   primaryColor: PrimaryColor
   cardStyle: CardStyle
   fontSize: FontSize
-  /** 全屏铺底背景图，http(s) 或站内需带鉴权的相对路径可写绝对站外 URL */
+  /** 展示用地址：外链、data URI、或同源 /api/v1/preferences/app-background-file?… */
   appBackgroundUrl?: string | null
+  /** 后端写入；缺省时由 inferAppBackgroundKind 推断 */
+  appBackgroundKind?: 'image' | 'video' | null
+}
+
+/** DIY 卡片壳：与 Card variant="plain"、独立面板对齐；glass = 半透明 + backdrop + 液态玻璃慢旋高光 */
+export function panelClassFromCardStyle(style: CardStyle): string {
+  switch (style) {
+    case 'glass':
+      return [
+        'mtc-liquid-glass',
+        'border border-default ring-1 ring-black/[0.04]',
+        'bg-surface/58 backdrop-blur-xl backdrop-saturate-[1.35]',
+        'dark:bg-surface/36 dark:border-default dark:ring-white/[0.06]',
+      ].join(' ')
+    case 'minimal':
+      return 'bg-surface shadow-none border border-transparent dark:border-white/[0.06]'
+    case 'elevated':
+    default:
+      return [
+        'bg-surface border border-default shadow-e3',
+        'dark:border-amber-400/12',
+      ].join(' ')
+  }
+}
+
+type ThemeAppliedSnapshot = Pick<ThemeConfig, 'mode' | 'primaryColor' | 'cardStyle' | 'fontSize'>
+
+const defaultAppliedSnapshot: ThemeAppliedSnapshot = {
+  mode: 'light',
+  primaryColor: 'jade',
+  cardStyle: 'glass',
+  fontSize: 'medium',
+}
+
+let themeAppliedSnapshot: ThemeAppliedSnapshot = { ...defaultAppliedSnapshot }
+const themeAppliedListeners = new Set<() => void>()
+
+export function getThemeAppliedSnapshot(): ThemeAppliedSnapshot {
+  return themeAppliedSnapshot
+}
+
+export function subscribeThemeApplied(onChange: () => void): () => void {
+  themeAppliedListeners.add(onChange)
+  return () => themeAppliedListeners.delete(onChange)
+}
+
+function bumpThemeAppliedSnapshot(config: ThemeConfig) {
+  themeAppliedSnapshot = {
+    mode: config.mode,
+    primaryColor: config.primaryColor,
+    cardStyle: config.cardStyle,
+    fontSize: config.fontSize,
+  }
+  themeAppliedListeners.forEach((fn) => fn())
+}
+
+export function useThemeAppliedSnapshot(): ThemeAppliedSnapshot {
+  return useSyncExternalStore(
+    subscribeThemeApplied,
+    getThemeAppliedSnapshot,
+    () => defaultAppliedSnapshot,
+  )
 }
 
 export function applyTheme(config: ThemeConfig) {
@@ -74,13 +192,19 @@ export function applyTheme(config: ThemeConfig) {
 
   root.setAttribute('data-primary-color', config.primaryColor)
   root.setAttribute('data-theme', config.mode)
+  root.setAttribute('data-card-style', config.cardStyle)
 
   for (const [key, value] of Object.entries(colors)) {
     root.style.setProperty(`--color-${key}`, value)
     root.style.setProperty(`--color-${key}-rgb`, hexToRgb(value))
   }
 
-  // 字号映射
+  /** 与设计系统语义色衔接：Tailwind bg-brand/text-brand/shadow-e* 跟随 DIY 主色 */
+  root.style.setProperty('--brand-primary', colors.primary)
+  root.style.setProperty('--brand-primary-hover', colors['primary-dark'])
+  root.style.setProperty('--brand-primary-active', colors['primary-dark'])
+  root.style.setProperty('--brand-accent', colors['primary-light'])
+  root.style.setProperty('--shadow-color', hexToRgb(colors.primary))
   const fontSizes: Record<FontSize, string> = {
     small: '14px',
     medium: '16px',
@@ -88,19 +212,37 @@ export function applyTheme(config: ThemeConfig) {
   }
   root.style.setProperty('--font-base-size', fontSizes[config.fontSize])
 
-  // 深色模式
   if (config.mode === 'dark' || (config.mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
     root.classList.add('dark')
   } else {
     root.classList.remove('dark')
   }
 
-  const bg = (config.appBackgroundUrl ?? '').trim()
-  if (bg) {
-    root.style.setProperty('--app-background-image', `url(${JSON.stringify(bg)})`)
+  const bgRaw = (config.appBackgroundUrl ?? '').trim()
+  const declared = config.appBackgroundKind
+  let mediaKind: AppBackgroundMode = 'none'
+  if (!bgRaw) {
+    mediaKind = 'none'
+  } else if (declared === 'video') {
+    mediaKind = 'video'
+  } else if (declared === 'image') {
+    mediaKind = 'image'
   } else {
-    root.style.setProperty('--app-background-image', 'none')
+    mediaKind = inferAppBackgroundKind(bgRaw) === 'video' ? 'video' : 'image'
   }
+
+  if (mediaKind === 'none') {
+    root.style.setProperty('--app-background-image', 'none')
+    setAppBackgroundRuntime({ mode: 'none', src: null })
+  } else if (mediaKind === 'video') {
+    root.style.setProperty('--app-background-image', 'none')
+    setAppBackgroundRuntime({ mode: 'video', src: bgRaw })
+  } else {
+    root.style.setProperty('--app-background-image', cssBackgroundImageValue(bgRaw))
+    setAppBackgroundRuntime({ mode: 'image', src: bgRaw })
+  }
+
+  bumpThemeAppliedSnapshot(config)
 }
 
 export function hexToRgb(hex: string): string {
@@ -117,6 +259,7 @@ export function getDefaultTheme(): ThemeConfig {
     cardStyle: 'glass',
     fontSize: 'medium',
     appBackgroundUrl: null,
+    appBackgroundKind: null,
   }
 }
 

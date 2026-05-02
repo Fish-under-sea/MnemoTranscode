@@ -99,6 +99,9 @@ class UserPreferencesBase(BaseModel):
     dashboard_layout: str = "grid"
     custom_css: str | None = None
     app_background_url: str | None = None
+    app_background_kind: str | None = Field(
+        None, description="image=CSS背景; video=<video> 铺满（gif 仍视为 image）"
+    )
     ai_memory_sync: str = "on"
 
 
@@ -120,6 +123,7 @@ class UserPreferencesUpdate(BaseModel):
     dashboard_layout: str | None = None
     custom_css: str | None = None
     app_background_url: str | None = None
+    app_background_kind: str | None = None
     ai_memory_sync: str | None = None
 
 

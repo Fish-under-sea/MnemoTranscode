@@ -1,4 +1,4 @@
-# 仅对 ${API_UPSTREAM} 做 envsubst，Nginx 内建变量放在 nginx-snippets/ 的静态 include 中
+# ${API_UPSTREAM} / ${KOURICHAT_UPSTREAM} 由入口 envsubst 替换；其余 Nginx 内建变量在 nginx-snippets/
 # resolver + 变量 proxy_pass：在请求时经 127.0.0.11 解析 backend，避免启动瞬间 DNS 未就绪
 # 触发 host not found in upstream，进而 nginx -s fail、前端容器反复 Restarting
 server {
@@ -8,6 +8,17 @@ server {
     index index.html;
 
     resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # SPA：入口Must Revalidate，避免浏览器长期缓存旧 index 仍引用上一轮 build 的 /assets/*.js
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
+    # Vite 产物带指纹，可长缓存（与入口分离后更新才能生效）
+    location ^~ /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
 
     include /etc/nginx/snippets/spa-tryfiles.conf;
 
@@ -20,6 +31,25 @@ server {
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
         # SSE / 流式响应：避免缓冲导致进度条长时间无输出或连接异常
+        proxy_buffering off;
+        proxy_cache off;
+    }
+
+    # 与 vite.config 开发代理一致：/kourichat-proxy → 宿主 KouriChat（默认 host.docker.internal:8502，
+    # 由 Dockerfile/compose 的 KOURICHAT_UPSTREAM 注入；运行时解析上游需 resolver）
+    location /kourichat-proxy/ {
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $kouri_upstream http://${KOURICHAT_UPSTREAM};
+        include /etc/nginx/snippets/api-proxy-common.conf;
+        # 对齐 Vite changeOrigin：避免 Host 仍为浏览器访问的前端域名导致上游路由异常
+        proxy_set_header Host ${KOURICHAT_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_pass $kouri_upstream/;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_buffering off;
         proxy_cache off;
     }

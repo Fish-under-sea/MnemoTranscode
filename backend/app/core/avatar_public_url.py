@@ -134,3 +134,41 @@ def build_avatar_display_url(user_id: int, stored_avatar_url: str | None) -> str
     return path
 
 
+def _app_background_file_signature(user_id: int, object_key: str, exp: int) -> str:
+    s = get_settings()
+    msg = f"app_bg:{user_id}:{object_key}:{exp}".encode("utf-8")
+    return hmac.new(s.secret_key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def verify_app_background_file_signature(user_id: int, stored_url: str | None, exp: int, sig: str) -> bool:
+    key = parse_object_key_from_stored_url(stored_url)
+    if not key:
+        return False
+    if int(time.time()) > exp:
+        return False
+    expected = _app_background_file_signature(user_id, key, exp)
+    return hmac.compare_digest(expected, sig)
+
+
+def build_app_background_display_url(user_id: int, stored_minio_url: str | None) -> str | None:
+    """与头像一致：同源 /api GET 流式回源，浏览器可给 <img> / CSS / <video src> 使用。"""
+    key = parse_object_key_from_stored_url(stored_minio_url)
+    if not key:
+        return None
+    s = get_settings()
+    exp = int(time.time()) + int(s.minio_presign_avatar_hours * 3600)
+    sig = _app_background_file_signature(user_id, key, exp)
+    path = f"/api/v1/preferences/app-background-file?uid={user_id}&exp={exp}&sig={sig}"
+    base = (s.app_public_origin or "").strip().rstrip("/")
+    if base:
+        return f"{base}{path}"
+    return path
+
+
+def browser_app_background_url(user_id: int, stored: str | None) -> str | None:
+    """API 响应用：MinIO 内链 → 受签同域地址；外链 / data URI 原样透出。"""
+    if not stored or not (stored := stored.strip()):
+        return None
+    if parse_object_key_from_stored_url(stored):
+        return build_app_background_display_url(user_id, stored)
+    return stored

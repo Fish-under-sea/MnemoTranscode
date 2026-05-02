@@ -55,6 +55,12 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
           cardStyle: prefs.card_style || 'glass',
           fontSize: prefs.font_size || 'medium',
           appBackgroundUrl: (prefs.app_background_url as string | null | undefined) ?? null,
+          appBackgroundKind:
+            prefs.app_background_kind === 'video'
+              ? 'video'
+              : prefs.app_background_kind === 'image'
+                ? 'image'
+                : null,
         }
         applyTheme(config)
         if (config.mode) localStorage.setItem(STORAGE_KEY, config.mode)

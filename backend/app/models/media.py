@@ -1,6 +1,7 @@
 """媒体上传会话与媒体资产模型。"""
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, BigInteger, func
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 
@@ -36,6 +37,8 @@ class MediaAsset(Base):
     content_type = Column(String(128), nullable=False)
     size = Column(BigInteger, nullable=False)
     purpose = Column(String(32), nullable=False)
+    # 表情包 AI 标签、候选分类等（JSON 对象，结构由业务约定）
+    extras = Column(JSONB, nullable=True)
     visibility = Column(String(16), nullable=False, default="private")
     archive_id = Column(Integer, nullable=True, index=True)
     member_id = Column(Integer, nullable=True, index=True)

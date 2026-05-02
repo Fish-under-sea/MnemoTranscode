@@ -16,6 +16,17 @@ from app.core.config import get_settings
 settings = get_settings()
 
 
+def _messages_contain_image_url(messages: list[dict]) -> bool:
+    """判断 chat/completions 的 messages 中是否含多模态图像（表情包识图等）。"""
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+    return False
+
+
 class LLMService:
     """LLM 对话服务，封装 OpenAI 兼容 API 调用"""
 
@@ -106,6 +117,38 @@ class LLMService:
 
             return content
 
+    async def classify_sticker_multimodal(self, image_base64: str, mime: str, usage_out: dict | None = None) -> str:
+        """表情包多模态理解：返回模型原文（应为 JSON 字符串）。mime 须为 image/png 等。"""
+        sys_prompt = (
+            "你是中文互联网语境下的表情包理解与标签助手。"
+            "根据画面、文字、夸张动作，输出可检索的短标签。"
+        )
+        user_prompt = """请查看图片，只输出一个 JSON 对象：
+{
+  "tags": ["3-8 个中文短语标签，如：开心、无语、点赞、加班"],
+  "tone": "一句话概括情绪或用法场景（中文）",
+  "nsfw_hint": false
+}
+不要 Markdown，不要其它说明。"""
+        data_url = f"data:{mime};base64,{image_base64}"
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            },
+        ]
+        return await self.chat(
+            messages,
+            temperature=0.15,
+            max_tokens=600,
+            timeout=120.0,
+            usage_out=usage_out,
+        )
+
     def _filter_thinking_content(self, content: str) -> str:
         """过滤思考内容（用于 R1 等模型）"""
         think_start = content.find("<think>")
@@ -167,7 +210,14 @@ class LLMService:
             )
             if response.status_code != 200:
                 detail = (response.text or "")[:2000]
-                raise Exception(f"LLM API 返回错误 {response.status_code}: {detail}")
+                hint = ""
+                if _messages_contain_image_url(messages):
+                    hint = (
+                        " [提示：当前请求包含图片(image_url)，需使用支持视觉/多模态的 LLM。"
+                        "请在 backend/.env 配置可用的 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL（或服务端等价环境变量），"
+                        "纯文本对话模型常会返回本错误。]"
+                    )
+                raise Exception(f"LLM API 返回错误 {response.status_code}: {detail}{hint}")
             data = response.json()
             choices = data.get("choices")
             if not isinstance(choices, list) or len(choices) < 1:

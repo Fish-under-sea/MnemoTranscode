@@ -14,20 +14,34 @@ import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from starlette.responses import Response as StarletteResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, select
-from typing import Literal
+from typing import Any, Literal
 
 from app.core.database import get_db
 from app.models.user import User
 from app.models.memory import Memory, Member, Archive
 from app.models.dialogue import DialogueChatMessage
+from app.models.media import MediaAsset
 from app.api.v1.auth import get_current_user
 from app.services.llm_service import LLMService
 from app.services.vector_service import VectorService
 from app.core.config import get_settings
 from app.schemas.client_llm import ClientLlmOverride
+from app.schemas.client_tts import ClientTtsOverride
+from app.services.dialogue_style import (
+    SEGMENT_DELIM,
+    DialogueStyleStats,
+    coerce_reply_segments,
+    compute_tts_segment_indices,
+    load_dialogue_style_for_prompt,
+    segment_format_rules,
+    split_segments,
+    voice_design_instructions_from_member,
+)
+from app.services.tts_openai_compat import synthesize_openai_compat_speech
 from app.services.usage_metering import record_token_usage
 
 router = APIRouter(prefix="/dialogue", tags=["AI对话"])
@@ -37,7 +51,9 @@ logger = logging.getLogger(__name__)
 
 class DialogueRequest(BaseModel):
     """对话请求"""
-    message: str = Field(..., min_length=1, max_length=4000)
+
+    message: str = Field(default="", max_length=4000)
+    sticker_media_ids: list[int] = Field(default_factory=list, max_length=8)
     archive_id: int | None = None
     member_id: int | None = None
     channel: Literal["app", "wechat", "qq"] = "app"  # 对话渠道
@@ -47,8 +63,16 @@ class DialogueRequest(BaseModel):
     client_history: list[dict] | None = None
     # 与前端「模型设置」一致：附带则优先于服务端 LLM_* 环境变量（OpenAI 兼容网关）
     client_llm: ClientLlmOverride | None = None
+    # 与前端「语音合成 · TTS」页对齐；不传则服务端用 TTS_* 环境变量（若有）
+    client_tts: ClientTtsOverride | None = None
     # 在本轮 user+assistant 写入会话后，用 LLM 提炼记忆并写入链式图（略增加耗时）
     extract_memories_after: bool = False
+
+    @model_validator(mode="after")
+    def _require_text_or_sticker(self) -> "DialogueRequest":
+        if len(self.sticker_media_ids) == 0 and not self.message.strip():
+            raise ValueError("至少需要文字内容或至少一张表情包")
+        return self
 
 
 class DialogueResponse(BaseModel):
@@ -70,10 +94,25 @@ class DialogueResponse(BaseModel):
     latency_ms: int | None = None
     # 无官方 completion_tokens 时，以前端展示的粗略「等效」速度：字符数/秒
     output_chars: int | None = None
+    # 用 ||| 切分后的段落；与 reply 内容一致
+    reply_segments: list[str] = Field(default_factory=list)
+    tts_segment_indices: list[int] = Field(default_factory=list)
+    voice_mode: Literal["voice_design", "clone_ready"] = "voice_design"
+    has_voice_clone_sample: bool = False
+
+
+class DialogueTtsRequest(BaseModel):
+    """将单段可读文本转为语音 MP3（无克隆时用 VoiceDesign + 角色描述 instructions）。须传 client_tts 或服务端 TTS_*。"""
+
+    text: str = Field(..., max_length=2000)
+    archive_id: int = Field(..., gt=0)
+    member_id: int = Field(..., gt=0)
+    client_tts: ClientTtsOverride | None = None
 
 
 class DialogueHistoryRequest(BaseModel):
-    """获取对话历史"""
+    """获取对话历史（POST body）"""
+
     session_id: str
     archive_id: int | None = None
     member_id: int | None = None
@@ -97,7 +136,18 @@ class BootstrapHistoryBody(BaseModel):
 
 
 # 内存中的对话历史存储（生产环境应使用 Redis）
-_dialogue_sessions: dict[str, list[dict]] = {}
+# 会话内存兜底：与用户库一致，把||| 合并为换行再交给提炼记忆的 LLM
+def _conversation_join_assistant_markup(turns: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for item in turns:
+        role = item.get("role")
+        content = item.get("content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        if role == "assistant" and SEGMENT_DELIM in content:
+            content = "\n\n".join(split_segments(content))
+        out.append({"role": role, "content": content})
+    return out
 
 
 async def _require_owned_member(
@@ -119,6 +169,24 @@ async def _require_owned_member(
     return m
 
 
+async def _member_has_voice_clone_sample(
+    db: AsyncSession,
+    *,
+    owner_id: int,
+    member_id: int,
+) -> bool:
+    c = await db.scalar(
+        select(func.count())
+        .select_from(MediaAsset)
+        .where(
+            MediaAsset.owner_id == owner_id,
+            MediaAsset.member_id == member_id,
+            MediaAsset.purpose == "voice_sample",
+        )
+    )
+    return int(c or 0) > 0
+
+
 async def _db_turn_count(db: AsyncSession, *, user_id: int, member_id: int) -> int:
     c = await db.scalar(
         select(func.count())
@@ -135,8 +203,9 @@ async def _load_db_turns(
     member_id: int,
     archive_id: int | None = None,
     max_rows: int = 400,
+    join_assistant_segments: bool = False,
 ) -> list[dict]:
-    """读取库中最新消息（按时序 user/assistant 文本）。"""
+    """读取库中最新消息（按时序 user/assistant 文本）。join_assistant_segments 为真时把|||多段合并成换行段落，供 LLM / 提炼记忆阅读。"""
     conds = [
         DialogueChatMessage.user_id == user_id,
         DialogueChatMessage.member_id == member_id,
@@ -151,7 +220,13 @@ async def _load_db_turns(
     )
     r = await db.execute(stmt)
     rows = list(reversed(r.scalars().all()))
-    return [{"role": m.role, "content": m.content} for m in rows]
+    out: list[dict] = []
+    for m in rows:
+        content = m.content or ""
+        if join_assistant_segments and m.role == "assistant" and SEGMENT_DELIM in content:
+            content = "\n\n".join(split_segments(content))
+        out.append({"role": m.role, "content": content})
+    return out
 
 
 async def _bulk_insert_normalized_turns(
@@ -182,6 +257,7 @@ async def _persist_chat_turn(
     archive_id: int,
     member_id: int,
     user_text: str,
+    user_extras: dict[str, Any] | None,
     assistant_reply: str,
 ) -> None:
     ut = user_text.strip()[:12000]
@@ -194,6 +270,7 @@ async def _persist_chat_turn(
                 member_id=member_id,
                 role="user",
                 content=ut,
+                extras=user_extras,
             ),
             DialogueChatMessage(
                 user_id=user_id,
@@ -201,6 +278,7 @@ async def _persist_chat_turn(
                 member_id=member_id,
                 role="assistant",
                 content=ar,
+                extras=None,
             ),
         ]
     )
@@ -226,6 +304,74 @@ def _normalize_client_history(raw: list[dict] | None, *, max_turns: int) -> list
             content = content[:12000]
         out.append({"role": role, "content": content})
     return out or None
+
+
+async def _compose_user_turn_with_stickers(
+    db: AsyncSession,
+    *,
+    current_user: User,
+    raw_message: str,
+    sticker_media_ids: list[int],
+    archive_id: int | None,
+    member_id: int | None,
+) -> tuple[str, str, dict[str, Any] | None]:
+    """返回 (入库 user 文本, 注入 LLM 的 user 文本, user.extras)。"""
+    text = raw_message.strip()
+    ids_ordered: list[int] = []
+    for x in sticker_media_ids:
+        if isinstance(x, int) and x > 0:
+            ids_ordered.append(x)
+        if len(ids_ordered) >= 8:
+            break
+    ids_ordered = list(dict.fromkeys(ids_ordered))
+    if len(ids_ordered) == 0:
+        return (text if text else "（空消息）", text, None)
+
+    if member_id is None or archive_id is None:
+        raise HTTPException(status_code=400, detail="发送表情包时需同时传入 archive_id 与 member_id")
+
+    r = await db.execute(
+        select(MediaAsset).where(
+            MediaAsset.id.in_(ids_ordered),
+            MediaAsset.owner_id == current_user.id,
+            MediaAsset.member_id == int(member_id),
+            MediaAsset.purpose == "archive_sticker",
+        )
+    )
+    rows = list(r.scalars().all())
+    found = {m.id for m in rows}
+    missing = [i for i in ids_ordered if i not in found]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"表情包不存在或非当前成员: {missing}")
+
+    rank = {i: j for j, i in enumerate(ids_ordered)}
+    rows.sort(key=lambda m: rank[m.id])
+
+    llm_lines: list[str] = []
+    brief_bits: list[str] = []
+    for k, asset in enumerate(rows, start=1):
+        raw_ex = asset.extras if isinstance(asset.extras, dict) else {}
+        tags_raw = raw_ex.get("sticker_tags")
+        tone = str(raw_ex.get("sticker_tone") or "").strip()
+        tags_flat: list[str] = []
+        if isinstance(tags_raw, list):
+            tags_flat = [str(t).strip() for t in tags_raw if str(t).strip()][:14]
+        tag_join = "、".join(tags_flat[:10]) if tags_flat else "（暂无标签）"
+        tone_disp = tone if tone else "（未标注语气/场景）"
+        llm_lines.append(f"[表情包#{k}] 线索：「{tone_disp}」标签：{tag_join}")
+        brief_bits.append(f"#{k}「{tag_join}」")
+
+    sticker_block = "对方附带发送表情包，可作情绪与语气参考：\n" + "\n".join(llm_lines)
+    if text:
+        llm_full = sticker_block + "\n\n—— 以下为对方文字 ——\n" + text
+        persisted = text + "\n〔表情包〕 " + " ".join(brief_bits)
+    else:
+        llm_full = sticker_block + "\n（对方未输入文字）"
+        persisted = "〔表情包〕 " + " ".join(brief_bits)
+
+    ut = persisted.strip()[:12000]
+    extras: dict[str, Any] = {"stickers": [{"media_id": m.id} for m in rows]}
+    return ut, llm_full[:11900], extras
 
 
 def _llm_from_dialogue_request(request: DialogueRequest) -> LLMService:
@@ -265,6 +411,10 @@ async def chat(
     member_id = request.member_id
     member_obj: Member | None = None
 
+    style_hint_text = ""
+    style_stats = DialogueStyleStats(0, 0, 0, 0.0)
+    has_clone_audio = False
+
     if request.member_id and request.archive_id:
         member_obj = await _require_owned_member(
             db, current_user, int(request.archive_id), int(request.member_id)
@@ -272,6 +422,17 @@ async def chat(
         member_name = member_obj.name
         member_id = member_obj.id
         member_context = await _build_member_context(member_obj, request.archive_id, db)
+        style_hint_text, style_stats = await load_dialogue_style_for_prompt(
+            db,
+            user_id=current_user.id,
+            member_id=int(member_obj.id),
+            archive_id=int(request.archive_id),
+        )
+        has_clone_audio = await _member_has_voice_clone_sample(
+            db,
+            owner_id=current_user.id,
+            member_id=int(member_obj.id),
+        )
     elif request.member_id:
         result = await db.execute(
             select(Member)
@@ -284,6 +445,23 @@ async def chat(
             member_name = member.name
             member_id = member.id
             member_context = await _build_member_context(member, request.archive_id, db)
+            if request.archive_id is not None:
+                style_hint_text, style_stats = await load_dialogue_style_for_prompt(
+                    db,
+                    user_id=current_user.id,
+                    member_id=int(member.id),
+                    archive_id=int(request.archive_id),
+                )
+                has_clone_audio = await _member_has_voice_clone_sample(
+                    db,
+                    owner_id=current_user.id,
+                    member_id=int(member.id),
+                )
+
+    member_context_for_llm = member_context
+    if style_hint_text.strip():
+        chunk = style_hint_text.strip()
+        member_context_for_llm = f"{member_context}\n\n{chunk}" if member_context.strip() else chunk
 
     client_norm_full = _normalize_client_history(request.client_history, max_turns=200)
     use_db = bool(
@@ -309,12 +487,31 @@ async def chat(
             member_id=member_obj.id,
             archive_id=int(request.archive_id),
             max_rows=400,
+            join_assistant_segments=True,
         )
         history = stored_turns[-request.history_limit :]
     elif client_norm_full is not None:
         history = client_norm_full[-request.history_limit :]
     else:
         history = _dialogue_sessions.get(session_id, [])[-request.history_limit :]
+
+    # 本地 localStorage / 内存会话里若含 ||| 标记，供 LLM 阅读时转成自然换行
+    history_for_llm = _conversation_join_assistant_markup(list(history))
+
+    user_extras_blob: dict[str, Any] | None = None
+    if request.sticker_media_ids:
+        persisted_user_plain, llm_body, user_extras_blob = await _compose_user_turn_with_stickers(
+            db,
+            current_user=current_user,
+            raw_message=request.message,
+            sticker_media_ids=list(request.sticker_media_ids),
+            archive_id=request.archive_id,
+            member_id=request.member_id,
+        )
+    else:
+        persisted_user_plain = request.message.strip()
+        llm_body = persisted_user_plain
+    request_for_llm = request.model_copy(update={"message": llm_body})
 
     use_mnemo = (
         settings.mnemo_transcode_enabled
@@ -330,18 +527,28 @@ async def chat(
             reply, usage_bundle = await _chat_mnemo_pipeline(
                 db=db,
                 current_user=current_user,
-                request=request,
+                request=request_for_llm,
                 member=member_obj,
                 member_name=member_name,
-                history=history,
+                history=history_for_llm,
+                style_hint_text=style_hint_text,
             )
             mnemo_mode = True
         except Exception as exc:
             logger.exception("Mnemo 对话管线失败，回退传统模式: %s", exc)
-            reply, usage_bundle = await _chat_llm_only(request, member_name, member_context, history)
+            reply, usage_bundle = await _chat_llm_only(
+                request_for_llm, member_name, member_context_for_llm, history_for_llm
+            )
     else:
-        reply, usage_bundle = await _chat_llm_only(request, member_name, member_context, history)
+        reply, usage_bundle = await _chat_llm_only(
+            request_for_llm, member_name, member_context_for_llm, history_for_llm
+        )
     latency_ms = int((time.perf_counter() - t0) * 1000)
+
+    reply_stored = coerce_reply_segments(reply or "")
+    segs = split_segments(reply_stored)
+    tts_indices = compute_tts_segment_indices(segs, style_stats)
+    vm: Literal["voice_design", "clone_ready"] = "clone_ready" if has_clone_audio else "voice_design"
 
     if use_db and member_obj is not None and request.archive_id is not None:
         await _persist_chat_turn(
@@ -349,19 +556,20 @@ async def chat(
             user_id=current_user.id,
             archive_id=int(request.archive_id),
             member_id=member_obj.id,
-            user_text=request.message,
-            assistant_reply=reply,
+            user_text=persisted_user_plain,
+            user_extras=user_extras_blob,
+            assistant_reply=reply_stored,
         )
     elif client_norm_full is not None:
         _dialogue_sessions[session_id] = list(client_norm_full) + [
-            {"role": "user", "content": request.message},
-            {"role": "assistant", "content": reply},
+            {"role": "user", "content": persisted_user_plain},
+            {"role": "assistant", "content": reply_stored},
         ]
     else:
         if session_id not in _dialogue_sessions:
             _dialogue_sessions[session_id] = []
-        _dialogue_sessions[session_id].append({"role": "user", "content": request.message})
-        _dialogue_sessions[session_id].append({"role": "assistant", "content": reply})
+        _dialogue_sessions[session_id].append({"role": "user", "content": persisted_user_plain})
+        _dialogue_sessions[session_id].append({"role": "assistant", "content": reply_stored})
 
     memories_created = 0
     extract_usage: dict = {}
@@ -376,9 +584,12 @@ async def chat(
                     member_id=member_obj.id,
                     archive_id=int(request.archive_id),
                     max_rows=120,
+                    join_assistant_segments=True,
                 )
             else:
-                full_turns = _dialogue_sessions.get(session_id, [])
+                full_turns = _conversation_join_assistant_markup(
+                    list(_dialogue_sessions.get(session_id, [])),
+                )
             ex_llm = _llm_from_dialogue_request(request)
             created, _stats, extract_usage = await extract_and_save_memories(
                 db,
@@ -425,7 +636,7 @@ async def chat(
         pc_i = None
 
     return DialogueResponse(
-        reply=reply,
+        reply=reply_stored,
         channel=request.channel,
         member_id=member_id,
         member_name=member_name,
@@ -436,8 +647,50 @@ async def chat(
         prompt_tokens=pc_i,
         completion_tokens=ct_i,
         latency_ms=latency_ms,
-        output_chars=len(reply),
+        output_chars=len(reply_stored),
+        reply_segments=segs,
+        tts_segment_indices=tts_indices,
+        voice_mode=vm,
+        has_voice_clone_sample=has_clone_audio,
     )
+
+
+@router.post("/tts")
+async def dialogue_segment_tts(
+    body: DialogueTtsRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    将单段对话文本转为 MP3。
+    - 尚无克隆样本（VoiceClone）场景：网关 model 常为 VoiceDesign，并用角色摘要拼 `instructions`。
+    """
+    member = await _require_owned_member(db, current_user, body.archive_id, body.member_id)
+    if body.client_tts:
+        base_url = body.client_tts.base_url
+        api_key = body.client_tts.api_key
+        model = body.client_tts.model
+    else:
+        base_url = (settings.tts_base_url or "").strip()
+        api_key = (settings.tts_api_key or "").strip() or None
+        model = (settings.tts_model or "").strip()
+    if not base_url or not model:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 TTS：请在「模型设置」中填写语音合成（client_tts）或在服务端设置 TTS_BASE_URL / TTS_MODEL",
+        )
+    instruct = voice_design_instructions_from_member(member)
+    try:
+        mp3 = await synthesize_openai_compat_speech(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            input_text=body.text,
+            payload_extra={"instructions": instruct[:800]},
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)[:800]) from e
+    return StarletteResponse(content=mp3, media_type="audio/mpeg")
 
 
 async def _chat_llm_only(
@@ -481,6 +734,7 @@ async def _chat_mnemo_pipeline(
     member: Member,
     member_name: str,
     history: list[dict],
+    style_hint_text: str = "",
 ) -> tuple[str, dict]:
     from app.mnemo.graph_sql import SqlAlchemyGraphManager
     from app.mnemo.activation_engine import ActivationEngine
@@ -515,6 +769,8 @@ async def _chat_mnemo_pipeline(
         member_context_slim=await _build_member_context_slim(member, db),
         channel=request.channel,
     )
+    if style_hint_text.strip():
+        base_system = base_system + "\n\n" + style_hint_text.strip()
     pipeline = ChatPipeline(
         graph=graph,
         activation=activation,
@@ -550,17 +806,46 @@ async def list_dialogue_messages(
     )
     r = await db.execute(stmt)
     rows = list(reversed(r.scalars().all()))
-    return DialogueListResponse(
-        messages=[
+
+    def _row_extras(mobj: DialogueChatMessage) -> dict:
+        if isinstance(getattr(mobj, "extras", None), dict):
+            return dict(mobj.extras)
+        return {}
+
+    message_dicts: list[dict] = []
+    for m in rows:
+        content = str(m.content or "")
+        ex = _row_extras(m)
+        base_time = m.created_at.isoformat() if m.created_at else None
+        if m.role == "assistant" and SEGMENT_DELIM in content:
+            parts = split_segments(content)
+            if len(parts) > 1:
+                parent = m.id
+                n = len(parts)
+                for i, seg in enumerate(parts):
+                    message_dicts.append(
+                        {
+                            "id": f"{parent}_{i}",
+                            "assistant_turn_id": parent,
+                            "segment_index": i,
+                            "segment_total": n,
+                            "role": m.role,
+                            "content": seg,
+                            "created_at": base_time,
+                            **({"extras": ex} if ex else {}),
+                        }
+                    )
+                continue
+        message_dicts.append(
             {
                 "id": m.id,
                 "role": m.role,
-                "content": m.content,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "content": content,
+                "created_at": base_time,
+                **({"extras": ex} if ex else {}),
             }
-            for m in rows
-        ]
-    )
+        )
+    return DialogueListResponse(messages=message_dicts)
 
 
 @router.post("/messages/bootstrap")
@@ -601,6 +886,7 @@ async def get_history(
             member_id=request.member_id,
             archive_id=request.archive_id,
             max_rows=request.limit,
+            join_assistant_segments=True,
         )
         return DialogueHistoryResponse(
             session_id=request.session_id,
@@ -678,8 +964,7 @@ def _build_system_prompt(member_name: str, member_context: str, channel: str) ->
 
 ## 当前对话渠道
 {channel_desc.get(channel, "应用内对话")}
-
-请以 {member_name} 的身份回复：
+{segment_format_rules()}
 """
 
 
@@ -704,6 +989,7 @@ def _build_system_prompt_mnemo(
 
 ## 当前对话渠道
 {channel_desc.get(channel, "应用内对话")}
+{segment_format_rules()}
 """
 
 

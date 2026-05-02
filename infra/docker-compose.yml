@@ -52,6 +52,9 @@ services:
       start_period: 60s
 
   frontend:
+    # 静态站点在镜像构建阶段产出（见 ../frontend/Dockerfile），未挂载宿主 ../frontend。
+    # — 一次性同步：scripts/rebuild-docker-frontend.ps1 或 make docker-rebuild-frontend
+    # — 开发时可另开终端：compose watch frontend（scripts/compose-watch-frontend.ps1），见 .cursor/rules/mtc-docker-frontend-sync.mdc
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -59,9 +62,21 @@ services:
     restart: unless-stopped
     ports:
       - "5173:80"
+    develop:
+      watch:
+        - action: rebuild
+          path: ../frontend
+          ignore:
+            - node_modules/
+            - dist/
+            - "*.tsbuildinfo"
     environment:
       # Nginx 反代到 backend 容器；若 API 在宿主机见 infra/docker-compose.hybrid-frontend.example.yml
       - API_UPSTREAM=backend:8000
+      # 与 dev 模式 Vite 的 /kourichat-proxy 一致（宿主机 8502 跑 kourichat/run.py）；Linux Compose 依赖 extra_hosts
+      - KOURICHAT_UPSTREAM=host.docker.internal:8502
+    extra_hosts:
+      - host.docker.internal:host-gateway
     depends_on:
       backend:
         condition: service_healthy
@@ -185,6 +200,9 @@ services:
         target: /app
     networks:
       - mtc-network
+    # backend 镜像内 HEALTHCHECK 会 curl localhost:8000；worker 不监听 8000，继承后永远 unhealthy，显式禁用
+    healthcheck:
+      disable: true
 
   # ========== 开发工具 ==========#
 

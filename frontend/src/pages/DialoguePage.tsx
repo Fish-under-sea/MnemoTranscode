@@ -1,5 +1,5 @@
 // frontend/src/pages/DialoguePage.tsx
-import { useRef, useEffect, KeyboardEvent, useState, type CSSProperties } from 'react'
+import { useCallback, useRef, useEffect, KeyboardEvent, useState, type CSSProperties } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
@@ -10,6 +10,10 @@ import PageTransition from '@/components/ui/PageTransition'
 import MemberStatusBadge from '@/components/member/MemberStatusBadge'
 import { LoadingState } from '@/components/ui/state'
 import ChatBubble from '@/components/dialogue/ChatBubble'
+import DialogueStickerPicker, {
+  SelectedStickerChips,
+} from '@/components/dialogue/DialogueStickerPicker'
+import { stickerMediaIdsFromExtras } from '@/lib/dialogueStickerExtras'
 import { useDialogue } from '@/hooks/useDialogue'
 import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -58,6 +62,7 @@ export default function DialoguePage() {
   const memberIdNum = hasChatContext ? memberParsed : undefined
 
   const [extractMemoriesAfter, setExtractMemoriesAfter] = useState(false)
+  const [selectedStickerIds, setSelectedStickerIds] = useState<number[]>([])
 
   const needsMemberPicker = !hasChatContext
 
@@ -140,12 +145,34 @@ export default function DialoguePage() {
     rememberDialogueRoute(`/dialogue/${archiveIdNum}/${memberIdNum}`)
   }, [hasChatContext, archiveIdNum, memberIdNum])
 
+  const handleSend = useCallback(async () => {
+    if (!hasChatContext) return
+    const ids = [...selectedStickerIds]
+    try {
+      await send({ stickerMediaIds: ids })
+      setSelectedStickerIds([])
+    } catch {
+      // send 内部已 toast
+    }
+  }, [hasChatContext, selectedStickerIds, send])
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      send()
+      void handleSend()
     }
   }
+
+  /** 切换成员后清空待发表情 */
+  useEffect(() => {
+    setSelectedStickerIds([])
+  }, [memberIdNum, archiveIdNum])
+
+  /** 清空对话时同步清空待发表情（状态在页面层） */
+  const handleClearDialogs = useCallback(async () => {
+    setSelectedStickerIds([])
+    await clear()
+  }, [clear])
 
   /** 回到成员选择并重置顶栏「AI 对话」记忆，便于换角色 */
   const handleExitCurrentRole = () => {
@@ -362,7 +389,7 @@ export default function DialoguePage() {
                   variant="ghost"
                   size="sm"
                   leftIcon={<Trash2 size={14} />}
-                  onClick={clear}
+                  onClick={() => void handleClearDialogs()}
                   title="清空对话"
                 >
                   清空
@@ -437,22 +464,45 @@ export default function DialoguePage() {
                   className="space-y-4"
                 >
                   {messages.map((msg, idx) => {
-                    const isLastAssistant =
+                    const isLastBubble = idx === messages.length - 1
+                    const isLastAssistant = msg.role === 'assistant' && isLastBubble
+                    let segIdx: number | undefined
+                    const ex =
+                      msg.extras && typeof msg.extras === 'object'
+                        ? (msg.extras as Record<string, unknown>)
+                        : null
+                    if (
                       msg.role === 'assistant' &&
-                      idx === messages.length - 1
-                    const isCurrentlyTyping = isLastAssistant && (isTyping || isSending)
+                      ex &&
+                      typeof ex.dialogue_segment_index === 'number'
+                    ) {
+                      segIdx = ex.dialogue_segment_index
+                    }
+                    const hideAssistantAvatar =
+                      msg.role === 'assistant' &&
+                      typeof segIdx === 'number' &&
+                      segIdx > 0
+                    const isCurrentlyTyping =
+                      isLastAssistant && (isTyping || isSending)
 
                     return (
                       <motion.div key={msg.id} variants={fadeUp}>
                         <ChatBubble
                           role={msg.role}
                           content={msg.content}
-                          memberName={msg.role === 'assistant' ? memberName : undefined}
+                          memberName={
+                            hideAssistantAvatar
+                              ? undefined
+                              : msg.role === 'assistant'
+                                ? memberName
+                                : undefined
+                          }
                           assistantAvatarSrc={
                             msg.role === 'assistant' ? memberAvatarUrl : undefined
                           }
                           userAvatarSrc={userAvatarUrl}
                           userName={userBubbleName}
+                          hideAvatar={hideAssistantAvatar}
                           showTypingCaret={isLastAssistant && isTyping}
                           typingContent={
                             isCurrentlyTyping
@@ -460,6 +510,11 @@ export default function DialoguePage() {
                               : undefined
                           }
                           isTyping={isCurrentlyTyping && isSending && !isTyping}
+                          stickerMediaIds={
+                            msg.role === 'user'
+                              ? stickerMediaIdsFromExtras(msg.extras)
+                              : undefined
+                          }
                         />
                       </motion.div>
                     )
@@ -474,6 +529,14 @@ export default function DialoguePage() {
 
           {/* 输入区：与消息列表同为 px-4，避免横向「出格」 */}
           <div className="flex-shrink-0 border-t border-border-default bg-surface px-4 pb-4 pt-3">
+            {hasChatContext && memberIdNum != null ? (
+              <SelectedStickerChips
+                ids={selectedStickerIds}
+                onRemove={(id) =>
+                  setSelectedStickerIds((prev) => prev.filter((x) => x !== id))
+                }
+              />
+            ) : null}
             <div
               className={cn(
                 'flex gap-2 items-center rounded-xl border border-border-default bg-canvas pl-3 py-1.5 shadow-e1',
@@ -481,6 +544,14 @@ export default function DialoguePage() {
                 (!hasChatContext || isSending || isTyping) && 'opacity-60',
               )}
             >
+              {hasChatContext && memberIdNum != null ? (
+                <DialogueStickerPicker
+                  memberId={memberIdNum}
+                  disabled={!hasChatContext || isSending || isTyping}
+                  selectedIds={selectedStickerIds}
+                  onChangeSelected={setSelectedStickerIds}
+                />
+              ) : null}
               <textarea
                 ref={textareaRef}
                 value={inputValue}
@@ -504,9 +575,12 @@ export default function DialoguePage() {
                 size="sm"
                 className="shrink-0 h-9 px-4"
                 rightIcon={<Send size={14} />}
-                onClick={send}
+                onClick={() => void handleSend()}
                 disabled={
-                  !hasChatContext || !inputValue.trim() || isSending || isTyping
+                  !hasChatContext ||
+                  (!inputValue.trim() && selectedStickerIds.length === 0) ||
+                  isSending ||
+                  isTyping
                 }
               >
                 发送

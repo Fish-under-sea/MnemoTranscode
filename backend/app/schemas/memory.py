@@ -85,6 +85,10 @@ class ArchiveBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     archive_type: str = "family"  # family, lover, friend, relative, celebrity, nation
+    # 国家历史 / 非遗等：发源地与主要流传或申报地域、名录层级（人类代表作/急需保护等）、列入年份或批次简述
+    heritage_origin_regions: str | None = Field(None, max_length=4000)
+    heritage_listing_level: str | None = Field(None, max_length=160)
+    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class ArchiveCreate(ArchiveBase):
@@ -96,6 +100,11 @@ class ArchiveUpdate(BaseModel):
     """更新档案"""
     name: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = None
+    archive_type: str | None = None
+    is_pinned: bool | None = None
+    heritage_origin_regions: str | None = Field(None, max_length=4000)
+    heritage_listing_level: str | None = Field(None, max_length=160)
+    heritage_inscribed_year: str | None = Field(None, max_length=160)
 
 
 class ArchiveResponse(ArchiveBase):
@@ -104,11 +113,25 @@ class ArchiveResponse(ArchiveBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+    is_pinned: bool = False
+    pinned_order: int = 0
+    manual_order: int = 0
     member_count: int = 0
     memory_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+class ArchiveReorderBody(BaseModel):
+    """拖拽重排后的 id 序列：置顶区在前，未置顶区在后，两列表不得交叉、不得重复"""
+
+    pinned_ids: list[int] = Field(default_factory=list)
+    unpinned_ids: list[int] = Field(default_factory=list)
+
+
+class ArchiveReorderResult(BaseModel):
+    ok: bool = True
 
 
 # ==== 成员 Schema ====
@@ -349,6 +372,104 @@ class ConversationExtractResponse(BaseModel):
     memory_ids: list[int]
     graph_temporal_edges: int
     graph_llm_edges: int
+
+
+# —— 档案角色备份 / 克隆 / 恢复 ——#
+
+class ArchiveRolesBackupMemberV1Payload(BaseModel):
+    """备份文件中的单条角色（与导出 JSON 字段一致）。"""
+
+    export_key: str = Field(..., min_length=8, max_length=64)
+    name: str = Field(..., min_length=1, max_length=100)
+    relationship_type: str = Field(..., min_length=1, max_length=50)
+    birth_year: int | None = None
+    status: str = Field(default="active", max_length=16)
+    end_year: int | None = None
+    bio: str | None = None
+    emotion_tags: list[Any] = Field(default_factory=list)
+    mnemo_self_core: Any | None = None
+    avatar_url: str | None = Field(None, max_length=500)
+
+
+class ArchiveRolesBackupMemoryV1Payload(BaseModel):
+    """备份文件中的单条记忆。"""
+
+    member_export_key: str = Field(..., min_length=8, max_length=64)
+    title: str = Field(..., min_length=1, max_length=200)
+    content_text: str = Field(..., min_length=1)
+    timestamp: datetime | None = None
+    location: str | None = Field(None, max_length=255)
+    emotion_label: str | None = Field(None, max_length=50)
+    media_refs: list[Any] = Field(default_factory=list)
+    # v2：恢复 Mnemo 时与新建 memory 行对齐
+    memory_export_key: str | None = Field(None, max_length=64)
+
+
+class MnemoBackupNodeV2(BaseModel):
+    """导出的 Engram 节点（old_id 与边引用一致）。"""
+
+    old_id: str = Field(..., max_length=40)
+    node_type: str = Field(..., max_length=64)
+    content: str = ""
+    memory_export_key: str | None = Field(None, max_length=64)
+    activation_energy: float = Field(default=0.5, ge=0.0, le=10.0)
+    decay_rate: float = Field(default=0.02, ge=0.0, le=10.0)
+    plasticity: float = Field(default=0.8, ge=0.0, le=10.0)
+    importance: float = Field(default=0.5, ge=0.0, le=10.0)
+    access_count: int = Field(default=0, ge=0, le=999999)
+
+
+class MnemoBackupEdgeV2(BaseModel):
+    from_id: str = Field(..., max_length=40)
+    to_id: str = Field(..., max_length=40)
+    edge_type: str = Field(..., max_length=64)
+    weight: float = Field(default=0.5)
+    coactivation_count: int = Field(default=0, ge=0)
+    meta: dict[str, Any] | None = None
+
+
+class MnemoGraphBackupV2(BaseModel):
+    member_export_key: str = Field(..., max_length=64)
+    nodes: list[MnemoBackupNodeV2] = Field(default_factory=list)
+    edges: list[MnemoBackupEdgeV2] = Field(default_factory=list)
+
+
+class ArchiveRolesBackupPackageV1(BaseModel):
+    """从备份 JSON 恢复的请求体校验。"""
+
+    format: Literal["mtc-archive-roles-v1", "mtc-archive-roles-v2"]
+    members: list[ArchiveRolesBackupMemberV1Payload] = Field(..., min_length=1, max_length=120)
+    memories: list[ArchiveRolesBackupMemoryV1Payload] = Field(default_factory=list, max_length=8000)
+    archive: dict[str, Any] | None = None
+    exported_at: Any | None = None
+    mnemo_graphs: list[MnemoGraphBackupV2] = Field(default_factory=list, max_length=200)
+
+
+class MemberCloneRequest(BaseModel):
+    """将档案内既有角色克隆为新的角色条目（同属本档案）。"""
+
+    member_ids: list[int] = Field(..., min_length=1, max_length=80)
+    include_memories: bool = True
+    name_suffix: str | None = Field(default="（副本）", max_length=40)
+
+
+class ClonedMemberItem(BaseModel):
+    source_member_id: int
+    new_member_id: int
+
+
+class MemberCloneResponse(BaseModel):
+    cloned: list[ClonedMemberItem]
+    memories_copied: int
+    mnemo_nodes_copied: int = 0
+
+
+class ArchiveRolesRestoreResponse(BaseModel):
+    """从备份恢复到当前档案。"""
+
+    created_member_ids: list[int]
+    memories_created: int
+    mnemo_nodes_created: int = 0
 
 
 class MnemoGraphNode(BaseModel):

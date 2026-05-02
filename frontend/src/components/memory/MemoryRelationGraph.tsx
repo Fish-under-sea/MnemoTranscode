@@ -609,10 +609,10 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
           <div
             className={cn(
               'inline-flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1',
-              'border-jade-200 bg-white dark:border-amber-400/35 dark:bg-amber-400/5',
+              'border-default bg-surface dark:bg-surface/80',
             )}
           >
-            <span id={forceSimLabelId} className="text-caption text-jade-700 dark:text-amber-200 whitespace-nowrap">
+            <span id={forceSimLabelId} className="text-caption text-brand dark:text-brand-accent whitespace-nowrap">
               力导向
             </span>
             <button
@@ -628,14 +628,14 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
               className={cn(
                 'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ease-out',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
-                forceSimulationOn ? 'bg-jade-500 dark:bg-amber-500' : 'bg-stone-200 dark:bg-stone-600',
+                forceSimulationOn ? 'bg-brand dark:bg-brand' : 'bg-muted dark:bg-muted',
               )}
               onClick={() => onToggleForceSimulation(!forceSimulationOn)}
             >
               <span
                 aria-hidden
                 className={cn(
-                  'absolute top-1 left-1 block h-4 w-4 rounded-full bg-white shadow-e1 ring-1 ring-black/10 transition-transform duration-200 ease-out',
+                  'absolute top-1 left-1 block h-4 w-4 rounded-full bg-surface shadow-e1 ring-1 ring-black/10 dark:ring-white/15 transition-transform duration-200 ease-out',
                   forceSimulationOn ? 'translate-x-[1.25rem]' : 'translate-x-0',
                 )}
               />

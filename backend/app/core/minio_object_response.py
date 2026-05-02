@@ -59,6 +59,12 @@ def streaming_response_for_object_key(key: str, *, bucket: str | None = None) ->
             return "image/webp"
         if low.endswith(".gif"):
             return "image/gif"
+        if low.endswith((".mp4", ".m4v")):
+            return "video/mp4"
+        if low.endswith(".webm"):
+            return "video/webm"
+        if low.endswith((".mov", ".qt")):
+            return "video/quicktime"
         return "application/octet-stream"
 
     content_type = guess_ct()

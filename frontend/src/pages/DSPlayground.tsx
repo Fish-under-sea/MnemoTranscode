@@ -133,14 +133,14 @@ export default function DSPlayground() {
 
       {/* ============ Card ============ */}
       <section className="mb-14">
-        <SectionTitle subtitle="3 variant：plain 默认 · glass 玻璃 · accent 渐变">Card</SectionTitle>
+        <SectionTitle subtitle="3 variant：plain 默认 · glass 液态玻璃 · accent 渐变">Card</SectionTitle>
         <div className="grid md:grid-cols-3 gap-4">
           <Card padding="md">
             <h4 className="font-serif text-h4 mb-2">plain 默认</h4>
             <p className="text-body text-ink-secondary">用于常规内容块，白面 + e1 阴影。</p>
           </Card>
           <Card variant="glass" hoverable padding="md">
-            <h4 className="font-serif text-h4 mb-2">glass 玻璃</h4>
+            <h4 className="font-serif text-h4 mb-2">glass 液态玻璃</h4>
             <p className="text-body text-ink-secondary">半透 + 背景模糊，适合叠在装饰背景上。</p>
           </Card>
           <Card variant="accent" padding="md">

@@ -4,11 +4,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { authApi, usageApi, preferencesApi, subscriptionApi } from '@/services/api'
+import { authApi, usageApi, preferencesApi, subscriptionApi, archiveApi } from '@/services/api'
 import { isApiError, mapErrorToMessage } from '@/services/errors'
 import Avatar from '@/components/ui/Avatar'
 import { useAIContext } from '@/hooks/useAIContext'
-import { applyTheme, COLOR_OPTIONS, type PrimaryColor, type ThemeMode, type CardStyle, type FontSize } from '@/lib/theme'
+import {
+  applyTheme,
+  COLOR_OPTIONS,
+  inferAppBackgroundKind,
+  panelClassFromCardStyle,
+  useThemeAppliedSnapshot,
+  type PrimaryColor,
+  type ThemeMode,
+  type CardStyle,
+  type FontSize,
+} from '@/lib/theme'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import { compressImageFileForAvatar } from '@/lib/compressImage'
@@ -91,8 +101,8 @@ function UsageRing({ used, limit, color }: { used: number; limit: number; color:
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-slate-900">{percent.toFixed(0)}%</span>
-        <span className="text-xs text-slate-500">订阅配额</span>
+        <span className="text-2xl font-bold text-ink-primary">{percent.toFixed(0)}%</span>
+        <span className="text-xs text-ink-muted">订阅配额</span>
       </div>
     </div>
   )
@@ -137,9 +147,9 @@ function OverviewPanel() {
   return (
     <div className="space-y-6">
       {/* 用户卡片 */}
-      <div className="bg-gradient-to-br from-jade-50 to-jade-100 rounded-2xl p-6 border border-jade-200">
+      <div className="rounded-2xl p-6 border border-brand/25 bg-gradient-to-br from-brand/12 via-brand/8 to-muted">
         <div className="flex items-center gap-4">
-          <div className="shrink-0 self-center flex h-16 w-16 items-center justify-center overflow-hidden rounded-full ring-2 ring-jade-200/80 ring-offset-0 shadow-jade">
+          <div className="shrink-0 self-center flex h-16 w-16 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand/30 shadow-e2">
             <Avatar
               size={64}
               name={user?.username || 'U'}
@@ -148,8 +158,8 @@ function OverviewPanel() {
             />
           </div>
           <div className="min-w-0 flex-1 self-center">
-            <h2 className="text-xl font-bold text-slate-900">{user?.username}</h2>
-            <p className="text-slate-500 text-sm">{user?.email}</p>
+            <h2 className="text-xl font-bold text-ink-primary">{user?.username}</h2>
+            <p className="text-ink-muted text-sm">{user?.email}</p>
             <span
               className={cn(
                 'inline-block mt-1.5 text-xs px-2.5 py-0.5 rounded-full font-medium',
@@ -163,14 +173,14 @@ function OverviewPanel() {
       </div>
 
       {/* 用量卡片 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">本月 AI 用量</h3>
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+        <h3 className="font-semibold text-ink-primary mb-4">本月 AI 用量</h3>
         {loading ? (
           <div className="flex items-center gap-6">
-            <div className="w-32 h-32 bg-slate-100 rounded-full animate-pulse" />
+            <div className="w-32 h-32 bg-muted rounded-full animate-pulse" />
             <div className="space-y-2 flex-1">
-              <div className="h-4 bg-slate-100 rounded w-3/4 animate-pulse" />
-              <div className="h-4 bg-slate-100 rounded w-1/2 animate-pulse" />
+              <div className="h-4 bg-muted rounded w-3/4 animate-pulse" />
+              <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
             </div>
           </div>
         ) : (
@@ -178,29 +188,29 @@ function OverviewPanel() {
             <UsageRing used={usedSub} limit={limit} color="#10B981" />
             <div className="space-y-3 flex-1">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">订阅用量（计入限额）</span>
-                <span className="font-semibold text-slate-900">{usedSub.toLocaleString()} tokens</span>
+                <span className="text-ink-secondary">订阅用量（计入限额）</span>
+                <span className="font-semibold text-ink-primary">{usedSub.toLocaleString()} tokens</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">自备模型网关</span>
-                <span className="font-semibold text-slate-900">{usedOwn.toLocaleString()} tokens</span>
+                <span className="text-ink-secondary">自备模型网关</span>
+                <span className="font-semibold text-ink-primary">{usedOwn.toLocaleString()} tokens</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">限额</span>
-                <span className="font-semibold text-slate-900">{`${limit.toLocaleString()} tokens`}</span>
+                <span className="text-ink-secondary">限额</span>
+                <span className="font-semibold text-ink-primary">{`${limit.toLocaleString()} tokens`}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600">剩余（订阅）</span>
-                <span className="font-semibold text-jade-600">
+                <span className="text-ink-secondary">剩余（订阅）</span>
+                <span className="font-semibold text-brand">
                   {`${Math.max(0, limit - usedSub).toLocaleString()} tokens`}
                 </span>
               </div>
               {/* 用量类型分布 */}
               {stats?.usage_by_type &&
                 Object.keys(stats.usage_by_type).length > 0 && (
-                <div className="pt-2 border-t border-warm-100 space-y-1.5">
+                <div className="pt-2 border-t border-default space-y-1.5">
                   {Object.entries(stats.usage_by_type).map(([type, count]) => (
-                    <div key={type} className="flex justify-between text-xs text-slate-500">
+                    <div key={type} className="flex justify-between text-xs text-ink-muted">
                       <span>
                         {type === 'dialogue'
                           ? 'AI 对话'
@@ -223,48 +233,48 @@ function OverviewPanel() {
       </div>
 
       {/* 云存储用量：与仪表盘同源 GET /usage/stats */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-9 h-9 rounded-full bg-jade-50 flex items-center justify-center shrink-0">
-            <HardDrive className="w-4 h-4 text-jade-600" aria-hidden />
+          <div className="w-9 h-9 rounded-full bg-brand/15 flex items-center justify-center shrink-0">
+            <HardDrive className="w-4 h-4 text-brand" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-slate-900">存储用量</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h3 className="font-semibold text-ink-primary">存储用量</h3>
+            <p className="text-xs text-ink-muted mt-0.5">
               按当前订阅档位云空间配额统计媒体与上传文件占用
             </p>
           </div>
           <Link
             to="/personal-center?tab=cloud"
-            className="text-xs text-jade-600 hover:text-jade-700 shrink-0"
+            className="text-xs text-brand hover:text-brand-hover shrink-0"
           >
             云端详情
           </Link>
         </div>
         {loading ? (
           <div className="space-y-3">
-            <div className="h-9 bg-slate-100 rounded animate-pulse w-2/3" />
-            <div className="h-2 bg-slate-100 rounded-full animate-pulse" />
-            <div className="h-4 bg-slate-100 rounded animate-pulse w-24" />
+            <div className="h-9 bg-muted rounded animate-pulse w-2/3" />
+            <div className="h-2 bg-muted rounded-full animate-pulse" />
+            <div className="h-4 bg-muted rounded animate-pulse w-24" />
           </div>
         ) : (
           <>
-            <div className="font-serif text-2xl text-slate-900 tabular-nums tracking-tight">
+            <div className="font-serif text-2xl text-ink-primary tabular-nums tracking-tight">
               {formatStoragePrimaryLine(stats ?? null, false)}
             </div>
             <div className="mt-4 space-y-1.5">
               {storageBarWidth != null ? (
                 <>
-                  <div className="h-2 w-full rounded-full bg-warm-100 overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className={cn(
                         'h-full rounded-full transition-all duration-500',
-                        storageOverCap ? 'bg-amber-500' : 'bg-jade-500',
+                        storageOverCap ? 'bg-amber-500' : 'bg-brand',
                       )}
                       style={{ width: `${storageBarWidth}%` }}
                     />
                   </div>
-                  <div className="flex justify-between gap-2 text-xs text-slate-500 tabular-nums">
+                  <div className="flex justify-between gap-2 text-xs text-ink-muted tabular-nums">
                     <span>
                       {storagePct != null
                         ? `已用 ${storagePct.toFixed(1)}%`
@@ -276,7 +286,7 @@ function OverviewPanel() {
                   </div>
                 </>
               ) : (
-                <p className="text-sm text-slate-500">暂时无法读取存储配额，请稍后重试。</p>
+                <p className="text-sm text-ink-muted">暂时无法读取存储配额，请稍后重试。</p>
               )}
             </div>
           </>
@@ -287,17 +297,20 @@ function OverviewPanel() {
       <div className="grid grid-cols-2 gap-4">
         <Link
           to="/personal-center?tab=subscription"
-          className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer no-underline text-inherit block"
+          className="rounded-xl border border-default bg-surface p-4 text-left shadow-e1 hover:border-brand/35 hover:shadow-e2 transition-all cursor-pointer no-underline text-inherit block"
         >
-          <CreditCard size={20} className="text-jade-500 mb-2" />
-          <div className="font-semibold text-slate-900 text-sm">升级方案</div>
-          <div className="text-xs text-slate-500 mt-0.5">解锁更多用量</div>
+          <CreditCard size={20} className="text-brand mb-2" />
+          <div className="font-semibold text-ink-primary text-sm">升级方案</div>
+          <div className="text-xs text-ink-muted mt-0.5">解锁更多用量</div>
         </Link>
-        <button className="bg-white rounded-xl border border-warm-200 p-4 text-left hover:border-jade-200 hover:shadow-glass transition-all cursor-pointer">
-          <Download size={20} className="text-jade-500 mb-2" />
-          <div className="font-semibold text-slate-900 text-sm">导出数据</div>
-          <div className="text-xs text-slate-500 mt-0.5">下载全部档案</div>
-        </button>
+        <Link
+          to="/personal-center?tab=cloud"
+          className="rounded-xl border border-default bg-surface p-4 text-left shadow-e1 hover:border-brand/35 hover:shadow-e2 transition-all cursor-pointer no-underline text-inherit block"
+        >
+          <Download size={20} className="text-brand mb-2" />
+          <div className="font-semibold text-ink-primary text-sm">导出数据</div>
+          <div className="text-xs text-ink-muted mt-0.5">前往云端存储，执行档案与备份导入/导出</div>
+        </Link>
       </div>
     </div>
   )
@@ -466,7 +479,7 @@ function SubscriptionPanel() {
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-56 rounded-2xl bg-slate-100 animate-pulse md:min-h-[22rem]" />
+          <div key={i} className="h-56 rounded-2xl bg-muted animate-pulse md:min-h-[22rem]" />
         ))}
       </div>
     )
@@ -475,8 +488,8 @@ function SubscriptionPanel() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="font-semibold text-slate-900 mb-1">订阅方案</h3>
-        <p className="text-sm text-slate-500">
+        <h3 className="font-semibold text-ink-primary mb-1">订阅方案</h3>
+        <p className="text-sm text-ink-muted">
           所列 tokens 均为订阅配额；自备 API Key 用量在个人中心另行统计。
         </p>
       </div>
@@ -488,50 +501,36 @@ function SubscriptionPanel() {
             className={cn(
               'relative flex flex-col rounded-2xl border-2 p-5 transition-all h-full min-h-[22rem]',
               currentTier === plan.id
-                ? plan.color === 'jade'
-                  ? 'border-jade-400 bg-jade-50 shadow-jade'
-                  : plan.color === 'amber'
-                    ? 'border-amber-400 bg-amber-50 shadow-amber'
-                    : plan.color === 'sky'
-                      ? 'border-sky-400 bg-sky-50'
-                      : 'border-slate-400 bg-slate-50'
-                : 'border-warm-200 bg-white hover:border-jade-200',
+                ? 'border-brand border-2 bg-brand/12 shadow-e2 ring-1 ring-brand/25'
+                : 'border-default bg-surface hover:border-brand/40',
               plan.popular && 'md:scale-[1.02] z-[1]',
             )}
           >
             {plan.popular && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="bg-jade-500 text-white text-xs px-3 py-1 rounded-full font-medium shadow-jade">
+                <span className="bg-brand text-ink-inverse text-xs px-3 py-1 rounded-full font-medium shadow-e2">
                   最受欢迎
                 </span>
               </div>
             )}
 
             <div className="text-center mb-4">
-              <h4 className="font-bold text-slate-900">{plan.name}</h4>
+              <h4 className="font-bold text-ink-primary">{plan.name}</h4>
               <div className="mt-2 flex items-baseline justify-center gap-0.5 flex-wrap">
-                <span className="text-2xl font-bold text-slate-900">{plan.price}</span>
-                <span className="text-slate-500 text-sm">{plan.priceTail}</span>
+                <span className="text-2xl font-bold text-ink-primary">{plan.price}</span>
+                <span className="text-ink-muted text-sm">{plan.priceTail}</span>
               </div>
-              <div className="mt-1 text-xs text-slate-500">{plan.tokenLine}</div>
+              <div className="mt-1 text-xs text-ink-muted">{plan.tokenLine}</div>
             </div>
 
             <ul className="space-y-2 mb-4 flex-1 min-h-0">
               {plan.features.map(f => (
-                <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
+                <li key={f} className="flex items-start gap-2 text-sm text-ink-secondary">
                   <Check
                     size={14}
                     className={cn(
                       'flex-shrink-0 mt-0.5',
-                      currentTier === plan.id
-                        ? plan.color === 'amber'
-                          ? 'text-amber-600'
-                          : plan.color === 'jade'
-                            ? 'text-jade-500'
-                            : plan.color === 'sky'
-                              ? 'text-sky-600'
-                              : 'text-slate-500'
-                        : 'text-slate-400',
+                      currentTier === plan.id ? 'text-brand' : 'text-ink-muted',
                     )}
                   />
                   {f}
@@ -546,14 +545,10 @@ function SubscriptionPanel() {
               className={cn(
                 'w-full shrink-0 min-h-[2.5rem] py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer mt-auto',
                 currentTier === plan.id || switching
-                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                  : plan.color === 'jade'
-                    ? 'bg-jade-500 text-white hover:bg-jade-600 shadow-jade'
-                    : plan.color === 'amber'
-                      ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber'
-                      : plan.color === 'sky'
-                        ? 'bg-sky-600 text-white hover:bg-sky-700'
-                        : 'bg-slate-900 text-white hover:bg-slate-800',
+                  ? 'bg-muted text-ink-muted cursor-not-allowed opacity-75'
+                  : plan.id === 'free'
+                    ? 'bg-muted text-ink-primary border border-default hover:bg-subtle'
+                    : 'bg-brand text-ink-inverse hover:bg-brand-hover shadow-e1',
               )}
             >
               {subscriptionPlanButtonLabel(currentTier, plan.id, switching)}
@@ -564,11 +559,11 @@ function SubscriptionPanel() {
 
       {/* 用量警告 */}
       {sub && sub.usage_percent > 70 && (
-        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+        <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/80 rounded-xl">
           <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <div className="font-medium text-amber-800 text-sm">用量即将达到上限</div>
-            <div className="text-amber-700 text-xs mt-1">
+            <div className="font-medium text-amber-800 dark:text-amber-200 text-sm">用量即将达到上限</div>
+            <div className="text-amber-700 dark:text-amber-300/95 text-xs mt-1">
               已使用 {sub.usage_percent.toFixed(1)}%，建议升级到更高订阅方案以获得更多订阅 tokens。
             </div>
           </div>
@@ -730,20 +725,20 @@ function AccountPanel() {
   return (
     <div className="space-y-6">
       {/* 基本信息 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">基本信息</h3>
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+        <h3 className="font-semibold text-ink-primary mb-4">基本信息</h3>
         <div className="space-y-4">
           {/* 头像上传：渐变外环 + 内嵌图（同域 /api 代理，避免直连 MinIO 裂图）*/}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">头像</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">头像</label>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <div className="relative flex-shrink-0">
                 <div className="relative h-[5.5rem] w-[5.5rem] sm:h-24 sm:w-24">
                   <div
-                    className="absolute inset-0 rounded-full bg-gradient-to-br from-jade-400 via-jade-500 to-jade-700 shadow-jade-lg ring-1 ring-jade-300/25"
+                    className="absolute inset-0 rounded-full bg-gradient-to-br from-brand via-brand-hover to-brand-active shadow-e3 ring-1 ring-brand/25"
                     aria-hidden
                   />
-                  <div className="absolute inset-[3px] overflow-hidden rounded-full bg-warm-50 ring-1 ring-white/60 shadow-inner">
+                  <div className="absolute inset-[3px] overflow-hidden rounded-full bg-muted ring-1 ring-surface/50 shadow-inner">
                     {avatarPreview || (user?.avatar_url && !avatarImgError) ? (
                       <img
                         src={(avatarPreview || user?.avatar_url) as string}
@@ -754,14 +749,14 @@ function AccountPanel() {
                         decoding="async"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-jade-500 to-jade-700 text-2xl font-bold tracking-tight text-white">
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand to-brand-hover text-2xl font-bold tracking-tight text-ink-inverse">
                         {user?.username?.charAt(0)?.toUpperCase() || 'U'}
                       </div>
                     )}
                   </div>
                 </div>
                 {avatarUploading && (
-                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/50 ring-1 ring-inset ring-white/20">
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 ring-1 ring-inset ring-white/15 dark:ring-ink-inverse/15">
                     <RefreshCw size={20} className="text-white animate-spin" />
                   </div>
                 )}
@@ -778,7 +773,7 @@ function AccountPanel() {
                 />
                 <label
                   htmlFor="avatar-upload"
-                  className="px-4 py-2 bg-jade-50 text-jade-700 border border-jade-200 rounded-xl text-sm font-medium hover:bg-jade-100 transition-colors cursor-pointer text-center"
+                  className="px-4 py-2 bg-brand/12 text-brand border border-brand/35 rounded-xl text-sm font-medium hover:bg-brand/18 transition-colors cursor-pointer text-center"
                 >
                   更换头像
                 </label>
@@ -786,7 +781,7 @@ function AccountPanel() {
                   <button
                     onClick={handleUploadAvatar}
                     disabled={avatarUploading}
-                    className="px-4 py-2 bg-jade-500 text-white rounded-xl text-sm font-medium hover:bg-jade-600 disabled:opacity-50 transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-brand text-ink-inverse rounded-xl text-sm font-medium hover:bg-brand-hover disabled:opacity-50 transition-colors cursor-pointer"
                   >
                     确认上传
                   </button>
@@ -799,35 +794,35 @@ function AccountPanel() {
                     删除头像
                   </button>
                 )}
-                <p className="text-xs text-slate-400">支持 JPG、PNG、GIF、WebP，最大 5MB</p>
+                <p className="text-xs text-ink-muted">支持 JPG、PNG、GIF、WebP，最大 5MB</p>
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">用户名</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">用户名</label>
             <input
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              className="w-full px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
+              className="w-full px-3 py-2.5 border border-default rounded-xl focus:ring-2 focus:ring-brand/40 focus:border-brand/40 outline-none bg-muted text-sm text-ink-primary"
               minLength={2}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">邮箱</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">邮箱</label>
             <input
               type="email"
               defaultValue={user?.email}
               disabled
-              className="w-full px-3 py-2.5 border border-warm-200 rounded-xl bg-slate-50 text-slate-500 text-sm"
+              className="w-full px-3 py-2.5 border border-default rounded-xl bg-muted text-ink-muted text-sm"
             />
-            <p className="text-xs text-slate-400 mt-1">邮箱暂不支持修改</p>
+            <p className="text-xs text-ink-muted mt-1">邮箱暂不支持修改</p>
           </div>
           <button
             onClick={handleSaveProfile}
             disabled={saving}
-            className="px-5 py-2.5 bg-jade-500 text-white rounded-xl font-medium hover:bg-jade-600 disabled:opacity-50 transition-all shadow-jade text-sm cursor-pointer"
+            className="px-5 py-2.5 bg-brand text-ink-inverse rounded-xl font-medium hover:bg-brand-hover disabled:opacity-50 transition-all shadow-e2 text-sm cursor-pointer"
           >
             {saving ? '保存中...' : '保存修改'}
           </button>
@@ -835,53 +830,53 @@ function AccountPanel() {
       </div>
 
       {/* 修改密码 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">修改密码</h3>
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+        <h3 className="font-semibold text-ink-primary mb-4">修改密码</h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">旧密码</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">旧密码</label>
             <div className="relative">
               <input
                 type={showOld ? 'text' : 'password'}
                 value={oldPassword}
                 onChange={e => setOldPassword(e.target.value)}
                 placeholder="输入旧密码"
-                className="w-full px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
+                className="w-full px-3 py-2.5 border border-default rounded-xl focus:ring-2 focus:ring-brand/40 focus:border-brand/40 outline-none bg-muted text-sm text-ink-primary"
               />
-              <button onClick={() => setShowOld(!showOld)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-jade-600 cursor-pointer p-1">
+              <button onClick={() => setShowOld(!showOld)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-brand cursor-pointer p-1">
                 {showOld ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">新密码</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">新密码</label>
             <div className="relative">
               <input
                 type={showNew ? 'text' : 'password'}
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="至少 6 位"
-                className="w-full px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
+                className="w-full px-3 py-2.5 border border-default rounded-xl focus:ring-2 focus:ring-brand/40 focus:border-brand/40 outline-none bg-muted text-sm text-ink-primary"
               />
-              <button onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-jade-600 cursor-pointer p-1">
+              <button onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-brand cursor-pointer p-1">
                 {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">确认新密码</label>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">确认新密码</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="再次输入新密码"
-              className="w-full px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 focus:border-jade-400 outline-none bg-warm-50 text-sm"
+              className="w-full px-3 py-2.5 border border-default rounded-xl focus:ring-2 focus:ring-brand/40 focus:border-brand/40 outline-none bg-muted text-sm text-ink-primary"
             />
           </div>
           <button
             onClick={handleChangePassword}
             disabled={passwordSaving}
-            className="px-5 py-2.5 bg-slate-800 text-white rounded-xl font-medium hover:bg-slate-700 disabled:opacity-50 transition-all text-sm cursor-pointer"
+            className="px-5 py-2.5 bg-subtle text-ink-primary rounded-xl font-medium hover:bg-muted border border-default disabled:opacity-50 transition-all text-sm cursor-pointer"
           >
             {passwordSaving ? '修改中...' : '修改密码'}
           </button>
@@ -889,9 +884,9 @@ function AccountPanel() {
       </div>
 
       {/* 危险操作 */}
-      <div className="bg-white rounded-2xl border border-red-200 p-6">
+      <div className="rounded-2xl border border-red-300 dark:border-red-800/90 bg-surface p-6">
         <h3 className="font-semibold text-red-600 mb-2">危险操作</h3>
-        <p className="text-sm text-slate-500 mb-4">注销账号后，所有数据将被永久删除且无法恢复。</p>
+        <p className="text-sm text-ink-muted mb-4">注销账号后，所有数据将被永久删除且无法恢复。</p>
         <button className="px-5 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium hover:bg-red-100 transition-all text-sm cursor-pointer">
           注销账号
         </button>
@@ -904,44 +899,79 @@ function AccountPanel() {
 function AppearancePanel() {
   const [, setPrefs] = useState<any>(null)
   const [, setSaving] = useState(false)
-  const [localPrefs, setLocalPrefs] = useState({
+  const bgFileInputRef = useRef<HTMLInputElement>(null)
+  const [bgUploading, setBgUploading] = useState(false)
+  type LocalPrefsShape = {
+    theme: string
+    primary_color: string
+    card_style: string
+    font_size: string
+    app_background_url: string
+    /** 与后端一致：'' 表示沿用 URL 推断 */
+    app_background_kind: '' | 'image' | 'video'
+  }
+  const [localPrefs, setLocalPrefs] = useState<LocalPrefsShape>({
     theme: 'light',
     primary_color: 'jade',
     card_style: 'glass',
     font_size: 'medium',
-    app_background_url: '' as string,
+    app_background_url: '',
+    app_background_kind: '',
   })
 
+  const applyFromLocal = (p: LocalPrefsShape) => {
+    const rawUrl = p.app_background_url.trim()
+    const k = p.app_background_kind
+    applyTheme({
+      mode: p.theme as ThemeMode,
+      primaryColor: p.primary_color as PrimaryColor,
+      cardStyle: p.card_style as CardStyle,
+      fontSize: p.font_size as FontSize,
+      appBackgroundUrl: rawUrl || null,
+      appBackgroundKind:
+        k === 'video' ? 'video' : k === 'image' ? 'image' : rawUrl ? inferAppBackgroundKind(rawUrl) : null,
+    })
+  }
+
   useEffect(() => {
-    preferencesApi.get().then((res: any) => {
+    preferencesApi.get().then((raw) => {
+      const res = raw as unknown as Record<string, unknown>
       setPrefs(res)
-      setLocalPrefs({
-        theme: res.theme || 'light',
-        primary_color: res.primary_color || 'jade',
-        card_style: res.card_style || 'glass',
-        font_size: res.font_size || 'medium',
-        app_background_url: typeof res.app_background_url === 'string' ? res.app_background_url : '',
-      })
+      const url = typeof res.app_background_url === 'string' ? res.app_background_url : ''
+      const kindRaw = res.app_background_kind
+      const nk: LocalPrefsShape = {
+        theme: (res.theme as string) || 'light',
+        primary_color: (res.primary_color as string) || 'jade',
+        card_style: (res.card_style as string) || 'glass',
+        font_size: (res.font_size as string) || 'medium',
+        app_background_url: url,
+        app_background_kind: kindRaw === 'video' ? 'video' : kindRaw === 'image' ? 'image' : '',
+      }
+      setLocalPrefs(nk)
+      applyFromLocal(nk)
     })
   }, [])
 
   const updatePref = async (key: string, value: string) => {
-    const newPrefs = { ...localPrefs, [key]: value }
+    let newPrefs: LocalPrefsShape = { ...localPrefs, [key]: value }
+    if (key === 'app_background_url') {
+      const t = value.trim()
+      newPrefs = {
+        ...newPrefs,
+        app_background_kind: t ? (inferAppBackgroundKind(t) === 'video' ? 'video' : 'image') : '',
+      }
+    }
     setLocalPrefs(newPrefs)
-
-    // 乐观更新主题预览
-    applyTheme({
-      mode: newPrefs.theme as ThemeMode,
-      primaryColor: newPrefs.primary_color as PrimaryColor,
-      cardStyle: newPrefs.card_style as CardStyle,
-      fontSize: newPrefs.font_size as FontSize,
-      appBackgroundUrl: newPrefs.app_background_url || null,
-    })
+    applyFromLocal(newPrefs)
 
     setSaving(true)
     try {
       if (key === 'app_background_url') {
-        await preferencesApi.update({ app_background_url: value.trim() || null })
+        const t = value.trim()
+        await preferencesApi.update({
+          app_background_url: t || null,
+          app_background_kind: t ? (inferAppBackgroundKind(t) === 'video' ? 'video' : 'image') : null,
+        })
       } else {
         await preferencesApi.update({ [key]: value })
       }
@@ -952,6 +982,41 @@ function AppearancePanel() {
     }
   }
 
+  const syncPrefsFromServerObject = (raw: Record<string, unknown>) => {
+    const url = typeof raw.app_background_url === 'string' ? raw.app_background_url : ''
+    const kindRaw = raw.app_background_kind
+    const nk: LocalPrefsShape = {
+      theme: (raw.theme as string) || 'light',
+      primary_color: (raw.primary_color as string) || 'jade',
+      card_style: (raw.card_style as string) || 'glass',
+      font_size: (raw.font_size as string) || 'medium',
+      app_background_url: url,
+      app_background_kind: kindRaw === 'video' ? 'video' : kindRaw === 'image' ? 'image' : '',
+    }
+    setLocalPrefs(nk)
+    applyFromLocal(nk)
+  }
+
+  const handleAppBgFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBgUploading(true)
+    try {
+      const raw = await preferencesApi.uploadAppBackground(file)
+      const out = raw as unknown as {
+        preferences: Record<string, unknown>
+        kind: 'image' | 'video'
+      }
+      syncPrefsFromServerObject(out.preferences)
+      toast.success(out.kind === 'video' ? '视频背景已上传并应用' : '图片/GIF/WebP 背景已上传并应用')
+    } catch (err) {
+      toast.error(isApiError(err) ? mapErrorToMessage(err) : '上传失败')
+    } finally {
+      setBgUploading(false)
+    }
+  }
+
   const themeOptions = [
     { value: 'light', label: '浅色', icon: Sun },
     { value: 'dark', label: '深色', icon: Moon },
@@ -959,7 +1024,7 @@ function AppearancePanel() {
   ]
 
   const cardStyleOptions = [
-    { value: 'glass', label: '毛玻璃', desc: '半透明玻璃态效果' },
+    { value: 'glass', label: '液态玻璃', desc: '半透明 + 慢旋柔和高光，背景模糊' },
     { value: 'minimal', label: '简约', desc: '干净的无边框设计' },
     { value: 'elevated', label: '悬浮', desc: '突出阴影层次感' },
   ]
@@ -970,11 +1035,14 @@ function AppearancePanel() {
     { value: 'large', label: '大' },
   ]
 
+  /** DIY 各区块外壳随「卡片风格」变化；暗色下走 surface/border token */
+  const diyShell = cn(panelClassFromCardStyle(localPrefs.card_style as CardStyle), 'rounded-2xl p-6')
+
   return (
     <div className="space-y-6">
       {/* 主题 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">主题模式</h3>
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-4">主题模式</h3>
         <div className="flex gap-3">
           {themeOptions.map(opt => {
             const Icon = opt.icon
@@ -985,8 +1053,8 @@ function AppearancePanel() {
                 className={cn(
                   'flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all cursor-pointer font-medium text-sm',
                   localPrefs.theme === opt.value
-                    ? 'border-jade-400 bg-jade-50 text-jade-700'
-                    : 'border-warm-200 hover:border-jade-200 text-slate-600'
+                    ? 'border-brand bg-subtle text-ink-secondary shadow-e1'
+                    : 'border-default hover:border-brand/50 text-ink-muted'
                 )}
               >
                 <Icon size={16} />
@@ -998,8 +1066,8 @@ function AppearancePanel() {
       </div>
 
       {/* 主色调 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">主色调</h3>
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-4">主色调</h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {COLOR_OPTIONS.map(color => (
             <button
@@ -1008,8 +1076,8 @@ function AppearancePanel() {
               className={cn(
                 'relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer',
                 localPrefs.primary_color === color.value
-                  ? 'border-current bg-opacity-10 scale-105'
-                  : 'border-warm-200 hover:scale-105'
+                  ? 'border-current bg-opacity-10 scale-105 shadow-e1'
+                  : 'border-default hover:scale-105'
               )}
               style={{ color: color.hex }}
             >
@@ -1017,7 +1085,7 @@ function AppearancePanel() {
                 className="w-10 h-10 rounded-full shadow-md"
                 style={{ backgroundColor: color.hex }}
               />
-              <span className="text-xs font-medium text-slate-600">{color.label}</span>
+              <span className="text-xs font-medium text-ink-muted">{color.label}</span>
               {localPrefs.primary_color === color.value && (
                 <Check size={14} className="absolute top-2 right-2" />
               )}
@@ -1027,8 +1095,8 @@ function AppearancePanel() {
       </div>
 
       {/* 卡片风格 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">卡片风格</h3>
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-4">卡片风格</h3>
         <div className="flex gap-3">
           {cardStyleOptions.map(opt => (
             <button
@@ -1037,20 +1105,20 @@ function AppearancePanel() {
               className={cn(
                 'flex-1 text-left p-4 rounded-xl border-2 transition-all cursor-pointer',
                 localPrefs.card_style === opt.value
-                  ? 'border-jade-400 bg-jade-50'
-                  : 'border-warm-200 hover:border-jade-200'
+                  ? 'border-brand bg-subtle shadow-e1'
+                  : 'border-default hover:border-brand/40'
               )}
             >
-              <div className="font-medium text-sm text-slate-900">{opt.label}</div>
-              <div className="text-xs text-slate-500 mt-1">{opt.desc}</div>
+              <div className="font-medium text-sm text-ink-primary">{opt.label}</div>
+              <div className="text-xs text-ink-muted mt-1">{opt.desc}</div>
             </button>
           ))}
         </div>
       </div>
 
       {/* 字号 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">字号</h3>
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-4">字号</h3>
         <div className="flex gap-3">
           {fontSizeOptions.map(opt => (
             <button
@@ -1059,8 +1127,8 @@ function AppearancePanel() {
               className={cn(
                 'flex-1 py-3 rounded-xl border-2 font-medium text-sm transition-all cursor-pointer',
                 localPrefs.font_size === opt.value
-                  ? 'border-jade-400 bg-jade-50 text-jade-700'
-                  : 'border-warm-200 hover:border-jade-200 text-slate-600'
+                  ? 'border-brand bg-subtle text-ink-secondary shadow-e1'
+                  : 'border-default hover:border-brand/40 text-ink-muted'
               )}
             >
               {opt.label}
@@ -1069,57 +1137,80 @@ function AppearancePanel() {
         </div>
       </div>
 
-      {/* 全站背景图 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-1 flex items-center gap-2">
-          <Image size={18} className="text-jade-600" />
-          网页应用背景图
+      {/* 全站背景：本机素材或外链（静图/GIF/CSS）与视频链路分离 */}
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-1 flex items-center gap-2">
+          <Image size={18} className="text-brand" />
+          网页应用背景
         </h3>
-        <p className="text-sm text-slate-500 mb-4">
-          登录后主导航与主内容区背后的全屏背景。请使用可公网访问的 <code className="text-xs bg-warm-100 px-1 rounded">https://</code>{' '}
-          图片地址；留空则恢复默认浅色底。
+        <p className="text-sm text-ink-muted mb-4 leading-relaxed">
+          铺在登录后<strong>导航栏与主内容背后</strong>。<strong>本地上传</strong>会存入你的对象存储并从同源地址展示（GIF 动画、短片均可）；也可用下方输入框粘贴{' '}
+          <code className="text-xs bg-muted px-1 rounded text-ink-primary">https://</code> / <code className="text-xs bg-muted px-1 rounded text-ink-primary">data:</code>{' '}
+          等资源地址。视频外链请使用可直接访问的{' '}
+          <code className="text-xs bg-muted px-1 rounded text-ink-primary">.mp4</code> /{' '}
+          <code className="text-xs bg-muted px-1 rounded text-ink-primary">.webm</code> 等结尾链接；留空为默认浅色底。
         </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="url"
-            value={localPrefs.app_background_url}
-            onChange={(e) => setLocalPrefs((p) => ({ ...p, app_background_url: e.target.value }))}
-            placeholder="https://example.com/bg.jpg"
-            className="flex-1 px-3 py-2.5 border border-warm-200 rounded-xl focus:ring-2 focus:ring-jade-400 outline-none bg-warm-50 text-sm"
-          />
+        <input
+          ref={bgFileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+          className="sr-only"
+          onChange={handleAppBgFile}
+        />
+        <div className="flex flex-col gap-3 mb-4">
           <button
             type="button"
-            onClick={() => updatePref('app_background_url', localPrefs.app_background_url)}
-            className="px-4 py-2.5 bg-jade-500 text-white rounded-xl text-sm font-medium hover:bg-jade-600 shadow-jade transition-colors cursor-pointer whitespace-nowrap"
+            disabled={bgUploading}
+            onClick={() => bgFileInputRef.current?.click()}
+            className="w-full sm:w-auto px-4 py-2.5 border-2 border-brand text-ink-secondary bg-subtle rounded-xl text-sm font-medium hover:bg-muted/70 disabled:opacity-50 transition-colors cursor-pointer"
           >
-            应用
+            {bgUploading ? '上传中…' : '从本机选择图片 / GIF / WebP / 短片'}
           </button>
-          <button
-            type="button"
-            onClick={() => updatePref('app_background_url', '')}
-            className="px-4 py-2.5 border border-warm-200 rounded-xl text-sm text-slate-600 hover:bg-warm-50 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            清除
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              value={localPrefs.app_background_url}
+              onChange={(e) =>
+                setLocalPrefs((p) => ({
+                  ...p,
+                  app_background_url: e.target.value,
+                }))
+              }
+              placeholder="https://… 或同源 /api/… ，或先在上方本机上传自动生成"
+              className="flex-1 px-3 py-2.5 border border-default rounded-xl focus:ring-2 focus:ring-brand/40 outline-none bg-muted/40 text-sm text-ink-primary"
+            />
+            <button
+              type="button"
+              onClick={() => updatePref('app_background_url', localPrefs.app_background_url)}
+              className="px-4 py-2.5 bg-brand text-ink-inverse rounded-xl text-sm font-medium hover:bg-brand-hover shadow-e2 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              应用链接
+            </button>
+            <button
+              type="button"
+              onClick={() => updatePref('app_background_url', '')}
+              className="px-4 py-2.5 border border-default rounded-xl text-sm text-ink-muted hover:bg-muted/60 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              清除
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 预览 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">预览</h3>
+      <div className={diyShell}>
+        <h3 className="font-semibold text-ink-primary mb-4">预览</h3>
         <div
-          className={cn(
-            'p-6 rounded-xl',
-            localPrefs.card_style === 'glass' && 'bg-white/70 backdrop-blur-md border border-jade-200 shadow-glass',
-            localPrefs.card_style === 'minimal' && 'bg-white border border-transparent',
-            localPrefs.card_style === 'elevated' && 'bg-white border border-warm-200 shadow-lg',
-          )}
+          className={cn('p-6 rounded-xl', panelClassFromCardStyle(localPrefs.card_style as CardStyle))}
           style={{ fontSize: localPrefs.font_size === 'small' ? '14px' : localPrefs.font_size === 'large' ? '18px' : '16px' }}
         >
-          <div className="font-bold text-slate-900 mb-2" style={{ color: localPrefs.primary_color === 'jade' ? '#10B981' : localPrefs.primary_color === 'amber' ? '#F59E0B' : localPrefs.primary_color === 'rose' ? '#F43F5E' : localPrefs.primary_color === 'sky' ? '#0EA5E9' : localPrefs.primary_color === 'violet' ? '#8B5CF6' : '#22C55E' }}>
+          <div
+            className="font-bold text-ink-primary mb-2"
+            style={{ color: COLOR_OPTIONS.find((c) => c.value === localPrefs.primary_color)?.hex }}
+          >
             卡片预览
           </div>
-          <div className="text-slate-600 leading-relaxed">
+          <div className="text-ink-muted leading-relaxed">
             这是一个示例卡片，用于预览主题样式效果。文字大小、颜色和卡片风格都已根据你的设置进行调整。
           </div>
         </div>
@@ -1128,78 +1219,208 @@ function AppearancePanel() {
   )
 }
 
+/** 从用户上传的 JSON 解析出若干个角色备份包（单包或账号 bundle） */
+function parseArchiveImportPackages(root: unknown): Record<string, unknown>[] {
+  if (root === null || typeof root !== 'object') throw new Error('INVALID_BACKUP_FORMAT')
+  const o = root as Record<string, unknown>
+  const isRolePkg = (x: unknown): x is Record<string, unknown> =>
+    !!x &&
+    typeof x === 'object' &&
+    ((x as Record<string, unknown>).format === 'mtc-archive-roles-v1' ||
+      (x as Record<string, unknown>).format === 'mtc-archive-roles-v2')
+
+  if (o.format === 'mtc-user-archives-bundle-v1') {
+    const arr = o.archives
+    if (!Array.isArray(arr) || arr.length === 0) throw new Error('EMPTY_BUNDLE')
+    const pkgs = arr.filter(isRolePkg)
+    if (pkgs.length === 0) throw new Error('INVALID_BACKUP_FORMAT')
+    return pkgs
+  }
+  if (isRolePkg(o)) return [o]
+  throw new Error('INVALID_BACKUP_FORMAT')
+}
+
+function createParamsFromRolesBackup(pkg: Record<string, unknown>, fallbackIndex: number) {
+  const raw = pkg.archive
+  const meta = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  let name = typeof meta.name === 'string' ? meta.name.trim() : ''
+  if (!name) name = `导入的档案 ${fallbackIndex}`
+  const description = typeof meta.description === 'string' ? meta.description : undefined
+  const t = typeof meta.archive_type === 'string' ? meta.archive_type.trim() : ''
+  const archive_type = t.length > 0 ? t : 'family'
+  return { name, description, archive_type }
+}
+
+async function restoreRolesPackagesAsNewArchives(pkgs: Record<string, unknown>[]): Promise<number> {
+  let n = 0
+  for (let i = 0; i < pkgs.length; i++) {
+    const pkg = pkgs[i]!
+    const body = createParamsFromRolesBackup(pkg, i + 1)
+    const created = (await archiveApi.create(body)) as { id?: number }
+    const nid = typeof created?.id === 'number' ? created.id : NaN
+    if (!Number.isFinite(nid) || nid < 1) throw new Error('CREATE_ARCHIVE_FAILED')
+    await archiveApi.restoreRolesBackup(nid, pkg)
+    n++
+  }
+  return n
+}
+
 /** 云端存储面板 */
 function CloudPanel() {
-  const {
-    summaries, lastUpdated, syncEnabled, syncing,
-    toggleSync, forceSync, clearMemory, getContextForPrompt,
-    importMemoryFromJsonFile,
-  } = useAIContext()
-  const [exporting, setExporting] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const importInputRef = useRef<HTMLInputElement | null>(null)
+  const { summaries, lastUpdated, syncEnabled, syncing, toggleSync, forceSync, clearMemory } = useAIContext()
+  const queryClient = useQueryClient()
+  const [archiveExportBusy, setArchiveExportBusy] = useState(false)
+  const [archiveImportBusy, setArchiveImportBusy] = useState(false)
+  const importArchiveInputRef = useRef<HTMLInputElement | null>(null)
 
-  const handleExport = async () => {
-    setExporting(true)
+  const handleExportAllArchives = async () => {
+    if (archiveExportBusy) return
+    setArchiveExportBusy(true)
     try {
-      const data = {
-        exported_at: new Date().toISOString(),
-        ai_memory: {
-          summaries,
-          last_updated: lastUpdated,
-          prompt_context: getContextForPrompt(),
-        },
+      const raw = await archiveApi.list()
+      const archives = Array.isArray(raw) ? raw : []
+      const bundles: unknown[] = []
+      for (const a of archives as { id: number }[]) {
+        if (!a?.id) continue
+        const blob = await archiveApi.downloadRolesBackup(a.id, true, true)
+        const text = await blob.text()
+        bundles.push(JSON.parse(text))
       }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `mtc-ai-memory-${new Date().toISOString().split('T')[0]}.json`
-      a.click()
+      const mega = {
+        format: 'mtc-user-archives-bundle-v1',
+        exported_at: new Date().toISOString(),
+        archives: bundles,
+      }
+      const out = new Blob([JSON.stringify(mega, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      })
+      const url = URL.createObjectURL(out)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `mtc-all-archives-${new Date().toISOString().slice(0, 10)}.json`
+      anchor.rel = 'noopener'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
       URL.revokeObjectURL(url)
-      toast.success('导出成功')
-    } catch {
-      toast.error('导出失败')
+      toast.success(`已导出 ${bundles.length} 个档案（含角色、记忆与关系网）`)
+    } catch (e) {
+      toast.error(isApiError(e) ? mapErrorToMessage(e) : '导出失败，请稍后重试')
     } finally {
-      setExporting(false)
+      setArchiveExportBusy(false)
     }
   }
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportArchiveFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    setImporting(true)
+    setArchiveImportBusy(true)
     try {
-      await importMemoryFromJsonFile(file)
-      toast.success('导入成功，记忆已更新')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '导入失败'
-      toast.error(msg)
+      let data: unknown
+      try {
+        data = JSON.parse(await file.text()) as unknown
+      } catch {
+        toast.error('文件不是合法的 JSON')
+        return
+      }
+      let pkgs: Record<string, unknown>[]
+      try {
+        pkgs = parseArchiveImportPackages(data)
+      } catch (err) {
+        if (err instanceof Error) {
+          if (err.message === 'EMPTY_BUNDLE') toast.error('bundle 为空或不含有效档案备份')
+          else if (err.message === 'INVALID_BACKUP_FORMAT')
+            toast.error('不是 MTC 档案备份（需 mtc-archive-roles-v1/v2，或 bundle mtc-user-archives-bundle-v1）')
+          else toast.error(err.message)
+        } else toast.error('无法解析备份')
+        return
+      }
+      const n = await restoreRolesPackagesAsNewArchives(pkgs)
+      await queryClient.invalidateQueries({ queryKey: ['archives'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      toast.success(n === 1 ? '已新建 1 个档案并写入备份内容' : `已新建 ${n} 个档案并写入备份内容`)
+    } catch (e) {
+      if (e instanceof Error && e.message === 'CREATE_ARCHIVE_FAILED') {
+        toast.error('新建档案失败，请稍后重试')
+      } else {
+        toast.error(isApiError(e) ? mapErrorToMessage(e) : '导入失败，请稍后重试')
+      }
     } finally {
-      setImporting(false)
+      setArchiveImportBusy(false)
     }
   }
 
   return (
     <div className="space-y-6">
+      {/* 账号级档案备份（服务端数据） */}
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="rounded-lg bg-brand/12 p-2 text-brand shrink-0">
+            <HardDrive className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0 space-y-1">
+            <h3 className="font-semibold text-ink-primary">档案与关系网备份</h3>
+            <p className="text-sm text-ink-muted leading-relaxed">
+              <strong>导出</strong>
+              ：单个 JSON 包含<strong>全部档案</strong>下的成员、记忆与 Mnemo 关系网。<strong>导入</strong>
+              ：会为备份中的<strong>每一份</strong>档案<strong>新建</strong>服务端档案（不会覆盖同名旧档案）。
+            </p>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              若在<strong>已有</strong>某档案内追加成员而非新建档案，请到{' '}
+              <Link to="/archives" className="text-brand font-medium hover:underline">
+                档案库
+              </Link>{' '}
+              → 该档案详情 → 「从备份导入」。
+            </p>
+          </div>
+        </div>
+        <input
+          ref={importArchiveInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="sr-only"
+          onChange={handleImportArchiveFile}
+        />
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => importArchiveInputRef.current?.click()}
+            disabled={archiveImportBusy || archiveExportBusy}
+            className="w-full sm:w-auto px-5 py-2.5 border-2 border-brand text-ink-secondary bg-brand/10 rounded-xl font-medium hover:bg-brand/16 disabled:opacity-50 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Upload size={15} />
+            {archiveImportBusy ? '正在导入备份…' : '导入备份 JSON'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportAllArchives()}
+            disabled={archiveExportBusy || archiveImportBusy}
+            className="w-full sm:w-auto px-5 py-2.5 bg-brand text-ink-inverse rounded-xl font-medium hover:bg-brand-hover disabled:opacity-50 transition-all shadow-e2 text-sm flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Download size={15} />
+            {archiveExportBusy ? '正在打包全部档案…' : '导出全部档案 JSON'}
+          </button>
+        </div>
+      </div>
+
       {/* AI 记忆同步 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
+      <div className="rounded-2xl border border-default bg-surface p-6 shadow-e1">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="font-semibold text-slate-900">AI 模型记忆同步</h3>
-            <p className="text-sm text-slate-500 mt-1">开启后，AI 会记住跨会话的对话上下文</p>
+            <h3 className="font-semibold text-ink-primary">AI 模型记忆同步</h3>
+            <p className="text-sm text-ink-muted mt-1">开启后，AI 会记住跨会话的对话上下文</p>
           </div>
           <button
             onClick={() => toggleSync(!syncEnabled)}
             className={cn(
               'relative w-12 h-7 rounded-full transition-all cursor-pointer',
-              syncEnabled ? 'bg-jade-500' : 'bg-slate-300'
+              syncEnabled ? 'bg-brand' : 'bg-muted'
             )}
           >
             <div
               className={cn(
-                'absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-all',
+                'absolute top-1 w-5 h-5 bg-surface rounded-full shadow transition-all',
                 syncEnabled ? 'left-6' : 'left-1'
               )}
             />
@@ -1209,20 +1430,20 @@ function CloudPanel() {
         {syncEnabled && (
           <>
             <div className="flex items-center justify-between text-sm mb-4">
-              <span className="text-slate-600">
+              <span className="text-ink-secondary">
                 {summaries.length > 0 ? `已保存 ${summaries.length} 条对话摘要` : '暂无记忆记录'}
               </span>
               {syncing ? (
-                <RefreshCw size={14} className="text-jade-500 animate-spin" />
+                <RefreshCw size={14} className="text-brand animate-spin" />
               ) : (
-                <button onClick={forceSync} className="text-jade-600 hover:text-jade-700 font-medium cursor-pointer">
+                <button onClick={forceSync} className="text-brand hover:text-brand-hover font-medium cursor-pointer">
                   手动同步
                 </button>
               )}
             </div>
 
             {lastUpdated && (
-              <p className="text-xs text-slate-400 mb-4">
+              <p className="text-xs text-ink-muted mb-4">
                 最后同步：{new Date(lastUpdated).toLocaleString('zh-CN')}
               </p>
             )}
@@ -1231,17 +1452,17 @@ function CloudPanel() {
             {summaries.length > 0 && (
               <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
                 {summaries.slice(-5).reverse().map((s, i) => (
-                  <div key={s.id || i} className="bg-warm-50 rounded-xl p-3 text-sm">
+                  <div key={s.id || i} className="bg-muted rounded-xl p-3 text-sm">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-slate-700 text-xs">
+                      <span className="font-medium text-ink-secondary text-xs">
                         {s.memberName || '通用对话'} · {new Date(s.date).toLocaleDateString('zh-CN')}
                       </span>
                     </div>
-                    <div className="text-slate-600 text-xs line-clamp-2">{s.summary}</div>
+                    <div className="text-ink-secondary text-xs line-clamp-2">{s.summary}</div>
                     {s.emotionTags && s.emotionTags.length > 0 && (
                       <div className="flex gap-1 mt-1.5 flex-wrap">
                         {s.emotionTags.map((tag, j) => (
-                          <span key={j} className="text-xs bg-jade-100 text-jade-700 px-1.5 py-0.5 rounded">
+                          <span key={j} className="text-xs bg-brand/18 text-brand px-1.5 py-0.5 rounded">
                             {tag}
                           </span>
                         ))}
@@ -1255,45 +1476,10 @@ function CloudPanel() {
         )}
       </div>
 
-      {/* 数据导入与导出 */}
-      <div className="bg-white rounded-2xl border border-warm-200 p-6">
-        <h3 className="font-semibold text-slate-900 mb-2">数据导入与导出</h3>
-        <p className="text-sm text-slate-500 mb-4">
-          从本页曾导出的 JSON 恢复记忆，或导出为 JSON 便于备份、迁移。导入会覆盖当前云端记忆（最多保留 10 条摘要）。
-        </p>
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={handleImportFile}
-          />
-          <button
-            type="button"
-            onClick={() => importInputRef.current?.click()}
-            disabled={importing}
-            className="px-5 py-2.5 border-2 border-jade-500 text-jade-700 bg-jade-50 rounded-xl font-medium hover:bg-jade-100 disabled:opacity-50 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Upload size={15} />
-            {importing ? '导入中...' : '导入数据'}
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={exporting}
-            className="px-5 py-2.5 bg-jade-500 text-white rounded-xl font-medium hover:bg-jade-600 disabled:opacity-50 transition-all shadow-jade text-sm flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Download size={15} />
-            {exporting ? '导出中...' : '导出数据'}
-          </button>
-        </div>
-      </div>
-
       {/* 同步说明 */}
-      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5">
-        <h4 className="font-medium text-slate-700 text-sm mb-2">关于 AI 记忆同步</h4>
-        <ul className="text-xs text-slate-500 space-y-1.5">
+      <div className="bg-subtle rounded-2xl border border-default p-5">
+        <h4 className="font-medium text-ink-secondary text-sm mb-2">关于 AI 记忆同步</h4>
+        <ul className="text-xs text-ink-muted space-y-1.5">
           <li>· 每次对话结束后，系统会自动生成对话摘要并保存</li>
           <li>· 新对话时，摘要内容会作为上下文注入 AI，帮助保持记忆连贯性</li>
           <li>· 最多保留最近 10 条对话摘要</li>
@@ -1323,6 +1509,7 @@ function CloudPanel() {
 // ========== 主组件 ==========
 
 export default function PersonalCenterPage() {
+  useThemeAppliedSnapshot()
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<TabId>(() => parseTabParam(searchParams))
 
@@ -1344,7 +1531,7 @@ export default function PersonalCenterPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-ink-primary">
       <div className="flex flex-col md:flex-row gap-8">
         {/* 侧边导航 */}
         <div className="md:w-48 flex-shrink-0">
@@ -1359,8 +1546,8 @@ export default function PersonalCenterPage() {
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap cursor-pointer',
                     activeTab === tab.id
-                      ? 'bg-jade-50 text-jade-700 font-semibold'
-                      : 'text-slate-600 hover:bg-warm-100 hover:text-jade-600'
+                      ? 'bg-subtle text-ink-secondary font-semibold shadow-e1 ring-1 ring-border-default'
+                      : 'text-ink-muted hover:bg-muted/70 hover:text-ink-secondary'
                   )}
                 >
                   <Icon size={16} />

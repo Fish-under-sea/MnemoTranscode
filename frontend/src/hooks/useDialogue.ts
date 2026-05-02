@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dialogueApi } from '@/services/api'
 import { useApiError } from '@/hooks/useApiError'
 import { buildClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import { buildClientTtsPayload, type ClientTtsPayload } from '@/lib/buildClientTtsPayload'
 import { readStoredLlmUserConfig } from '@/hooks/useLlmUserConfig'
+import { readStoredTtsUserConfig } from '@/hooks/useTtsUserConfig'
 import { dialogueStorageKey, stableDialogueSessionId } from '@/lib/dialogueStorage'
 
 export interface ChatMessage {
@@ -13,6 +15,13 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  /** 后端 JSONB，用户轮次可能含 stickers: { media_id }[] */
+  extras?: Record<string, unknown> | null
+}
+
+/** {@link useDialogue} 的发送选项 */
+export interface DialogueSendOpts {
+  stickerMediaIds?: number[]
 }
 
 /** 上一轮 LLM 遥测（展示用） */
@@ -38,6 +47,10 @@ type DialogueChatResult = {
   completion_tokens?: number | null
   latency_ms?: number | null
   output_chars?: number | null
+  reply_segments?: string[]
+  tts_segment_indices?: number[]
+  voice_mode?: 'voice_design' | 'clone_ready'
+  has_voice_clone_sample?: boolean
 }
 
 interface UseDialogueOptions {
@@ -62,27 +75,51 @@ function messagesForPersist(list: ChatMessage[]): ChatMessage[] {
 }
 
 function mapServerRowToMessage(m: {
-  id: number
+  id: number | string
   role: string
   content: string
   created_at?: string | null
+  extras?: Record<string, unknown> | null
+  assistant_turn_id?: number
+  segment_index?: number
+  segment_total?: number
 }): ChatMessage {
   const role = m.role === 'assistant' ? 'assistant' : 'user'
+  const exRaw = m.extras
+  let extrasOut: Record<string, unknown> | null =
+    exRaw && typeof exRaw === 'object' ? { ...(exRaw as Record<string, unknown>) } : null
+  if (
+    role === 'assistant' &&
+    typeof m.segment_index === 'number' &&
+    typeof m.segment_total === 'number' &&
+    m.segment_total > 1
+  ) {
+    const o = extrasOut ?? {}
+    o.dialogue_segment_index = m.segment_index
+    o.dialogue_segment_total = m.segment_total
+    if (m.assistant_turn_id != null) o.assistant_turn_id = m.assistant_turn_id
+    extrasOut = o
+  }
   return {
     id: `dlg_${m.id}`,
     role,
     content: String(m.content ?? ''),
     timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+    extras: extrasOut && Object.keys(extrasOut).length > 0 ? extrasOut : null,
   }
 }
 
 /** 兼容拦截器 unwrap 后与偶发双层 data 包裹 */
 function normalizeListMessagesPayload(data: unknown): {
   messages: Array<{
-    id: number
+    id: number | string
     role: string
     content: string
     created_at?: string | null
+    extras?: Record<string, unknown> | null
+    assistant_turn_id?: number
+    segment_index?: number
+    segment_total?: number
   }>
 } {
   if (!data || typeof data !== 'object') return { messages: [] }
@@ -103,6 +140,7 @@ function parseStoredMessages(raw: string): ChatMessage[] {
     role: string
     content: string
     timestamp: string
+    extras?: Record<string, unknown> | null
   }>
   if (!Array.isArray(arr)) return []
   return arr
@@ -112,7 +150,53 @@ function parseStoredMessages(raw: string): ChatMessage[] {
       role: m.role as 'user' | 'assistant',
       content: String(m.content ?? ''),
       timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+      extras:
+        m.extras && typeof m.extras === 'object' ? m.extras : m.extras === null ? null : undefined,
     }))
+}
+
+/** voice_design + 未上传克隆样本时，按服务端选段依次请求 MP3（失败段跳过） */
+async function playDialogueSegmentsTts(opts: {
+  segments: string[]
+  indices: number[]
+  archiveId: number
+  memberId: number
+  payload: ClientTtsPayload | null
+  voiceMode?: 'voice_design' | 'clone_ready'
+  hasClone: boolean
+}): Promise<void> {
+  const { segments, indices, archiveId, memberId, payload, voiceMode, hasClone } = opts
+  if (!payload || hasClone || voiceMode !== 'voice_design') return
+  for (const idx of indices) {
+    const text = (segments[idx] || '').trim()
+    if (!text) continue
+    try {
+      const blob = await dialogueApi.ttsMp3({
+        text,
+        archive_id: archiveId,
+        member_id: memberId,
+        client_tts: payload,
+      })
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      await new Promise<void>((resolve) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(url)
+          resolve()
+        }
+        audio.onerror = () => {
+          URL.revokeObjectURL(url)
+          resolve()
+        }
+        void audio.play().catch(() => {
+          URL.revokeObjectURL(url)
+          resolve()
+        })
+      })
+    } catch {
+      /* 单段 TTS 失败不阻断后续 */
+    }
+  }
 }
 
 export function useDialogue({
@@ -349,6 +433,7 @@ export function useDialogue({
             role: m.role,
             content: m.content,
             timestamp: m.timestamp.toISOString(),
+            ...(m.extras != null ? { extras: m.extras } : {}),
           })),
         ),
       )
@@ -389,20 +474,38 @@ export function useDialogue({
     }, 18)
   }, [])
 
-  const send = useCallback(async () => {
+  const send = useCallback(async (opts: DialogueSendOpts = {}) => {
+    const stickerMediaIds = [...(opts.stickerMediaIds ?? [])].filter(
+      (n) => Number.isFinite(n) && n > 0,
+    )
     const text = inputValue.trim()
-    if (!text || isSending || isTyping) return
+    if ((!text && stickerMediaIds.length === 0) || isSending || isTyping) return
 
     const priorForApi = messages.map((m) => ({
       role: m.role,
       content: m.content,
     }))
 
+    const stickerExtras =
+      stickerMediaIds.length > 0
+        ? {
+            stickers: stickerMediaIds.map((id) => ({ media_id: id })),
+          }
+        : null
+    /** 与服务端 persisted 大略对齐（仅表情时详情以刷新后服务端为准） */
+    const optimisticContent =
+      stickerMediaIds.length === 0
+        ? text
+        : text
+          ? `${text}\n〔表情包〕`
+          : '〔表情包〕'
+
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
-      content: text,
+      content: optimisticContent,
       timestamp: new Date(),
+      extras: stickerExtras,
     }
     setMessages((prev) => [...prev, userMsg])
     setInputValue('')
@@ -410,8 +513,10 @@ export function useDialogue({
 
     try {
       const snapshot = buildClientLlmPayload(readStoredLlmUserConfig())
+      const ttsPayload = buildClientTtsPayload(readStoredTtsUserConfig())
       const response = (await dialogueApi.chat({
         message: text,
+        ...(stickerMediaIds.length > 0 ? { sticker_media_ids: stickerMediaIds } : {}),
         archive_id: archiveId,
         member_id: memberId,
         channel: 'app',
@@ -419,15 +524,40 @@ export function useDialogue({
         history_limit: 24,
         ...(!persistContext && priorForApi.length > 0 ? { client_history: priorForApi } : {}),
         ...(snapshot ? { client_llm: snapshot } : {}),
+        ...(ttsPayload ? { client_tts: ttsPayload } : {}),
         ...(extractMemoriesAfter ? { extract_memories_after: true } : {}),
       })) as unknown as DialogueChatResult
 
-      const replyText: string = response.reply || '...'
+      const replyFallback = response.reply || '...'
+      const fromApi = Array.isArray(response.reply_segments)
+        ? response.reply_segments.map((x) => String(x || '').trim()).filter((x) => x.length > 0)
+        : []
+      const usableSegs = fromApi.length > 0 ? fromApi : [replyFallback.trim() || replyFallback]
+      const ttsPick = Array.isArray(response.tts_segment_indices)
+        ? response.tts_segment_indices
+        : []
+      const vm = response.voice_mode
+      const hasClone = Boolean(response.has_voice_clone_sample)
+
+      const runTts = () => {
+        if (!persistContext || archiveId == null || memberId == null || !ttsPayload) return
+        void playDialogueSegmentsTts({
+          segments: usableSegs,
+          indices: ttsPick,
+          archiveId: Number(archiveId),
+          memberId: Number(memberId),
+          payload: ttsPayload,
+          voiceMode: vm,
+          hasClone,
+        })
+      }
+
       setGraphMemoryActive(Boolean(response.mnemo_mode))
 
       const lat = Math.max(1, response.latency_ms ?? 0)
       const ct = response.completion_tokens
-      const oc = response.output_chars ?? replyText.length
+      const oc =
+        typeof response.output_chars === 'number' ? response.output_chars : replyFallback.length
       const tokPs =
         typeof ct === 'number' && ct > 0 && lat > 0 ? ct / (lat / 1000) : null
       const chPs = lat > 0 ? oc / (lat / 1000) : null
@@ -452,24 +582,45 @@ export function useDialogue({
       void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
       setIsSending(false)
 
-      const assistantMsgId = `assistant_${Date.now()}`
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantMsgId, role: 'assistant', content: '', timestamp: new Date() },
-      ])
-
-      startTypewriter(replyText, () => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId ? { ...m, content: replyText } : m,
-          ),
-        )
-        setDisplayedContent('')
-      })
+      if (usableSegs.length <= 1) {
+        const only = usableSegs[0] ?? replyFallback
+        const assistantMsgId = `assistant_${Date.now()}`
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantMsgId, role: 'assistant', content: '', timestamp: new Date() },
+        ])
+        startTypewriter(only, () => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, content: only } : m,
+            ),
+          )
+          setDisplayedContent('')
+          runTts()
+        })
+      } else {
+        const groupBase = Date.now()
+        const newRows: ChatMessage[] = usableSegs.map((content, i) => ({
+          id: `assistant_${groupBase}_${i}`,
+          role: 'assistant',
+          content,
+          timestamp: new Date(),
+          extras:
+            usableSegs.length > 1
+              ? {
+                  dialogue_segment_index: i,
+                  dialogue_segment_total: usableSegs.length,
+                }
+              : null,
+        }))
+        setMessages((prev) => [...prev, ...newRows])
+        runTts()
+      }
     } catch (err) {
       setIsSending(false)
       setMessages((prev) => prev.filter((m) => m.id !== userMsg.id))
       showError(err, '发送失败，请重试')
+      throw err
     }
   }, [
     inputValue,

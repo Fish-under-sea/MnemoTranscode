@@ -17,6 +17,8 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY default.conf.template /etc/nginx/templates/default.conf.template
 COPY nginx-snippets/ /etc/nginx/snippets/
 ENV API_UPSTREAM=backend:8000
+# 全栈 Nginx 代理 KouriChat 时的上游 host:port（与 compose 覆盖一致；无服务时 upstream 502 属预期）
+ENV KOURICHAT_UPSTREAM=host.docker.internal:8502
 
 EXPOSE 80
 

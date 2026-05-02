@@ -318,43 +318,62 @@ function Initialize-DockerComposeNpipeForScript {
     Write-Host ('Docker pipe ready: ' + $psMsg + $dde) -ForegroundColor DarkGray
 }
 
-function Invoke-DockerComposeUpWinPs {
-    # WinPS 5.1：compose 成功与否必须用 Process.ExitCode，不能用 $? / $LASTEXITCODE。
+function MtcComposeUpWinPs {
+    # WinPS 5.1：compose 成功与否必须用 Process.ExitCode。
+    # Start-Process + 行尾反引号续行在 UTF-8 BOM+CRLF 下偶发失效，子进程统一用 ProcessStartInfo（与脚本内 docker ps 探测一致）。
     param(
-        [Parameter(Mandatory)][string]$Cli,
-        [Parameter(Mandatory)][bool]$UseComposeWait,
-        [Parameter(Mandatory)][string]$ComposeWorkingDirectory,
-        [string[]]$ComposeServices = $null,
-        [switch]$WithBuild
+        [Parameter(Mandatory)][string]$DockerExePathForCompose,
+        [Parameter(Mandatory)][bool]$ComposeWaitHealthy,
+        [Parameter(Mandatory)][string]$ComposeWorkingDir,
+        [string[]]$ComposeOnlyServices = @(),
+        [switch]$ComposeRequireBuild
     )
 
     $waitSeg = @()
-    if ($UseComposeWait) { $waitSeg = @('--wait') }
+    if ($ComposeWaitHealthy) { $waitSeg = @('--wait') }
     $buildSeg = @()
-    if ($WithBuild) { $buildSeg = @('--build') }
+    if ($ComposeRequireBuild) { $buildSeg = @('--build') }
 
     [string[]]$argList = @('compose', 'up', '-d') + $buildSeg + $waitSeg
-    if ($null -ne $ComposeServices -and $ComposeServices.Count -gt 0) {
-        $argList += $ComposeServices
+    if ($ComposeOnlyServices.Count -gt 0) {
+        $argList += $ComposeOnlyServices
     }
 
-    if (-not (Test-Path -LiteralPath $Cli)) {
-        Write-Error "docker CLI missing: $Cli"
+    if (-not (Test-Path -LiteralPath $DockerExePathForCompose)) {
+        Write-Error "docker CLI missing: $DockerExePathForCompose"
         return -1
     }
 
-    if (-not (Test-Path -LiteralPath $ComposeWorkingDirectory)) {
-        Write-Error "compose directory missing: $ComposeWorkingDirectory"
+    if (-not (Test-Path -LiteralPath $ComposeWorkingDir)) {
+        Write-Error "compose directory missing: $ComposeWorkingDir"
         return -1
     }
 
     Write-Host ('[compose argv] ' + ($argList -join ' ')) -ForegroundColor DarkGray
 
-    $p = Start-Process -LiteralPath $Cli `
-        -ArgumentList $argList `
-        -WorkingDirectory $ComposeWorkingDirectory `
-        -Wait -NoNewWindow -PassThru
-    return $p.ExitCode
+    # 勿用 Start-Process 多行反引号续行：UTF-8+CRLF 下续行偶发失效，表现为未绑定 FilePath/LiteralPath 并报错。
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $DockerExePathForCompose
+        $psi.WorkingDirectory = $ComposeWorkingDir
+        $psi.Arguments = [string]::Join(' ', @($argList))
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        [void]$proc.Start()
+        # compose pull/build 可能极长；不设短超时以免误杀合法任务
+        if (-not $proc.WaitForExit(7200000)) {
+            try { $proc.Kill() } catch { }
+            Write-Error 'docker compose 等待超时（2h）。'
+            return -1
+        }
+        return [int]$proc.ExitCode
+    }
+    catch {
+        Write-Error $_
+        return -1
+    }
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -377,31 +396,46 @@ try {
         Initialize-DockerComposeNpipeForScript
     }
 
+    $cwdCompose = [string]$ComposeDir
+
     if ($FullStack) {
         Write-Host '=== docker compose up -d（全栈：backend / frontend / celery-worker / 依赖）===' -ForegroundColor Cyan
-        $svcArg = $null
+        if ($Build) {
+            $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $true -ComposeWorkingDir "$cwdCompose" -ComposeRequireBuild
+        }
+        else {
+            $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $true -ComposeWorkingDir "$cwdCompose"
+        }
     }
     else {
         Write-Host '=== docker compose up -d（混合：postgres redis qdrant minio backend）===' -ForegroundColor Cyan
-        $svcArg = $HybridServices
-    }
-
-    $composeSplat = @{
-        Cli                     = $DockerCli
-        UseComposeWait          = $true
-        ComposeWorkingDirectory = $ComposeDir
-        ComposeServices         = $svcArg
-    }
-    if ($Build) {
-        $composeSplat['WithBuild'] = $true
+        if ($Build) {
+            $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $true -ComposeWorkingDir "$cwdCompose" -ComposeOnlyServices $HybridServices -ComposeRequireBuild
+        }
+        else {
+            $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $true -ComposeWorkingDir "$cwdCompose" -ComposeOnlyServices $HybridServices
+        }
     }
 
     # 先试 --wait（compose v2）；若退出码非 0（含旧版不认 --wait）再退回无 --wait，避免误判与死锁探测。
-    $composeExit = Invoke-DockerComposeUpWinPs @composeSplat
     if ($composeExit -ne 0) {
         Write-Host ('compose（含 --wait）未成功，退出码=' + $composeExit + '。正在不带 --wait 再试……') -ForegroundColor Yellow
-        $composeSplat['UseComposeWait'] = $false
-        $composeExit = Invoke-DockerComposeUpWinPs @composeSplat
+        if ($FullStack) {
+            if ($Build) {
+                $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $false -ComposeWorkingDir "$cwdCompose" -ComposeRequireBuild
+            }
+            else {
+                $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $false -ComposeWorkingDir "$cwdCompose"
+            }
+        }
+        else {
+            if ($Build) {
+                $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $false -ComposeWorkingDir "$cwdCompose" -ComposeOnlyServices $HybridServices -ComposeRequireBuild
+            }
+            else {
+                $composeExit = MtcComposeUpWinPs -DockerExePathForCompose "$DockerCli" -ComposeWaitHealthy $false -ComposeWorkingDir "$cwdCompose" -ComposeOnlyServices $HybridServices
+            }
+        }
     }
 
     if ($composeExit -ne 0) {

@@ -25,8 +25,10 @@ class UserPreferences(Base):
 
     # 自定义
     custom_css = Column(Text, nullable=True)
-    # 主应用区背景图 URL（全屏铺底，与 DIY UI 同步）
-    app_background_url = Column(String(1024), nullable=True)
+    # 主应用区背景 URL：外链 https / data: URI，或服务端 MinIO 内链（经 /preferences/app-background-file 同域拉出）
+    app_background_url = Column(Text, nullable=True)
+    # image | video · 外链时可由服务端推断或由前端写入；上传接口会写明确值
+    app_background_kind = Column(String(16), nullable=True)
 
     # AI 记忆同步
     ai_memory_sync = Column(String(10), default="on")

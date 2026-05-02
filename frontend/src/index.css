@@ -14,6 +14,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Outfit', 'Work Sans', system-ui, sans-serif;
   line-height: 1.7;
   color: var(--text-primary);
@@ -31,6 +32,13 @@
 
 html {
   scroll-behavior: smooth;
+  /* applyTheme 写入 --font-base-size，全域 rem（Tailwind 尺寸）跟随 DIY 字号 */
+  font-size: var(--font-base-size, 16px);
+}
+
+/* 与 ThemeProvider.applyTheme 的 .dark class 对齐，改善原生控件（select 等）在暗色下的系统样式 */
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -156,6 +164,89 @@ body {
     background-image: radial-gradient(circle, #D1FAE5 1px, transparent 1px);
     background-size: 28px 28px;
   }
+
+  /**
+   * DIY「液态玻璃」卡片壳（data-card-style=glass 时 panelClassFromCardStyle 注入）
+   * 翠/琥珀低饱和 conic 慢旋 + 内缘高光；禁止赛博霓虹；尊重 prefers-reduced-motion（见文件底部兜底 + 显式关闭动画）
+   */
+  .mtc-liquid-glass {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    /* inset 高光 + elevation（避免被 utilities 层的 shadow-* 覆盖） */
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.42),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 4px 12px rgba(var(--shadow-color), 0.08);
+  }
+
+  .dark .mtc-liquid-glass {
+    box-shadow:
+      inset 0 1px 0 0 rgba(251, 191, 36, 0.09),
+      inset 0 0 0 1px rgba(251, 191, 36, 0.04),
+      0 4px 12px rgba(0, 0, 0, 0.32);
+  }
+
+  .mtc-liquid-glass > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* 高光层叠在磨砂底之上、正文之下 */
+  .mtc-liquid-glass::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 165%;
+    height: 165%;
+    border-radius: 45% 55% 50% 50% / 50% 50% 52% 48%;
+    opacity: 0.62;
+    background: conic-gradient(
+      from 210deg at 45% 42%,
+      transparent 0deg,
+      transparent 118deg,
+      rgba(209, 250, 229, 0.14) 165deg,
+      rgba(251, 191, 36, 0.1) 210deg,
+      rgba(255, 255, 255, 0.2) 248deg,
+      rgba(167, 243, 208, 0.12) 285deg,
+      transparent 318deg,
+      transparent 360deg
+    );
+    animation: mtc-liquid-orbit 22s linear infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .dark .mtc-liquid-glass::before {
+    opacity: 0.52;
+    background: conic-gradient(
+      from 200deg at 45% 42%,
+      transparent 0deg,
+      transparent 110deg,
+      rgba(251, 191, 36, 0.1) 175deg,
+      rgba(251, 191, 36, 0.16) 228deg,
+      rgba(253, 230, 138, 0.08) 268deg,
+      rgba(245, 230, 211, 0.06) 300deg,
+      transparent 332deg,
+      transparent 360deg
+    );
+  }
+}
+
+@keyframes mtc-liquid-orbit {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+    border-radius: 45% 55% 50% 50% / 50% 50% 52% 48%;
+  }
+  50% {
+    transform: translate(-50%, -50%) rotate(180deg) scale(1.03);
+    border-radius: 52% 48% 48% 52% / 52% 48% 49% 51%;
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg) scale(1);
+    border-radius: 45% 55% 50% 50% / 50% 50% 52% 48%;
+  }
 }
 
 /* ========== 响应式无障碍 ========== */
@@ -171,5 +262,28 @@ body {
 
   html {
     scroll-behavior: auto;
+  }
+
+  /* 液态玻璃高光：关停旋转，保留静态磨砂 */
+  .mtc-liquid-glass::before {
+    animation: none !important;
+    opacity: 0.32;
+    transform: translate(-50%, -50%) rotate(48deg);
+  }
+}
+
+/* 覆盖 hover:shadow-* 对液态玻璃整体 box-shadow 的冲掉（保留 inset + e3） */
+@layer utilities {
+  .mtc-liquid-glass:hover {
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.46),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 12px 32px rgba(var(--shadow-color), 0.12) !important;
+  }
+  .dark .mtc-liquid-glass:hover {
+    box-shadow:
+      inset 0 1px 0 0 rgba(251, 191, 36, 0.11),
+      inset 0 0 0 1px rgba(251, 191, 36, 0.06),
+      0 12px 32px rgba(0, 0, 0, 0.42) !important;
   }
 }

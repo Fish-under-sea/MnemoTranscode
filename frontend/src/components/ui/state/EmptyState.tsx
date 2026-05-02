@@ -30,7 +30,7 @@ export function EmptyState({
       animate="visible"
       className={cn('flex flex-col items-center justify-center text-center py-12 px-6', className)}
     >
-      <div className="w-16 h-16 rounded-full bg-warm-100 flex items-center justify-center mb-4">
+      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
         <Icon className="w-8 h-8 text-ink-muted" />
       </div>
       <h3 className="font-serif text-xl text-ink-primary mb-2">{title}</h3>

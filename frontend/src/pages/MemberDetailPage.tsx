@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { FileText, MessageCircle, Plus, MessageSquareShare, Trash2, Upload } from 'lucide-react'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useState, useRef, useEffect, useMemo } from 'react'
-import { archiveApi, memoryApi } from '@/services/api'
+import { archiveApi, memoryApi, mediaApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
 import { EMOTION_LABELS, RADIX_SELECT_NONE } from '@/lib/utils'
@@ -398,16 +398,77 @@ export default function MemberDetailPage() {
 
       <motion.div variants={fadeUp}>
         <Card variant="plain" className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-body-lg font-medium text-ink-primary">相册</h2>
-            <MediaUploader
-              memberId={Number(memberId)}
-              purpose="archive_photo"
-              onComplete={() => {
-                void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
-                void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
-              }}
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+            <div>
+              <h2 className="text-body-lg font-medium text-ink-primary">珍藏 · 影像与表情</h2>
+              <p className="text-caption text-ink-muted mt-1">
+                区分照片、音视频与表情包；表情包上传后将尝试自动识图并写入标签（需模型支持图像输入）。
+              </p>
+            </div>
+            <div className="flex flex-col items-stretch gap-2 sm:items-end shrink-0">
+              <MediaUploader
+                autoClassify
+                memberId={Number(memberId)}
+                onComplete={() => {
+                  void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+                  void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
+                }}
+              />
+              <MediaUploader
+                purpose="archive_sticker"
+                memberId={Number(memberId)}
+                onComplete={(assets) => {
+                  void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+                  void queryClient.invalidateQueries({ queryKey: ['dashboard', 'usage'] })
+                  void Promise.allSettled(
+                    assets
+                      .filter((a) => String(a.purpose) === 'archive_sticker')
+                      .map((a) =>
+                        mediaApi.analyzeStickerTags(a.id).then((out) => {
+                          // 后端 HTTP 200 也会把失败写进 extras.sticker_analyze_error，须显式判错
+                          const ex = out.extras
+                          const errRaw =
+                            ex &&
+                            typeof ex === 'object' &&
+                            typeof (ex as { sticker_analyze_error?: unknown }).sticker_analyze_error ===
+                              'string' ?
+                              String((ex as { sticker_analyze_error: string }).sticker_analyze_error)
+                            : null
+                          if (errRaw) {
+                            throw new Error(errRaw)
+                          }
+                          return out
+                        }),
+                      ),
+                  )
+                    .then((results) => {
+                      void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+                      const failed = results.filter((r) => r.status === 'rejected')
+                      if (failed.length === 0 && results.length > 0) {
+                        toast.success('表情包已上传，AI 标注已写入')
+                        return
+                      }
+                      if (failed.length > 0) {
+                        const first =
+                          failed[0]?.status === 'rejected' && failed[0].reason instanceof Error ?
+                            failed[0].reason.message
+                          : ''
+                        const detail =
+                          first.slice(0, 240) ||
+                          '请检查 backend/.env 的 LLM_BASE_URL、LLM_API_KEY、LLM_MODEL（须支持 image_url 多模态）。'
+                        toast.error(
+                          `表情包已上传，${failed.length} 条 AI 标注未成功：${detail}${
+                            failed.length > 1 ? ` 等共 ${failed.length} 条` : ''
+                          }`,
+                        )
+                      }
+                    })
+                    .catch(() => {
+                      void queryClient.invalidateQueries({ queryKey: ['member-media', Number(memberId)] })
+                    })
+                }}
+              />
+            </div>
           </div>
           <MediaGallery memberId={Number(memberId)} memberName={member.name} />
         </Card>
@@ -498,6 +559,7 @@ export default function MemberDetailPage() {
                     title: String(m.title ?? ''),
                     content_text: String(m.content_text ?? ''),
                     timestamp: m.timestamp as string | null | undefined,
+                    created_at: (m.created_at as string | null | undefined) ?? undefined,
                     location: m.location as string | null | undefined,
                     emotion_label: m.emotion_label as string | null | undefined,
                     member_id: Number(m.member_id),

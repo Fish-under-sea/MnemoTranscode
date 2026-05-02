@@ -17,7 +17,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const toneClasses: Record<Tone, string> = {
-  jade: 'bg-jade-50 text-jade-700 border-jade-200/60',
+  jade: 'bg-brand/14 text-brand border-brand/35 dark:bg-brand/18 dark:border-brand/40',
   amber: 'bg-amber-50 text-amber-700 border-amber-200/60',
   rose: 'bg-rose-50 text-rose-700 border-rose-200/60',
   sky: 'bg-sky-50 text-sky-700 border-sky-200/60',

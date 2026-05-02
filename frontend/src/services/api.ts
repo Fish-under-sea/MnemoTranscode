@@ -4,6 +4,7 @@
 import axios, { type AxiosError } from 'axios'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import type { ClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import type { ClientTtsPayload } from '@/lib/buildClientTtsPayload'
 import { inferFromStatus, isApiError, type ApiError } from './errors'
 import type { SubscriptionTierId } from '@/lib/subscriptionTier'
 
@@ -138,17 +139,44 @@ export const authApi = {
 
 // ========== 档案相关 ==========
 
+export type ArchiveListSort = 'default' | 'manual' | 'name' | 'memory'
+
 export const archiveApi = {
-  list: (archiveType?: string) =>
-    api.get('/archives', { params: archiveType ? { archive_type: archiveType } : {} }),
+  list: (archiveType?: string, sort: ArchiveListSort = 'default') =>
+    api.get('/archives', {
+      params: {
+        ...(archiveType ? { archive_type: archiveType } : {}),
+        sort: sort ?? 'default',
+      },
+    }),
 
   get: (id: number) => api.get(`/archives/${id}`),
 
-  create: (data: { name: string; description?: string; archive_type: string }) =>
-    api.post('/archives', data),
+  create: (data: {
+    name: string
+    description?: string
+    archive_type: string
+    heritage_origin_regions?: string | null
+    heritage_listing_level?: string | null
+    heritage_inscribed_year?: string | null
+  }) => api.post('/archives', data),
 
-  update: (id: number, data: { name?: string; description?: string }) =>
-    api.patch(`/archives/${id}`, data),
+  update: (
+    id: number,
+    data: {
+      name?: string
+      description?: string
+      archive_type?: string
+      is_pinned?: boolean
+      heritage_origin_regions?: string | null
+      heritage_listing_level?: string | null
+      heritage_inscribed_year?: string | null
+    },
+  ) => api.patch(`/archives/${id}`, data),
+
+  /** 拖拽手工排序：pinned_ids 全部为置顶且顺序即展示顺序；unpinned_ids 为其余 */
+  reorder: (body: { pinned_ids: number[]; unpinned_ids: number[] }) =>
+    api.post('/archives/reorder', body),
 
   delete: (id: number) => api.delete(`/archives/${id}`),
 
@@ -211,6 +239,40 @@ export const archiveApi = {
       Record<string, unknown>,
       Record<string, unknown>
     >(`/archives/${archiveId}/members/${memberId}/avatar`),
+
+  /** 下载档案角色备份 JSON（含记忆）；includeMnemoGraph 与记忆导出联动 */
+  downloadRolesBackup: (
+    archiveId: number,
+    includeMemories = true,
+    includeMnemoGraph = true,
+  ) =>
+    api.get(`/archives/${archiveId}/members/backup`, {
+      params: {
+        include_memories: includeMemories,
+        include_mnemo_graph: includeMnemoGraph,
+      },
+      responseType: 'blob',
+    }) as unknown as Promise<Blob>,
+
+  /** 克隆本档案中选中的成员（可选附带记忆） */
+  cloneMembers: (
+    archiveId: number,
+    body: { member_ids: number[]; include_memories?: boolean; name_suffix?: string | null },
+  ) =>
+    api.post(`/archives/${archiveId}/members/clone`, {
+      member_ids: body.member_ids,
+      include_memories: body.include_memories !== false,
+      name_suffix:
+        body.name_suffix === undefined
+          ? '（副本）'
+          : body.name_suffix === ''
+            ? null
+            : body.name_suffix,
+    }),
+
+  /** 从备份包 JSON 在当前档案新建角色（及记忆） */
+  restoreRolesBackup: (archiveId: number, payload: Record<string, unknown>) =>
+    api.post(`/archives/${archiveId}/members/restore`, payload),
 }
 
 // ========== 记忆相关 ==========
@@ -296,6 +358,8 @@ export const memoryApi = {
 export const dialogueApi = {
   chat: (data: {
     message: string
+    /** 成员表情包 media id，与成员页 purpose=archive_sticker 对应，最多 8 个由后端校验 */
+    sticker_media_ids?: number[]
     archive_id?: number
     member_id?: number
     channel?: 'app' | 'wechat' | 'qq'
@@ -305,6 +369,8 @@ export const dialogueApi = {
     client_history?: { role: string; content: string }[]
     /** 与模型设置对齐；提供则服务端优先于其 LLM_* 环境变量 */
     client_llm?: ClientLlmPayload | null
+    /** 浏览器「语音合成」配置；提供则服务端用于 /dialogue/tts 与网关优先于 TTS_* 环境变量 */
+    client_tts?: ClientTtsPayload | null
     /** 本轮对话结束后提炼记忆并写入链式图 */
     extract_memories_after?: boolean
   }) =>
@@ -318,9 +384,26 @@ export const dialogueApi = {
       completion_tokens?: number | null
       latency_ms?: number | null
       output_chars?: number | null
+      reply_segments?: string[]
+      tts_segment_indices?: number[]
+      voice_mode?: 'voice_design' | 'clone_ready'
+      has_voice_clone_sample?: boolean
     }>('/dialogue/chat', data, {
       timeout: 90_000,
     }),
+
+  /** 单段文本转 MP3（无克隆时用 VoiceDesign 等 model + 服务端 instructions） */
+  ttsMp3: (data: {
+    text: string
+    archive_id: number
+    member_id: number
+    client_tts?: ClientTtsPayload | null
+  }) =>
+    api.post<Blob>(
+      '/dialogue/tts',
+      data,
+      { responseType: 'blob', timeout: 120_000 },
+    ) as unknown as Promise<Blob>,
 
   getHistory: (sessionId: string, params?: { archive_id?: number; member_id?: number; limit?: number }) =>
     api.post('/dialogue/history', { session_id: sessionId, ...params }),
@@ -334,10 +417,14 @@ export const dialogueApi = {
     const { limit, signal } = opts ?? {}
     return api.get<{
       messages: {
-        id: number
+        id: number | string
         role: string
         content: string
         created_at?: string | null
+        extras?: Record<string, unknown> | null
+        assistant_turn_id?: number
+        segment_index?: number
+        segment_total?: number
       }[]
     }>('/dialogue/messages', {
       params: {
@@ -348,10 +435,14 @@ export const dialogueApi = {
       signal,
     }) as unknown as Promise<{
       messages: {
-        id: number
+        id: number | string
         role: string
         content: string
         created_at?: string | null
+        extras?: Record<string, unknown> | null
+        assistant_turn_id?: number
+        segment_index?: number
+        segment_total?: number
       }[]
     }>
   },
@@ -427,8 +518,20 @@ export const preferencesApi = {
     dashboard_layout?: string
     custom_css?: string
     app_background_url?: string | null
+    app_background_kind?: 'image' | 'video' | null
     ai_memory_sync?: string
   }) => api.put('/preferences', data),
+
+  /** 上传全站背景素材（图片/GIF/WebP 或 MP4/WebM/MOV），服务端存 MinIO；返回 preferences 与同源 display url */
+  uploadAppBackground: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{
+      url: string
+      kind: 'image' | 'video'
+      preferences: Record<string, unknown>
+    }>('/preferences/app-background', form, { timeout: 120_000 })
+  },
 }
 
 // ========== AI 记忆同步 ==========
@@ -485,6 +588,7 @@ export type MediaPurpose =
   | 'archive_photo'
   | 'archive_video'
   | 'archive_audio'
+  | 'archive_sticker'
   | 'avatar'
   | 'voice_sample'
   | 'other'
@@ -499,6 +603,7 @@ export interface MediaAsset {
   archive_id?: number | null
   member_id?: number | null
   created_at: string
+  extras?: Record<string, unknown> | null
 }
 
 export interface UploadInitRequest {
@@ -590,6 +695,10 @@ export const mediaApi = {
 
   list: (params: { archive_id?: number; member_id?: number; purpose?: MediaPurpose }): Promise<MediaAsset[]> =>
     api.get('/media/', { params }),
+
+  /** 表情包：调用多模态模型写入 extras 标签（需网关支持图像输入） */
+  analyzeStickerTags: (mediaId: number): Promise<MediaAsset> =>
+    api.post(`/media/${mediaId}/sticker-analyze`, {}),
 }
 
 /**

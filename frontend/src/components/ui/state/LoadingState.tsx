@@ -44,7 +44,7 @@ export function LoadingState({
       animate="visible"
       className={cn('flex flex-col items-center justify-center py-12 px-6', className)}
     >
-      <Loader2 className="w-8 h-8 text-jade-600 animate-spin mb-3" />
+      <Loader2 className="w-8 h-8 text-brand animate-spin mb-3" />
       {message && <p className="text-sm text-ink-secondary">{message}</p>}
     </motion.div>
   )

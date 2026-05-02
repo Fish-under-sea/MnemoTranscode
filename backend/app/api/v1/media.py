@@ -12,6 +12,7 @@ from minio import Minio
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.v1.auth import get_current_user
 from app.core.config import get_settings
@@ -22,6 +23,8 @@ from app.core.exceptions import DomainInternalError, DomainMediaError, DomainRes
 from app.models.media import MediaAsset, MediaUploadSession
 from app.models.user import User
 from app.services.avatar_image import AVATAR_MAX_RAW_BYTES
+from app.services.llm_service import LLMService
+from app.services.sticker_analysis import analyze_sticker_object
 
 router = APIRouter(prefix="/media", tags=["多媒体"])
 settings = get_settings()
@@ -33,6 +36,7 @@ class UploadPurpose(str, Enum):
     ARCHIVE_PHOTO = "archive_photo"
     ARCHIVE_VIDEO = "archive_video"
     ARCHIVE_AUDIO = "archive_audio"
+    ARCHIVE_STICKER = "archive_sticker"
     OTHER = "other"
 
 
@@ -42,6 +46,7 @@ PURPOSE_CONTENT_TYPES = {
     UploadPurpose.ARCHIVE_AUDIO: {"audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3", "audio/mp4", "audio/webm"},
     UploadPurpose.VOICE_SAMPLE: {"audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3", "audio/mp4", "audio/webm"},
     UploadPurpose.ARCHIVE_VIDEO: {"video/mp4", "video/webm", "video/quicktime"},
+    UploadPurpose.ARCHIVE_STICKER: {"image/jpeg", "image/png", "image/webp", "image/gif"},
 }
 
 MAX_SIZE_BYTES = {
@@ -50,6 +55,7 @@ MAX_SIZE_BYTES = {
     UploadPurpose.ARCHIVE_AUDIO: 100 * 1024 * 1024,
     UploadPurpose.VOICE_SAMPLE: 100 * 1024 * 1024,
     UploadPurpose.ARCHIVE_VIDEO: 500 * 1024 * 1024,
+    UploadPurpose.ARCHIVE_STICKER: 30 * 1024 * 1024,
     UploadPurpose.OTHER: 100 * 1024 * 1024,
 }
 
@@ -374,6 +380,7 @@ class MediaAssetOut(BaseModel):
     archive_id: int | None = None
     member_id: int | None = None
     created_at: datetime
+    extras: dict | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -398,6 +405,37 @@ async def list_media_assets(
     stmt = stmt.order_by(MediaAsset.created_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.post("/{media_id}/sticker-analyze", response_model=MediaAssetOut)
+async def analyze_sticker_tags(
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """对 archive_sticker 资源调用多模态模型写回 extras（标签 / 语气等）。须配置可用的视觉模型网关。"""
+    result = await db.execute(select(MediaAsset).where(MediaAsset.id == media_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise DomainResourceError("MEDIA_NOT_FOUND", "媒体资源不存在")
+    if asset.owner_id != current_user.id:
+        raise DomainMediaError("MEDIA_FORBIDDEN", "无权限访问该媒体资源")
+    if asset.purpose != UploadPurpose.ARCHIVE_STICKER.value:
+        raise DomainMediaError("MEDIA_STICKER_ANALYZE_PURPOSE", "仅表情包（archive_sticker）可自动识图标注")
+
+    merged = await analyze_sticker_object(
+        bucket=asset.bucket,
+        object_key=asset.object_key,
+        content_type=asset.content_type,
+        llm=LLMService(),
+    )
+    prev = dict(asset.extras) if isinstance(asset.extras, dict) else {}
+    prev.update(merged)
+    asset.extras = prev
+    flag_modified(asset, "extras")
+    await db.commit()
+    await db.refresh(asset)
+    return asset
 
 
 @router.get("/{media_id}/download-url")

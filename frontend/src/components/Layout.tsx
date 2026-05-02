@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { useAppBackgroundRuntime } from '@/lib/theme'
 import Avatar from '@/components/ui/Avatar'
 import { normalizeTierId, tierBadgeClass, tierDisplayName } from '@/lib/subscriptionTier'
 
@@ -28,6 +29,7 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const appBg = useAppBackgroundRuntime()
 
   // 个人资料与订阅由 App 在登录后统一 GET /auth/me 拉取，避免与 Layout 重复请求
 
@@ -62,13 +64,25 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col relative">
-      {/* 全站背景图（由 ThemeProvider + applyTheme 设置 --app-background-image） */}
+      {/* 全站背景：图片用 CSS 变量；视频用 <video>（Tailwind 任意类里 var(--x,none) 的逗号会破坏解析，故改内联 style） */}
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-warm-50 bg-cover bg-center bg-fixed bg-no-repeat [background-image:var(--app-background-image,none)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-canvas bg-cover bg-center bg-fixed bg-no-repeat"
+        style={appBg.mode === 'image' ? { backgroundImage: 'var(--app-background-image)' } : undefined}
         aria-hidden
       />
+      {appBg.mode === 'video' && appBg.src ? (
+        <video
+          className="pointer-events-none fixed inset-0 -z-10 h-full w-full object-cover"
+          src={appBg.src}
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-hidden
+        />
+      ) : null}
       {/* 顶栏：全宽 —— Logo 贴左、主导航居中、用户区贴右 */}
-      <header className="bg-warm-50/80 border-b border-warm-200 backdrop-blur-md sticky top-0 z-50">
+      <header className="bg-surface/80 border-b border-default backdrop-blur-md sticky top-0 z-50">
         <div className="w-full min-w-0 pl-3 pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-4 sm:pr-[max(1rem,env(safe-area-inset-right,0px))] lg:pl-6 lg:pr-8">
           <div className="grid grid-cols-[auto_1fr_auto] items-center h-14 gap-2 sm:gap-4 min-w-0">
             {/* Logo — 视口左侧 */}
@@ -76,7 +90,7 @@ export default function Layout() {
               <div className="w-8 h-8 bg-gradient-to-br from-jade-400 to-jade-600 rounded-lg flex items-center justify-center shadow-jade shrink-0">
                 <span className="text-white font-bold text-sm">MTC</span>
               </div>
-              <span className="font-display font-semibold text-slate-900 hidden sm:block truncate">
+              <span className="font-display font-semibold text-ink-primary hidden sm:block truncate">
                 Memory To Code
               </span>
             </Link>
@@ -85,7 +99,7 @@ export default function Layout() {
             <nav className="hidden md:flex items-center justify-center gap-1 min-w-0 justify-self-center max-w-full overflow-x-auto">
               <Link
                 to="/welcome"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-slate-500 hover:text-jade-700 hover:bg-jade-50 transition-all duration-200 shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-ink-muted hover:text-ink-secondary hover:bg-subtle transition-all duration-200 shrink-0"
                 title="返回官网落地页，无需退出登录"
               >
                 <ExternalLink size={16} />
@@ -102,8 +116,8 @@ export default function Layout() {
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm transition-all duration-200 shrink-0',
                       active
-                        ? 'bg-jade-50 text-jade-700 font-semibold'
-                        : 'text-slate-600 hover:text-jade-700 hover:bg-jade-50'
+                        ? 'bg-subtle text-brand font-semibold ring-1 ring-border-default'
+                        : 'text-ink-secondary hover:text-brand hover:bg-subtle'
                     )}
                   >
                     <Icon size={16} />
@@ -122,15 +136,15 @@ export default function Layout() {
                   className={cn(
                     'flex items-center gap-2 px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer',
                     userMenuOpen
-                      ? 'bg-jade-50 text-jade-700'
-                      : 'hover:bg-jade-50 text-slate-600'
+                      ? 'bg-subtle text-brand'
+                      : 'hover:bg-subtle text-ink-secondary'
                   )}
                 >
                   <Avatar
                     src={user?.avatar_url || undefined}
                     name={displayName}
                     size={32}
-                    className="ring-2 ring-white shadow-sm shrink-0"
+                    className="ring-2 ring-surface shadow-e1 shrink-0"
                   />
                   <span className="text-sm font-medium hidden sm:block max-w-[120px] truncate">
                     {user?.username}
@@ -140,9 +154,9 @@ export default function Layout() {
 
                 {/* 下拉内容 */}
                 {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-glass-lg border border-warm-200 py-2 animate-fade-in z-50">
+                  <div className="absolute right-0 top-full mt-2 w-60 rounded-2xl bg-surface py-2 shadow-e3 border border-default animate-fade-in z-50">
                     {/* 用户信息头部 */}
-                    <div className="px-4 py-3 border-b border-warm-100 flex gap-3">
+                    <div className="px-4 py-3 border-b border-default flex gap-3">
                       <Avatar
                         src={user?.avatar_url || undefined}
                         name={displayName}
@@ -150,8 +164,8 @@ export default function Layout() {
                         className="shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-900 text-sm truncate">{user?.username}</div>
-                        <div className="text-xs text-slate-500 truncate mt-0.5">{user?.email}</div>
+                        <div className="font-semibold text-ink-primary text-sm truncate">{user?.username}</div>
+                        <div className="text-xs text-ink-muted truncate mt-0.5">{user?.email}</div>
                         {user?.subscription_tier && (
                           <div className="mt-1.5">
                             <span
@@ -172,7 +186,7 @@ export default function Layout() {
                       <Link
                         to="/welcome"
                         onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-jade-50 hover:text-jade-700 transition-colors cursor-pointer"
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-secondary hover:bg-subtle hover:text-brand transition-colors cursor-pointer"
                       >
                         <ExternalLink size={16} />
                         官网落地页
@@ -180,7 +194,7 @@ export default function Layout() {
                       <Link
                         to="/personal-center"
                         onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-jade-50 hover:text-jade-700 transition-colors cursor-pointer"
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-secondary hover:bg-subtle hover:text-brand transition-colors cursor-pointer"
                       >
                         <LayoutDashboard size={16} />
                         个人中心
@@ -188,10 +202,10 @@ export default function Layout() {
                     </div>
 
                     {/* 分割线 */}
-                    <div className="border-t border-warm-100 py-1">
+                    <div className="border-t border-default py-1">
                       <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/10 hover:text-red-600 transition-colors cursor-pointer dark:hover:bg-red-500/15"
                       >
                         <LogOut size={16} />
                         退出登录
@@ -203,7 +217,7 @@ export default function Layout() {
 
               {/* 移动端菜单按钮 */}
               <button
-                className="md:hidden p-2 text-slate-600 hover:text-jade-700 hover:bg-jade-50 rounded-xl transition-colors cursor-pointer"
+                className="md:hidden p-2 text-ink-secondary hover:text-brand hover:bg-subtle rounded-xl transition-colors cursor-pointer"
                 onClick={() => setMobileOpen(!mobileOpen)}
               >
                 {mobileOpen ? <X size={20} /> : <Menu size={20} />}
@@ -214,7 +228,7 @@ export default function Layout() {
 
         {/* 移动端导航 */}
         {mobileOpen && (
-          <nav className="md:hidden border-t border-warm-200 px-4 py-2 space-y-1">
+          <nav className="md:hidden border-t border-default px-4 py-2 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
               const active = getActive(item.path)
@@ -226,7 +240,7 @@ export default function Layout() {
                   onClick={() => setMobileOpen(false)}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
-                    active ? 'bg-jade-50 text-jade-700 font-semibold' : 'text-slate-600 hover:bg-jade-50'
+                    active ? 'bg-subtle text-brand font-semibold ring-1 ring-border-default' : 'text-ink-secondary hover:bg-subtle hover:text-brand'
                   )}
                 >
                   <Icon size={18} />
@@ -234,11 +248,11 @@ export default function Layout() {
                 </Link>
               )
             })}
-            <div className="border-t border-warm-200 pt-1 mt-1 space-y-1">
+            <div className="border-t border-default pt-1 mt-1 space-y-1">
               <Link
                 to="/welcome"
                 onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-slate-600 hover:bg-jade-50 transition-colors"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-ink-secondary hover:bg-subtle transition-colors"
               >
                 <ExternalLink size={18} />
                 官网落地页
@@ -246,7 +260,7 @@ export default function Layout() {
               <Link
                 to="/personal-center"
                 onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-slate-600 hover:bg-jade-50 transition-colors"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-ink-secondary hover:bg-subtle transition-colors"
               >
                 <LayoutDashboard size={18} />
                 个人中心
@@ -262,8 +276,8 @@ export default function Layout() {
       </main>
 
       {/* 页脚 */}
-      <footer className="bg-warm-100 border-t border-warm-200 py-5 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-slate-400">
+      <footer className="bg-muted/70 border-t border-default py-5 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-ink-muted">
           MTC — Memory To Code · 用 AI 守护每一段珍贵的记忆
         </div>
       </footer>

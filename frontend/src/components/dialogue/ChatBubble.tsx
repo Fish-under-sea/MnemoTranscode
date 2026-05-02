@@ -2,6 +2,7 @@
 import { cn } from '@/lib/utils'
 import TypingIndicator from './TypingIndicator'
 import Avatar from '@/components/ui/Avatar'
+import { DialogueStickerThumb } from '@/components/dialogue/DialogueStickerThumb'
 
 interface ChatBubbleProps {
   role: 'user' | 'assistant'
@@ -19,6 +20,10 @@ interface ChatBubbleProps {
   typingContent?: string
   /** 是否显示打字机 loading 状态（content 为空时） */
   isTyping?: boolean
+  /** 用户轮次：extras 中的表情包 media id，气泡内展示缩略图 */
+  stickerMediaIds?: number[]
+  /** 助手多段气泡时隐藏头像，与同一条「轮次」视觉连续 */
+  hideAvatar?: boolean
 }
 
 export default function ChatBubble({
@@ -31,6 +36,8 @@ export default function ChatBubble({
   showTypingCaret = false,
   typingContent,
   isTyping,
+  stickerMediaIds,
+  hideAvatar = false,
 }: ChatBubbleProps) {
   const isUser = role === 'user'
   const displayContent = isUser ? content : (typingContent ?? content)
@@ -39,7 +46,9 @@ export default function ChatBubble({
     <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
       {/* 头像 */}
       <div className="flex-shrink-0">
-        {isUser ? (
+        {hideAvatar ? (
+          <span className="inline-block size-8 shrink-0" aria-hidden />
+        ) : isUser ? (
           <Avatar
             src={userAvatarSrc}
             name={userName?.trim() || '我'}
@@ -65,7 +74,7 @@ export default function ChatBubble({
             : 'bg-surface border border-border-default text-ink-primary rounded-tl-sm'
         )}
       >
-        {!isUser && memberName && (
+        {!isUser && memberName && !hideAvatar && (
           <div className="text-caption font-medium mb-1 text-ink-secondary">{memberName}</div>
         )}
 
@@ -74,6 +83,18 @@ export default function ChatBubble({
           <TypingIndicator />
         ) : (
           <div className="whitespace-pre-wrap">{displayContent}</div>
+        )}
+
+        {isUser && stickerMediaIds && stickerMediaIds.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5 justify-end">
+            {stickerMediaIds.map((mid) => (
+              <DialogueStickerThumb
+                key={mid}
+                mediaId={mid}
+                className="h-14 w-14 shrink-0"
+              />
+            ))}
+          </div>
         )}
 
         {/* 仅在逐字输出阶段显示尾光标，避免 typingContent 与 content 不同步时误显 */}

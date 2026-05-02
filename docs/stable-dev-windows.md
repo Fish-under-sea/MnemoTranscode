@@ -30,6 +30,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-stable.ps1 -
 
 脚本会 **`docker compose up -d`**（优先带 **`--wait`**，失败则自动改为不带 **`--wait`** 重试），轮询 **`http://127.0.0.1:8000/healthz`**，并在全栈模式下探测 **`http://127.0.0.1:5173/`**（容器内 Nginx，映射 **`5173:80`**）。**不会**再在本机新开 **`npm run dev`**，避免与本机进程争抢 **`5173`**。
 
+**改 UI 后浏览器仍旧？** Compose 前端是**镜像构建时的静态包**，不是挂载源码。收口命令：仓库根 `powershell … -File .\scripts\rebuild-docker-frontend.ps1` 或 **`make docker-rebuild-frontend`**。开发期也可用 **`scripts\compose-watch-frontend.ps1`**（或 **`make docker-watch-frontend`**）常驻 **`docker compose watch frontend`**，保存即触发镜像重建。**Cursor**：相关改动交付前收尾见 **`.cursor/rules/mtc-docker-frontend-sync.mdc`**。
+
 **请勿**与 **`-KillPort8000` / `-KillPort5173`** 同时使用（脚本检测到后会自动忽略这两项），以免误结束 Docker 端口转发相关进程。
 
 `start-stable.ps1` 参数补充：

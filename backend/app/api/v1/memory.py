@@ -43,6 +43,7 @@ from app.services.chat_import_ai import stream_chat_import
 from app.services.conversation_memory_extract import extract_and_save_memories
 from app.services.llm_service import LLMService
 from app.services.usage_metering import record_token_usage
+from app.services.mnemo_graph_query import list_pruned_engrams_for_member
 
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
@@ -259,62 +260,11 @@ async def get_mnemo_graph(
 ):
     """成员名下 Engram 节点与边（用于关系网展示）。"""
     await _require_member_for_user(db, current_user, member_id)
-    nr = await db.execute(
-        select(EngramNode).where(
-            EngramNode.member_id == member_id,
-            EngramNode.user_id == current_user.id,
-            EngramNode.is_deprecated.is_(False),
-        )
+    nodes_orm, edges_orm = await list_pruned_engrams_for_member(
+        db,
+        user_id=current_user.id,
+        member_id=member_id,
     )
-    nodes_orm = list(nr.scalars().all())
-    # 事件节点必须与 memories 对齐；Person 为锚点可常驻；Ev/情感等挂载记忆的结点须带仍在库中的 memory_id
-    mem_ids_r = await db.execute(select(Memory.id).where(Memory.member_id == member_id))
-    valid_memory_ids = {row[0] for row in mem_ids_r.all()}
-    filtered: list[EngramNode] = []
-    for n in nodes_orm:
-        if n.memory_id is not None:
-            if n.memory_id in valid_memory_ids:
-                filtered.append(n)
-            continue
-        if n.node_type == "Event":
-            # 事件节点应对应 memories 行；历史上删记忆仅 SET NULL 会留下 ghost Event
-            continue
-        filtered.append(n)
-    nodes_orm = filtered
-    node_ids = {n.id for n in nodes_orm}
-    if not node_ids:
-        return MnemoGraphResponse(member_id=member_id, nodes=[], edges=[])
-
-    er = await db.execute(
-        select(EngramEdge).where(
-            EngramEdge.from_node_id.in_(node_ids),
-            EngramEdge.to_node_id.in_(node_ids),
-        )
-    )
-    edges_orm = list(er.scalars().all())
-
-    # 去掉历史上因 memory_id 为空的孤儿 Emotion/Event 片段：不参与任何联结且非 Person、无现存记忆支撑
-    endpoint_ids: set[str] = set()
-    for e in edges_orm:
-        endpoint_ids.add(e.from_node_id)
-        endpoint_ids.add(e.to_node_id)
-    pruned_nodes: list[EngramNode] = []
-    for n in nodes_orm:
-        if n.node_type == "Person":
-            pruned_nodes.append(n)
-            continue
-        if n.memory_id is not None and n.memory_id in valid_memory_ids:
-            pruned_nodes.append(n)
-            continue
-        if n.id in endpoint_ids:
-            pruned_nodes.append(n)
-        # 其余结点（多为旧版未绑 memory_id 的情感结点）不落图
-    nodes_orm = pruned_nodes
-    node_ids = {n.id for n in nodes_orm}
-    if not node_ids:
-        return MnemoGraphResponse(member_id=member_id, nodes=[], edges=[])
-    edges_orm = [e for e in edges_orm if e.from_node_id in node_ids and e.to_node_id in node_ids]
-
     nodes = [
         MnemoGraphNode(
             id=n.id,

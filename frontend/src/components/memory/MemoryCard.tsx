@@ -4,7 +4,7 @@
 import { Calendar, MapPin } from 'lucide-react'
 import { motion } from 'motion/react'
 import Card from '@/components/ui/Card'
-import { formatDate, EMOTION_LABELS } from '@/lib/utils'
+import { formatMemoryTimestamp, EMOTION_LABELS } from '@/lib/utils'
 import { motionPresets } from '@/lib/motion'
 
 export interface MemoryCardData {
@@ -12,6 +12,8 @@ export interface MemoryCardData {
   title: string
   content_text: string
   timestamp?: string | null
+  /** 后端返回的发生时间为空时用于展示秒级「记录时间」 */
+  created_at?: string | null
   location?: string | null
   emotion_label?: string | null
   member_id: number
@@ -31,6 +33,7 @@ export default function MemoryCard({
   title,
   content_text,
   timestamp,
+  created_at,
   location,
   emotion_label,
   onClick,
@@ -72,10 +75,10 @@ export default function MemoryCard({
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-caption text-ink-muted">
-        {timestamp && (
-          <span className="inline-flex items-center gap-1">
+        {(timestamp || created_at) && (
+          <span className="inline-flex items-center gap-1 tabular-nums" title={timestamp ? '发生时间' : '入库时间'}>
             <Calendar size={12} />
-            {formatDate(timestamp)}
+            {formatMemoryTimestamp(timestamp ?? created_at)}
           </span>
         )}
         {location && (

@@ -36,7 +36,7 @@ export function ErrorState({
     >
       <div
         className={cn(
-          'rounded-full bg-rose-50 flex items-center justify-center mb-3',
+          'rounded-full bg-muted dark:bg-rose-950/25 flex items-center justify-center mb-3',
           isSmall ? 'w-10 h-10' : 'w-14 h-14',
         )}
       >
