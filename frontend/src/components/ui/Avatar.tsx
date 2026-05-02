@@ -14,6 +14,8 @@ export interface AvatarProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'chil
   name: string
   size?: number
   shape?: 'circle' | 'square'
+  /** 无图或图片加载失败时展示（覆盖默认首字母） */
+  fallback?: ReactNode
 }
 
 function initials(name: string) {
@@ -23,17 +25,30 @@ function initials(name: string) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-export default function Avatar({ src, name, size = 40, shape = 'circle', className, ...rest }: AvatarProps) {
+export default function Avatar({
+  src,
+  name,
+  size = 40,
+  shape = 'circle',
+  className,
+  fallback,
+  ...rest
+}: AvatarProps) {
+  /** 仅在「曾经有 src 且解码失败」时隐藏 Image，迫使走 Fallback（首字母或自定义占位） */
   const [imgOk, setImgOk] = useState(true)
   useEffect(() => {
     setImgOk(true)
   }, [src])
+  /** Radix Fallback：有任何有效 src 时勿用 delayMs=0，否则 Layers 等与 Image 争抢首帧易盖住成功加载的图（国线封面尤甚） */
+  const hasRenderableSrc = typeof src === 'string' && !!src.trim()
+  const fallbackDelayMs = hasRenderableSrc ? 600 : fallback ? 0 : 300
   return (
     <RadixAvatar.Root
       className={cn(
         'inline-flex shrink-0 items-center justify-center overflow-hidden bg-jade-100 text-jade-700 font-semibold select-none',
         shape === 'circle' ? 'rounded-full' : 'rounded-lg',
         'dark:bg-amber-400/20 dark:text-amber-200',
+        fallback && 'text-ink-muted dark:text-ink-muted',
         className,
       )}
       style={{ width: size, height: size, fontSize: size * 0.38 }}
@@ -47,8 +62,8 @@ export default function Avatar({ src, name, size = 40, shape = 'circle', classNa
           onError={() => setImgOk(false)}
         />
       )}
-      <RadixAvatar.Fallback delayMs={300} className="leading-none">
-        {initials(name)}
+      <RadixAvatar.Fallback delayMs={fallbackDelayMs} className="leading-none flex items-center justify-center">
+        {fallback ?? initials(name)}
       </RadixAvatar.Fallback>
     </RadixAvatar.Root>
   )
