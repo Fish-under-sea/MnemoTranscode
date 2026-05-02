@@ -2,6 +2,8 @@ import { User, Layers } from 'lucide-react'
 import MemberStatusBadge from './MemberStatusBadge'
 import Avatar from '@/components/ui/Avatar'
 import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
+import { cn } from '@/lib/utils'
 
 export interface MemberProfileData {
   name: string
@@ -32,22 +34,56 @@ export default function MemberProfile({
   nationalYearEmptyCaption?: string
 }) {
   const rel = member.relationship ?? member.relationship_type
-  const hasCustomAvatar = Boolean(member.avatar_url?.trim())
+  const trimmedAvatar = typeof member.avatar_url === 'string' ? member.avatar_url.trim() : ''
+  const avatarSrc = trimmedAvatar.length > 0 ? trimmedAvatar : undefined
   const isNationalEntity = presentation === 'national_memory_entity'
+
+  /** 国线封面：Radix Avatar + 固定 Layers fallback 在同一组件内易与 Image 争抢显示层，改用原生 img，失败再回落占位 */
+  const [nationalCoverErr, setNationalCoverErr] = useState(false)
+  useEffect(() => {
+    setNationalCoverErr(false)
+  }, [avatarSrc])
+
+  const nationalFallback = (
+    <div
+      className={cn(
+        'flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-white bg-white/[0.42] text-ink-secondary shadow-none ring-2 ring-border-default dark:border-white/[0.28]',
+      )}
+      aria-hidden
+    >
+      <Layers size={32} />
+    </div>
+  )
 
   return (
     <div>
       <div className="flex items-start gap-4">
-        {hasCustomAvatar ? (
-          <Avatar src={member.avatar_url ?? undefined} name={member.name} size={64} className="shrink-0 ring-2 ring-border-default" />
-        ) : (
-          <div
-            className="w-16 h-16 shrink-0 rounded-full bg-subtle border border-border-default flex items-center justify-center text-ink-muted"
-            aria-hidden
-          >
-            {isNationalEntity ? <Layers size={32} /> : <User size={32} />}
-          </div>
-        )}
+        {isNationalEntity ?
+          avatarSrc && !nationalCoverErr ?
+            <img
+              src={avatarSrc}
+              alt={`「${member.name}」封面`}
+              width={64}
+              height={64}
+              decoding="async"
+              className="h-16 w-16 shrink-0 rounded-full object-cover ring-2 ring-border-default"
+              onError={() => setNationalCoverErr(true)}
+            />
+          : nationalFallback
+        : <Avatar
+            src={avatarSrc}
+            name={member.name}
+            size={64}
+            fallback={
+              avatarSrc ?
+                undefined
+              : <User size={32} aria-hidden />
+            }
+            className={cn(
+              'shrink-0 ring-2 ring-border-default',
+              !avatarSrc && '!bg-subtle dark:!bg-secondary/35 !border !border-border-default !font-normal',
+            )}
+          />}
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-display text-ink-primary">{member.name}</h1>
           {rel ?

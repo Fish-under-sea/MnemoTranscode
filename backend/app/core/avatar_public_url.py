@@ -47,6 +47,18 @@ def parse_object_key_from_stored_url(avatar_url: str | None) -> str | None:
             i = avatar_url.find(marker)
             if i != -1:
                 return avatar_url[i + len(marker) :].split("?", 1)[0]
+    # 容错：历史或备份恢复时仅存 object key（无 http(s) scheme）
+    if avatar_url.startswith("avatars/members/"):
+        return avatar_url.split("?", 1)[0].split("#", 1)[0]
+    # URL 前缀与当前配置的 minio_host 不一致时，仍可按「桶名后跟 key」截取
+    m = f"/{bucket}/"
+    j = avatar_url.find(m)
+    if j != -1:
+        return avatar_url[j + len(m) :].split("?", 1)[0].split("#", 1)[0]
+    # 任意位置出现标准成员头像路径（反代/多域名历史 URL）
+    idx = avatar_url.find("avatars/members/")
+    if idx != -1:
+        return avatar_url[idx:].split("?", 1)[0].split("#", 1)[0]
     return None
 
 

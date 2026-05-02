@@ -31,7 +31,7 @@ import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
 import type { Memory } from '@/services/memoryTypes'
 import Modal from '@/components/ui/Modal'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -64,6 +64,37 @@ type NewMemberState = {
   heritage_origin_regions: string
   heritage_listing_level: string
   heritage_inscribed_year: string
+}
+
+/** 国线实体列表缩略图：有封面用同源签名 URL；无或解码失败用 Layers 占位（避免 Radix Avatar 与固定 fallback 抢层） */
+function NationalMemoryEntityListThumb({ avatarUrl, name }: { avatarUrl?: string | null; name: string }) {
+  const trimmed = typeof avatarUrl === 'string' ? avatarUrl.trim() : ''
+  const src = trimmed.length > 0 ? trimmed : undefined
+  const [broken, setBroken] = useState(false)
+  useEffect(() => {
+    setBroken(false)
+  }, [src])
+  const empty = (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white bg-white/[0.45] text-ink-secondary shadow-none dark:border-white/[0.32] dark:bg-white/[0.11] dark:text-ink-muted"
+      role="img"
+      aria-label="记忆实体占位"
+    >
+      <Layers size={22} aria-hidden />
+    </div>
+  )
+  if (!src || broken) return empty
+  return (
+    <img
+      src={src}
+      alt={`「${name}」封面`}
+      width={48}
+      height={48}
+      decoding="async"
+      className="h-12 w-12 shrink-0 rounded-full border border-white object-cover shadow-none ring-2 ring-border-default dark:border-white/[0.32]"
+      onError={() => setBroken(true)}
+    />
+  )
 }
 
 export default function ArchiveDetailPage() {
@@ -774,13 +805,7 @@ export default function ArchiveDetailPage() {
                         >
                           <div className="flex items-start gap-3 min-w-0">
                             {isNationArchive ?
-                              <div
-                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white bg-white/[0.45] text-ink-secondary shadow-none dark:border-white/[0.32] dark:bg-white/[0.11] dark:text-ink-muted"
-                                role="img"
-                                aria-label="记忆实体占位"
-                              >
-                                <Layers size={22} aria-hidden />
-                              </div>
+                              <NationalMemoryEntityListThumb avatarUrl={m.avatar_url} name={m.name} />
                             : <Avatar
                                 src={m.avatar_url ?? undefined}
                                 name={m.name}
