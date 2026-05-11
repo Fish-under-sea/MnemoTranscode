@@ -9,8 +9,9 @@ services:
       dockerfile: Dockerfile
     container_name: mtc-backend
     restart: unless-stopped
-    # 显式绑定 0.0.0.0，确保宿主机局域网网卡可访问（勿写 127.0.0.1:8000:8000）
+    # — 依赖/Dockerfile 变更：scripts/rebuild-docker-backend.ps1 或 make docker-rebuild-backend；见 .cursor/rules/mtc-docker-backend-sync.mdc
     ports:
+      # 显式 0.0.0.0，避免误写 127.0.0.1:8000:8000 导致仅本机可连
       - "0.0.0.0:8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"

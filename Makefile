@@ -2,7 +2,7 @@
 # MTC (Memory To Code) - 常用命令集合
 # ============================================================
 
-.PHONY: help install dev backend frontend dev-hot dev-hot-rebuild test lint clean docker-up docker-down docker-logs docker-restart docker-rebuild-frontend docker-watch-frontend start-services stable-backend stable-full
+.PHONY: help install dev backend frontend dev-hot dev-hot-rebuild test lint clean docker-up docker-down docker-logs docker-restart docker-rebuild-frontend docker-rebuild-backend docker-watch-frontend start-services stable-backend stable-full
 
 # 默认目标
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  make docker-logs   查看容器日志"
 	@echo "  make docker-restart 重启所有 compose 服务（cd infra && compose restart）"
 	@echo "  make docker-rebuild-frontend 仅重建「前端 nginx 镜像」并替换 frontend 容器（改 UI 后必跑；Compose 无前挂载）。Windows 等价：powershell -File scripts/rebuild-docker-frontend.ps1"
+	@echo "  make docker-rebuild-backend    重建 backend + celery-worker 镜像并替换容器（Dockerfile/requirements/entrypoint 变更后必跑）。Windows：scripts/rebuild-docker-backend.ps1；规则见 .cursor/rules/mtc-docker-backend-sync.mdc"
 	@echo "  make docker-watch-frontend  【可选】infra 下 docker compose watch frontend（改 frontend 源码自动触发重建；常驻前台）；规则见 .cursor/rules/mtc-docker-frontend-sync.mdc"
 	@echo "  make stable-backend 仅用 Docker 拉起 DB+Redis+Qdrant+MinIO+backend（稳定开发拓扑，详见 docs/stable-dev-windows.md）"
 	@echo "  make stable-full     Windows：PowerShell 一键全栈 Compose（frontend 容器 + celery + 依赖），见 scripts/start-stable.ps1 -FullStack"
@@ -111,6 +112,10 @@ docker-restart:
 # 同时默认 restart backend（后端目录有挂载，restart 后即加载新版 Python）。
 docker-rebuild-frontend:
 	cd infra && docker compose build frontend && docker compose up -d --no-deps --force-recreate frontend && docker compose restart backend
+
+# backend 与 celery-worker 同 Dockerfile；改 requirements/Dockerfile 后须 build，不能仅靠 restart。
+docker-rebuild-backend:
+	cd infra && docker compose build backend celery-worker && docker compose up -d --no-deps --force-recreate backend celery-worker
 
 # 开发期：Compose develop.watch → 镜像 rebuild（需在另一终端常驻；Compose v2）
 docker-watch-frontend:
