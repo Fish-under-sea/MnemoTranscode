@@ -8,6 +8,7 @@ import json
 import httpx
 
 from app.core.config import get_settings
+from app.core.llm_loopback import rewrite_llm_url_if_loopback
 from app.schemas.client_llm import ClientLlmOverride
 
 settings = get_settings()
@@ -27,7 +28,10 @@ class MemoryOrganizerService:
 
     def __init__(self):
         self.api_key = settings.llm_api_key
-        self.base_url = settings.llm_base_url
+        self.base_url = rewrite_llm_url_if_loopback(
+            settings.llm_base_url,
+            settings.llm_client_loopback_substitute,
+        ).rstrip("/")
 
     async def summarize_memory(self, content: str) -> dict:
         """
@@ -144,7 +148,11 @@ class MemoryOrganizerService:
 - 不要虚构记忆中没有的内容
 - 故事要有人情味，不要写成履历表"""
 
-        base = (llm_override.base_url if llm_override else self.base_url).rstrip("/")
+        raw_base = (llm_override.base_url if llm_override else self.base_url).rstrip("/")
+        base = rewrite_llm_url_if_loopback(
+            raw_base,
+            settings.llm_client_loopback_substitute,
+        ).rstrip("/")
         model = llm_override.model if llm_override else settings.llm_model
         ak = llm_override.api_key if llm_override is not None else self.api_key
 

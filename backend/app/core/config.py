@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o"
     llm_max_tokens: int = 4000
     llm_temperature: float = 0.7
+    # Docker 内：浏览器传入的 http://127.0.0.1:11434 须改为可到达宿主机的地址（如 host.docker.internal）
+    llm_client_loopback_substitute: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_CLIENT_LOOPBACK_SUBSTITUTE"),
+    )
 
     # Whisper STT
     whisper_api_key: str = ""
@@ -87,6 +92,16 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+    # 逗号分隔的额外 Origin（如 http://192.168.1.10:5173），便于局域网调试而无需改代码
+    cors_extra_origins: str = Field(
+        default="",
+        validation_alias=AliasChoices("CORS_EXTRA_ORIGINS"),
+    )
+    # 为 True 时允许 RFC1918 私网及 localhost 的 Origin（浏览器直连 API 跨机开发用）；生产请关闭
+    cors_allow_private_lan: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("CORS_ALLOW_PRIVATE_LAN"),
+    )
 
     # 向量嵌入模型
     embedding_model: str = "text-embedding-3-small"

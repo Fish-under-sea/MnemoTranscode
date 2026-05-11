@@ -9,6 +9,7 @@ import uuid
 import httpx
 
 from app.core.config import get_settings
+from app.core.llm_loopback import rewrite_llm_url_if_loopback
 
 settings = get_settings()
 
@@ -32,7 +33,10 @@ class VectorService:
     ) -> list[float]:
         """调用嵌入模型生成向量（可选用调用方传入的网关，便于与 client_llm 一致）。"""
         key = (api_key if api_key is not None else settings.llm_api_key) or ""
-        root = (base_url if base_url is not None else settings.llm_base_url).rstrip("/")
+        raw_root = (base_url if base_url is not None else settings.llm_base_url).rstrip("/")
+        root = rewrite_llm_url_if_loopback(raw_root, settings.llm_client_loopback_substitute).rstrip(
+            "/"
+        )
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if key.strip():
             headers["Authorization"] = f"Bearer {key}"

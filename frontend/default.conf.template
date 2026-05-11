@@ -3,7 +3,7 @@
 # 触发 host not found in upstream，进而 nginx -s fail、前端容器反复 Restarting
 server {
     listen 80;
-    server_name localhost;
+    server_name _;
     root /usr/share/nginx/html;
     index index.html;
 

@@ -33,6 +33,25 @@ from app.api.v1 import (
 
 settings = get_settings()
 
+# CORS：合并显式 Origin + 可选私网放行（局域网访问 :8000 的浏览器请求）
+_cors_origins = list(dict.fromkeys(settings.cors_origins))
+for item in (x.strip() for x in settings.cors_extra_origins.split(",")):
+    if item:
+        _cors_origins.append(item)
+_cors_origins = list(dict.fromkeys(_cors_origins))
+
+_cors_origin_regex = None
+if settings.cors_allow_private_lan:
+    # localhost / 私网 IPv4 + 可选端口（与 credentials 共存须用 regex 匹配 Origin）
+    _cors_origin_regex = (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|\[::1\]|::1|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+        r")(:\d+)?$" 
+    )
+
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -73,7 +92,8 @@ app = FastAPI(
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

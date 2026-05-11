@@ -12,6 +12,7 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
+from app.core.llm_loopback import rewrite_llm_url_if_loopback
 
 settings = get_settings()
 
@@ -37,7 +38,11 @@ class LLMService:
         model: str | None = None,
     ):
         self.api_key = api_key or settings.llm_api_key
-        self.base_url = base_url or settings.llm_base_url
+        raw_base = (base_url or settings.llm_base_url or "").strip()
+        self.base_url = rewrite_llm_url_if_loopback(
+            raw_base,
+            settings.llm_client_loopback_substitute,
+        )
         self.model = model or settings.llm_model
         self.max_tokens = settings.llm_max_tokens
         self.temperature = settings.llm_temperature
