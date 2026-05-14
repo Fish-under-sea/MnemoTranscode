@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
 from app.core.config import get_settings
+from app.core.minio_presign import minio_internal_connect_endpoint
 from app.core.avatar_public_url import (
     build_avatar_display_url,
     parse_object_key_from_stored_url,
@@ -292,7 +293,7 @@ async def upload_avatar(
         from minio import Minio
 
         client = Minio(
-            settings.minio_endpoint,
+            minio_internal_connect_endpoint(),
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,

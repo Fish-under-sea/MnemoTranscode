@@ -10,6 +10,7 @@ from minio import Minio
 from minio.error import S3Error
 
 from app.core.config import get_settings
+from app.core.minio_presign import minio_internal_connect_endpoint
 
 
 def streaming_response_for_object_key(key: str, *, bucket: str | None = None) -> StreamingResponse:
@@ -19,7 +20,7 @@ def streaming_response_for_object_key(key: str, *, bucket: str | None = None) ->
 
     settings = get_settings()
     client = Minio(
-        settings.minio_endpoint,
+        minio_internal_connect_endpoint(),
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_secure,

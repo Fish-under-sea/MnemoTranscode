@@ -1,5 +1,6 @@
 """多媒体管理 API（兼容旧接口 + 新两阶段上传接口）。"""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import io
@@ -17,7 +18,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.api.v1.auth import get_current_user
 from app.core.config import get_settings
 from app.core.minio_object_response import streaming_response_for_object_key
-from app.core.minio_presign import minio_presign_endpoint
+from app.core.minio_presign import minio_internal_connect_endpoint, minio_sdk_endpoint_for_presign
 from app.core.database import get_db
 from app.core.exceptions import DomainInternalError, DomainMediaError, DomainResourceError
 from app.models.media import MediaAsset, MediaUploadSession
@@ -79,20 +80,41 @@ class UploadCompleteRequest(BaseModel):
 def _minio_client_internal() -> Minio:
     """服务端连对象存储（容器内可用 minio:9000）。"""
     return Minio(
-        settings.minio_endpoint,
+        minio_internal_connect_endpoint(),
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_secure,
+        region="us-east-1",
     )
 
 
 def _minio_client_presign() -> Minio:
-    """仅用于生成浏览器可访问的预签名 URL（主机为 MINIO_PUBLIC_ENDPOINT 或 127.0.0.1:端口）。"""
+    """生成预签名：SDK 连接地址见 minio_sdk_endpoint_for_presign（避免容器内误连 localhost）。"""
     return Minio(
-        minio_presign_endpoint(),
+        minio_sdk_endpoint_for_presign(),
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_secure,
+        region="us-east-1",
+    )
+
+
+def _sync_presign_put_url(bucket: str, object_key: str, expires_seconds: int) -> str:
+    """在线程中执行：确保桶存在并生成 PUT 预签名（均为同步阻塞 IO）。"""
+    internal = _minio_client_internal()
+    if not internal.bucket_exists(bucket):
+        internal.make_bucket(bucket)
+    presign = _minio_client_presign()
+    return presign.presigned_put_object(
+        bucket, object_key, expires=timedelta(seconds=expires_seconds)
+    )
+
+
+def _sync_presign_get_url(bucket: str, object_key: str, expires_seconds: int) -> str:
+    """在线程中执行：生成 GET 预签名。"""
+    presign = _minio_client_presign()
+    return presign.presigned_get_object(
+        bucket, object_key, expires=timedelta(seconds=expires_seconds)
     )
 
 
@@ -278,13 +300,11 @@ async def init_upload(
     expires_in = 3600
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
+    bucket = settings.minio_bucket
     try:
-        internal = _minio_client_internal()
-        bucket = settings.minio_bucket
-        if not internal.bucket_exists(bucket):
-            internal.make_bucket(bucket)
-        presign = _minio_client_presign()
-        put_url = presign.presigned_put_object(bucket, object_key, expires=timedelta(seconds=expires_in))
+        put_url = await asyncio.to_thread(
+            _sync_presign_put_url, bucket, object_key, expires_in
+        )
     except Exception as exc:
         raise DomainInternalError("INTERNAL_SERVER_ERROR", f"生成上传凭证失败: {exc}") from exc
 
@@ -451,9 +471,10 @@ async def get_download_url(
     if asset.owner_id != current_user.id:
         raise DomainMediaError("MEDIA_PRESIGN_GET_FORBIDDEN", "无权限访问该媒体资源")
 
-    presign = _minio_client_presign()
     expires_in = 3600
-    url = presign.presigned_get_object(asset.bucket, asset.object_key, expires=timedelta(seconds=expires_in))
+    url = await asyncio.to_thread(
+        _sync_presign_get_url, asset.bucket, asset.object_key, expires_in
+    )
     return {"get_url": url, "expires_in": expires_in}
 
 

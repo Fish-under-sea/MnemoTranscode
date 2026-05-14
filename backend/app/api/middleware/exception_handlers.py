@@ -30,6 +30,28 @@ def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "unknown-request-id")
 
 
+def _looks_like_storage_unreachable(exc: BaseException) -> bool:
+    """MinIO / S3 SDK 常见：urllib3 连 9000 失败，勿与 PostgreSQL 混淆。"""
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    parts: list[str] = []
+    while stack:
+        e = stack.pop()
+        eid = id(e)
+        if eid in seen:
+            continue
+        seen.add(eid)
+        parts.append(str(e))
+        parts.append(type(e).__name__)
+        for child in (e.__cause__, e.__context__):
+            if child is not None:
+                stack.append(child)
+    blob = " ".join(parts).lower()
+    if "9000" not in blob:
+        return False
+    return "maxretry" in blob or "newconnectionerror" in blob or "connection refused" in blob
+
+
 def _looks_like_db_unreachable(exc: BaseException) -> bool:
     """覆盖 SQLAlchemy OperationalError、asyncpg 嵌套、原生 ConnectionRefusedError 等链路。"""
     if isinstance(exc, OperationalError):
@@ -104,6 +126,25 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception):
         rid = _request_id(request)
+        if _looks_like_storage_unreachable(exc):
+            logger.warning(
+                "对象存储暂不可用（多为 MinIO 地址在容器内不可达，已返回 503）",
+                extra={"request_id": rid},
+                exc_info=exc,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error_code": "STORAGE_UNAVAILABLE",
+                    "message": (
+                        "对象存储（MinIO）暂时无法连接。若后端在 Docker 内，请确认 "
+                        "MINIO_ENDPOINT=minio:9000 且 MinIO 容器健康；"
+                        "局域网访问时请将 MTC_PUBLIC_HOST 设为宿主在局域网中的 IP。"
+                    ),
+                    "request_id": rid,
+                },
+                headers={"X-Request-ID": rid},
+            )
         if _looks_like_db_unreachable(exc):
             logger.warning(
                 "数据库暂不可用（连接类异常，已返回 503）",

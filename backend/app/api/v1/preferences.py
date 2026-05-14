@@ -26,6 +26,7 @@ from app.core.avatar_public_url import (
 )
 from app.core.minio_object_response import raise_if_expired, streaming_response_for_object_key
 from app.core.config import get_settings
+from app.core.minio_presign import minio_internal_connect_endpoint
 from app.services.upload_bounded import read_upload_file_max
 
 router = APIRouter(prefix="/preferences", tags=["用户偏好"])
@@ -174,7 +175,7 @@ async def upload_app_background(
         from minio import Minio
 
         client = Minio(
-            settings.minio_endpoint,
+            minio_internal_connect_endpoint(),
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,

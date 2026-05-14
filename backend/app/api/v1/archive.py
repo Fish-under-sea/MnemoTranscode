@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import DomainAuthError, DomainResourceError
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.minio_presign import minio_internal_connect_endpoint
 from app.core.avatar_public_url import (
     build_member_avatar_display_url,
     parse_object_key_from_stored_url,
@@ -898,7 +899,7 @@ async def upload_member_avatar(
         from minio import Minio
 
         client = Minio(
-            settings.minio_endpoint,
+            minio_internal_connect_endpoint(),
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,
