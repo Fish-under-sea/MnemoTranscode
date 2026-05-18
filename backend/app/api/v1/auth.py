@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
 from app.core.config import get_settings
 from app.core.minio_presign import minio_internal_connect_endpoint
+from app.core.object_storage_paths import user_root_prefix
 from app.core.avatar_public_url import (
     build_avatar_display_url,
     parse_object_key_from_stored_url,
@@ -287,7 +288,7 @@ async def upload_avatar(
         content, content_type, file_ext = pack_avatar_for_storage(raw, file.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    object_name = f"avatars/{current_user.id}/{uuid.uuid4()}.{file_ext}"
+    object_name = f"{user_root_prefix(current_user)}/avatar/{uuid.uuid4()}.{file_ext}"
 
     try:
         from minio import Minio

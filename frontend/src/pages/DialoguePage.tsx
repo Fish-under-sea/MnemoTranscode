@@ -1,5 +1,14 @@
 // frontend/src/pages/DialoguePage.tsx
-import { useCallback, useRef, useEffect, KeyboardEvent, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useRef,
+  useEffect,
+  KeyboardEvent,
+  useState,
+  lazy,
+  Suspense,
+  type CSSProperties,
+} from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'motion/react'
@@ -24,6 +33,7 @@ import toast from 'react-hot-toast'
 import { useApiError } from '@/hooks/useApiError'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { rememberDialogueRoute, clearRememberedDialogueRoute } from '@/lib/dialogueStorage'
+const DialogueMnemoFloatingPanel = lazy(() => import('@/components/dialogue/DialogueMnemoFloatingPanel'))
 
 const STARTER_PROMPTS = [
   '你最难忘的一件事是什么？',
@@ -71,6 +81,8 @@ export default function DialoguePage() {
 
   const [extractMemoriesAfter, setExtractMemoriesAfter] = useState(false)
   const [selectedStickerIds, setSelectedStickerIds] = useState<number[]>([])
+  /** 「写入记忆」API 返回的 id，供侧栏神经网络浮窗优先聚焦 newborn 结点 */
+  const [mnemoHighlightMemoryIds, setMnemoHighlightMemoryIds] = useState<number[]>([])
 
   const needsMemberPicker = !hasChatContext
 
@@ -135,6 +147,11 @@ export default function DialoguePage() {
       toast.success(
         `已写入 ${data.created_count} 条记忆（时间链 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}）`,
       )
+      const ids = Array.isArray((data as { memory_ids?: number[] }).memory_ids)
+        ? (data as { memory_ids: number[] }).memory_ids
+        : []
+      setMnemoHighlightMemoryIds(ids)
+      window.setTimeout(() => setMnemoHighlightMemoryIds([]), 14_000)
       void queryClient.invalidateQueries({ queryKey: ['memories'] })
       void queryClient.invalidateQueries({ queryKey: ['mnemo-graph'] })
     },
@@ -142,6 +159,8 @@ export default function DialoguePage() {
   })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  /** 记忆网络浮层专用挂载点（空节点），避免 portal 与画布内其它 React 子树抢同一 DOM 父级导致错位/边框异常 */
+  const mnemoOverlayMountRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -171,9 +190,10 @@ export default function DialoguePage() {
     }
   }
 
-  /** 切换对话对象后清空待发表情 */
+  /** 切换对话对象后清空待发表情与图谱高亮队列 */
   useEffect(() => {
     setSelectedStickerIds([])
+    setMnemoHighlightMemoryIds([])
   }, [memberIdNum, archiveIdNum])
 
   /** 清空对话时同步清空待发表情（状态在页面层） */
@@ -274,11 +294,12 @@ export default function DialoguePage() {
 
   return (
     <PageTransition>
-      <div className="flex h-[calc(100vh-56px)]">
+      {/* 高度随 Layout main（flex-1）铺满，避免 100vh/dvw 与顶栏合计误差 */}
+      <div className="flex h-full max-h-full min-h-0 w-full overflow-hidden">
         {/* 对话入口侧栏（液态玻璃，桌面端） */}
         <aside
           className={cn(
-            'hidden md:flex flex-col w-60 flex-shrink-0 overflow-y-auto overflow-x-hidden min-h-0',
+            'hidden md:flex flex-col w-60 flex-shrink-0 overflow-hidden overflow-x-hidden min-h-0',
             glassAside,
           )}
         >
@@ -302,64 +323,82 @@ export default function DialoguePage() {
             </div>
           </div>
 
-          <div className="p-4 flex-1 overflow-y-auto min-h-0">
-            {needsMemberPicker ? (
-              <>
-                <p className="text-caption text-ink-primary mb-1 font-medium">{sessionCopy.pickerLead}</p>
-                <p className="text-caption text-ink-muted mb-3 leading-relaxed">{sessionCopy.pickerLeadHint}</p>
-                {pickerBody}
-              </>
-            ) : !member ? (
-              <LoadingState variant="skeleton-list" count={3} />
-            ) : (
-              <div className="space-y-4">
-                {/* 侧边：对象档案与引导 */}
-                <div className="space-y-2">
-                  <Avatar
-                    src={memberAvatarUrl}
-                    name={memberName}
-                    size={48}
-                    className="ring-2 ring-border-default"
-                  />
-                  <div>
-                    <div className="font-medium text-ink-primary">{(member as any).name}</div>
-                    {(member as any).relationship_type ? (
-                      <div className="text-caption text-ink-muted">
-                        <span className="text-ink-muted/85 mr-1">{sessionCopy.metaLabelShort}</span>
-                        {(member as any).relationship_type}
-                      </div>
-                    ) : null}
+          <div className="p-4 flex-1 flex flex-col min-h-0 gap-3">
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {needsMemberPicker ? (
+                <>
+                  <p className="text-caption text-ink-primary mb-1 font-medium">{sessionCopy.pickerLead}</p>
+                  <p className="text-caption text-ink-muted mb-3 leading-relaxed">{sessionCopy.pickerLeadHint}</p>
+                  {pickerBody}
+                </>
+              ) : !member ? (
+                <LoadingState variant="skeleton-list" count={3} />
+              ) : (
+                <div className="space-y-4">
+                  {/* 侧边：对象档案与引导 */}
+                  <div className="space-y-2">
+                    <Avatar
+                      src={memberAvatarUrl}
+                      name={memberName}
+                      size={48}
+                      className="ring-2 ring-border-default"
+                    />
+                    <div>
+                      <div className="font-medium text-ink-primary">{(member as any).name}</div>
+                      {(member as any).relationship_type ? (
+                        <div className="text-caption text-ink-muted">
+                          <span className="text-ink-muted/85 mr-1">{sessionCopy.metaLabelShort}</span>
+                          {(member as any).relationship_type}
+                        </div>
+                      ) : null}
+                    </div>
+                    <MemberStatusBadge
+                      presentation={archiveTypeResolved === 'nation' ? 'national_memory_entity' : 'member'}
+                      status={(member as any).status}
+                      birthYear={(member as any).birth_year}
+                      endYear={(member as any).end_year}
+                      showLifespan
+                      size="sm"
+                    />
+                    {(member as any).bio && (
+                      <p className="text-caption text-ink-secondary leading-relaxed line-clamp-4">
+                        {(member as any).bio}
+                      </p>
+                    )}
                   </div>
-                  <MemberStatusBadge
-                    presentation={archiveTypeResolved === 'nation' ? 'national_memory_entity' : 'member'}
-                    status={(member as any).status}
-                    birthYear={(member as any).birth_year}
-                    endYear={(member as any).end_year}
-                    showLifespan
-                    size="sm"
-                  />
-                  {(member as any).bio && (
-                    <p className="text-caption text-ink-secondary leading-relaxed line-clamp-4">
-                      {(member as any).bio}
-                    </p>
-                  )}
-                </div>
 
-                {/* 引导问句 */}
-                <div className="space-y-2 pt-2 border-t border-border-default">
-                  <div className="text-caption text-ink-muted font-medium">{sessionCopy.starterSectionTitle}</div>
-                  {STARTER_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt}
-                      onClick={() => setInputValue(prompt)}
-                      className="w-full text-left text-caption text-ink-secondary hover:text-brand hover:bg-jade-50 px-3 py-2 rounded-lg transition-colors border border-border-default"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
+                  {/* 引导问句 */}
+                  <div className="space-y-2 pt-2 border-t border-border-default">
+                    <div className="text-caption text-ink-muted font-medium">{sessionCopy.starterSectionTitle}</div>
+                    {STARTER_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => setInputValue(prompt)}
+                        className="w-full text-left text-caption text-ink-secondary hover:text-brand hover:bg-jade-50 px-3 py-2 rounded-lg transition-colors border border-border-default"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+            {hasChatContext && memberIdNum ? (
+              <Suspense
+                fallback={
+                  <div
+                    className="h-[132px] rounded-xl border border-border-default bg-subtle"
+                    aria-hidden
+                  />
+                }
+              >
+                <DialogueMnemoFloatingPanel
+                  memberId={memberIdNum}
+                  prioritizeMemoryIds={mnemoHighlightMemoryIds}
+                  expandHostRef={mnemoOverlayMountRef}
+                />
+              </Suspense>
+            ) : null}
           </div>
 
           {hasChatContext && (
@@ -378,8 +417,8 @@ export default function DialoguePage() {
           )}
         </aside>
 
-        {/* 对话主区 */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* 对话主区：min-h-0 让 flex 子项可收缩，滚动仅发生在消息列表 */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {needsMemberPicker && (
             <div className={cn('md:hidden shrink-0 max-h-[38vh] overflow-y-auto p-4 border-b border-border-default/65', glassBar)}>
               <p className="text-caption font-medium text-ink-secondary mb-0.5">{sessionCopy.mobilePickTitle}</p>
@@ -387,188 +426,195 @@ export default function DialoguePage() {
               {pickerBody}
             </div>
           )}
-          {/* Header：标题与操作，模型信息在输入区下方展示 */}
-          <div className={cn('shrink-0 border-b border-border-default/65 px-4 py-3 space-y-3', glassBar)}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="text-body font-semibold text-ink-primary">
-                  与 {memberName} 对话
-                </h1>
-                {(member as any)?.relationship_type && (
-                  <p className="text-caption text-ink-muted">
-                    <span className="text-ink-muted/85">{sessionCopy.metaLabelShort}</span>{' '}
-                    {(member as any).relationship_type}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end sm:justify-end">
-                {hasChatContext && (
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {/* Header：标题与操作；与消息区同属「主对话画布」，供记忆网络大图覆盖 */}
+            <div className={cn('shrink-0 border-b border-border-default/65 px-4 py-3 space-y-3', glassBar)}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h1 className="text-body font-semibold text-ink-primary">
+                    与 {memberName} 对话
+                  </h1>
+                  {(member as any)?.relationship_type && (
+                    <p className="text-caption text-ink-muted">
+                      <span className="text-ink-muted/85">{sessionCopy.metaLabelShort}</span>{' '}
+                      {(member as any).relationship_type}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap justify-end sm:justify-end">
+                  {hasChatContext && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="md:hidden shrink-0"
+                      leftIcon={<UserMinus size={14} aria-hidden />}
+                      onClick={handleExitCurrentRole}
+                    >
+                      {sessionCopy.exitChat}
+                    </Button>
+                  )}
                   <Button
-                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<BookmarkPlus size={14} />}
+                    loading={extractMutation.isPending}
+                    disabled={
+                      !hasChatContext || !messages.some((m) => m.content.trim().length > 0)
+                    }
+                    onClick={() => extractMutation.mutate()}
+                    title="将当前对话窗口中的内容提炼为记忆并入关系网"
+                  >
+                    写入记忆
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
-                    className="md:hidden shrink-0"
-                    leftIcon={<UserMinus size={14} aria-hidden />}
-                    onClick={handleExitCurrentRole}
+                    leftIcon={<Trash2 size={14} />}
+                    onClick={() => void handleClearDialogs()}
+                    title="清空对话"
                   >
-                    {sessionCopy.exitChat}
+                    清空
                   </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<BookmarkPlus size={14} />}
-                  loading={extractMutation.isPending}
-                  disabled={
-                    !hasChatContext || !messages.some((m) => m.content.trim().length > 0)
-                  }
-                  onClick={() => extractMutation.mutate()}
-                  title="将当前对话窗口中的内容提炼为记忆并入关系网"
-                >
-                  写入记忆
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<Trash2 size={14} />}
-                  onClick={() => void handleClearDialogs()}
-                  title="清空对话"
-                >
-                  清空
-                </Button>
+                </div>
               </div>
             </div>
-          </div>
 
-          {hasChatContext && graphMemoryActive && (
-            <div
-              className="px-4 py-2.5 bg-jade-50/95 border-b border-jade-100/80 text-caption text-jade-900 flex items-center gap-2 shrink-0"
-              role="status"
-            >
-              <span
-                className="inline-flex h-2 w-2 rounded-full bg-jade-500 shrink-0"
-                aria-hidden
-              />
-              <span>
-                图记忆已参与本轮对话：扩散激活 + 意识流上下文已由后端注入（MnemoTranscode）
-              </span>
-            </div>
-          )}
-
-          {/* 消息列表：hydrate 完成前不渲染空态，避免误判无历史 */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {hasChatContext && !dialogueHydrated ? (
-              <div className="h-full min-h-[280px] flex items-center justify-center">
-                <LoadingState message="载入对话记录…" />
+            {hasChatContext && graphMemoryActive && (
+              <div
+                className="px-4 py-2.5 bg-jade-50/95 border-b border-jade-100/80 text-caption text-jade-900 flex items-center gap-2 shrink-0"
+                role="status"
+              >
+                <span
+                  className="inline-flex h-2 w-2 rounded-full bg-jade-500 shrink-0"
+                  aria-hidden
+                />
+                <span>
+                  图记忆已参与本轮对话：扩散激活 + 意识流上下文已由后端注入（MnemoTranscode）
+                </span>
               </div>
-            ) : (
-              <>
-                <AnimatePresence mode="popLayout">
-                  {messages.length === 0 ? (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="h-full flex flex-col items-center justify-center text-ink-muted py-12"
-                >
-                  <div className="text-4xl mb-4">💬</div>
-                  <p className="text-body-sm text-center mb-6">
-                    {hasChatContext
-                      ? archiveTypeResolved === 'nation'
-                        ? `向「${memberName}」发问或接续叙事吧`
-                        : `和 ${memberName} 开始对话吧，Ta 记得你们的故事`
-                      : sessionCopy.emptyStateSelectFirst}
-                  </p>
-                  {hasChatContext && (
-                    <motion.div
-                      variants={staggerContainer(0.08)}
-                      initial="hidden"
-                      animate="visible"
-                      className="flex flex-col gap-2 w-full max-w-xs"
-                    >
-                      {STARTER_PROMPTS.map((prompt) => (
-                        <motion.button
-                          key={prompt}
-                          variants={fadeUp}
-                          onClick={() => setInputValue(prompt)}
-                          className="text-body-sm text-ink-secondary hover:text-brand border border-border-default hover:border-brand/50 px-4 py-2.5 rounded-xl transition-all hover:bg-jade-50 text-left"
-                        >
-                          {prompt}
-                        </motion.button>
-                      ))}
-                    </motion.div>
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="messages"
-                  variants={staggerContainer(0.04)}
-                  initial="hidden"
-                  animate="visible"
-                  className="space-y-4"
-                >
-                  {messages.map((msg, idx) => {
-                    const isLastBubble = idx === messages.length - 1
-                    const isLastAssistant = msg.role === 'assistant' && isLastBubble
-                    let segIdx: number | undefined
-                    const ex =
-                      msg.extras && typeof msg.extras === 'object'
-                        ? (msg.extras as Record<string, unknown>)
-                        : null
-                    if (
-                      msg.role === 'assistant' &&
-                      ex &&
-                      typeof ex.dialogue_segment_index === 'number'
-                    ) {
-                      segIdx = ex.dialogue_segment_index
-                    }
-                    const hideAssistantAvatar =
-                      msg.role === 'assistant' &&
-                      typeof segIdx === 'number' &&
-                      segIdx > 0
-                    const isCurrentlyTyping =
-                      isLastAssistant && (isTyping || isSending)
-
-                    return (
-                      <motion.div key={msg.id} variants={fadeUp}>
-                        <ChatBubble
-                          role={msg.role}
-                          content={msg.content}
-                          memberName={
-                            hideAssistantAvatar
-                              ? undefined
-                              : msg.role === 'assistant'
-                                ? memberName
-                                : undefined
-                          }
-                          assistantAvatarSrc={
-                            msg.role === 'assistant' ? memberAvatarUrl : undefined
-                          }
-                          userAvatarSrc={userAvatarUrl}
-                          userName={userBubbleName}
-                          hideAvatar={hideAssistantAvatar}
-                          showTypingCaret={isLastAssistant && isTyping}
-                          typingContent={
-                            isCurrentlyTyping
-                              ? (isTyping ? displayedContent : undefined)
-                              : undefined
-                          }
-                          isTyping={isCurrentlyTyping && isSending && !isTyping}
-                          stickerMediaIds={
-                            msg.role === 'user'
-                              ? stickerMediaIdsFromExtras(msg.extras)
-                              : undefined
-                          }
-                        />
-                      </motion.div>
-                    )
-                  })}
-                </motion.div>
-              )}
-                </AnimatePresence>
-                <div ref={messagesEndRef} />
-              </>
             )}
+
+            {/* 消息列表：hydrate 完成前不渲染空态，避免误判无历史 */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 space-y-4">
+              {hasChatContext && !dialogueHydrated ? (
+                <div className="h-full min-h-[280px] flex items-center justify-center">
+                  <LoadingState message="载入对话记录…" />
+                </div>
+              ) : (
+                <>
+                  <AnimatePresence mode="popLayout">
+                    {messages.length === 0 ? (
+                  <motion.div
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="h-full flex flex-col items-center justify-center text-ink-muted py-12"
+                  >
+                    <div className="text-4xl mb-4">💬</div>
+                    <p className="text-body-sm text-center mb-6">
+                      {hasChatContext
+                        ? archiveTypeResolved === 'nation'
+                          ? `向「${memberName}」发问或接续叙事吧`
+                          : `和 ${memberName} 开始对话吧，Ta 记得你们的故事`
+                        : sessionCopy.emptyStateSelectFirst}
+                    </p>
+                    {hasChatContext && (
+                      <motion.div
+                        variants={staggerContainer(0.08)}
+                        initial="hidden"
+                        animate="visible"
+                        className="flex flex-col gap-2 w-full max-w-xs"
+                      >
+                        {STARTER_PROMPTS.map((prompt) => (
+                          <motion.button
+                            key={prompt}
+                            variants={fadeUp}
+                            onClick={() => setInputValue(prompt)}
+                            className="text-body-sm text-ink-secondary hover:text-brand border border-border-default hover:border-brand/50 px-4 py-2.5 rounded-xl transition-all hover:bg-jade-50 text-left"
+                          >
+                            {prompt}
+                          </motion.button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="messages"
+                    variants={staggerContainer(0.04)}
+                    initial="hidden"
+                    animate="visible"
+                    className="space-y-4"
+                  >
+                    {messages.map((msg, idx) => {
+                      const isLastBubble = idx === messages.length - 1
+                      const isLastAssistant = msg.role === 'assistant' && isLastBubble
+                      let segIdx: number | undefined
+                      const ex =
+                        msg.extras && typeof msg.extras === 'object'
+                          ? (msg.extras as Record<string, unknown>)
+                          : null
+                      if (
+                        msg.role === 'assistant' &&
+                        ex &&
+                        typeof ex.dialogue_segment_index === 'number'
+                      ) {
+                        segIdx = ex.dialogue_segment_index
+                      }
+                      const hideAssistantAvatar =
+                        msg.role === 'assistant' &&
+                        typeof segIdx === 'number' &&
+                        segIdx > 0
+                      const isCurrentlyTyping =
+                        isLastAssistant && (isTyping || isSending)
+
+                      return (
+                        <motion.div key={msg.id} variants={fadeUp}>
+                          <ChatBubble
+                            role={msg.role}
+                            content={msg.content}
+                            memberName={
+                              hideAssistantAvatar
+                                ? undefined
+                                : msg.role === 'assistant'
+                                  ? memberName
+                                  : undefined
+                            }
+                            assistantAvatarSrc={
+                              msg.role === 'assistant' ? memberAvatarUrl : undefined
+                            }
+                            userAvatarSrc={userAvatarUrl}
+                            userName={userBubbleName}
+                            hideAvatar={hideAssistantAvatar}
+                            showTypingCaret={isLastAssistant && isTyping}
+                            typingContent={
+                              isCurrentlyTyping
+                                ? (isTyping ? displayedContent : undefined)
+                                : undefined
+                            }
+                            isTyping={isCurrentlyTyping && isSending && !isTyping}
+                            stickerMediaIds={
+                              msg.role === 'user'
+                                ? stickerMediaIdsFromExtras(msg.extras)
+                                : undefined
+                            }
+                          />
+                        </motion.div>
+                      )
+                    })}
+                  </motion.div>
+                )}
+                  </AnimatePresence>
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+            {/* 仅挂载记忆网络浮层，不参与主内容 flex；闭合时 pointer-events-none 不挡聊天区点击 */}
+            <div
+              ref={mnemoOverlayMountRef}
+              className="pointer-events-none absolute inset-0 z-50 flex flex-col overflow-hidden"
+            />
           </div>
 
           {/* 输入区：与消息列表同为 px-4，避免横向「出格」 */}

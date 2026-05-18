@@ -132,9 +132,9 @@ export function panelClassFromCardStyle(style: CardStyle): string {
     case 'glass':
       return [
         'mtc-liquid-glass',
-        'border border-default ring-1 ring-black/[0.04]',
-        'bg-surface/58 backdrop-blur-xl backdrop-saturate-[1.35]',
-        'dark:bg-surface/36 dark:border-default dark:ring-white/[0.06]',
+        'border border-default ring-1 ring-black/[0.028]',
+        'bg-surface/62 backdrop-blur-xl backdrop-saturate-[1.22]',
+        'dark:bg-surface/42 dark:border-default dark:ring-white/[0.05]',
       ].join(' ')
     case 'minimal':
       return 'bg-surface shadow-none border border-transparent dark:border-white/[0.06]'

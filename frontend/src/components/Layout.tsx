@@ -61,9 +61,18 @@ export default function Layout() {
   }
 
   const displayName = user?.username?.trim() || '用户'
+  /** 对话页自占满一屏主区高度，抑制 body / 侧栏双层误滚动条 */
+  const dialogueImmersiveMain = location.pathname.startsWith('/dialogue')
 
   return (
-    <div className="min-h-screen flex flex-col relative">
+    <div
+      className={cn(
+        'flex flex-col relative',
+        dialogueImmersiveMain
+          ? 'h-svh min-h-0 overflow-hidden'
+          : 'min-h-screen',
+      )}
+    >
       {/* 全站背景：图片用 CSS 变量；视频用 <video>（Tailwind 任意类里 var(--x,none) 的逗号会破坏解析，故改内联 style） */}
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-canvas bg-cover bg-center bg-fixed bg-no-repeat"
@@ -271,7 +280,12 @@ export default function Layout() {
       </header>
 
       {/* 主内容区 */}
-      <main className="flex-1">
+      <main
+        className={cn(
+          'flex-1',
+          dialogueImmersiveMain && 'min-h-0 overflow-x-hidden overflow-y-hidden',
+      )}
+      >
         <Outlet />
       </main>
 

@@ -699,6 +699,10 @@ export const mediaApi = {
   /** 表情包：调用多模态模型写入 extras 标签（需网关支持图像输入） */
   analyzeStickerTags: (mediaId: number): Promise<MediaAsset> =>
     api.post(`/media/${mediaId}/sticker-analyze`, {}),
+
+  /** 删除媒体资产（相册项等），同步移除 MinIO 对象 */
+  deleteAsset: (mediaId: number): Promise<void> =>
+    api.delete(`/media/assets/${mediaId}`),
 }
 
 /**

@@ -16,8 +16,10 @@ def test_media_two_phase_routes_exist_and_require_auth():
     init_resp = client.post("/api/v1/media/uploads/init", json={})
     complete_resp = client.post("/api/v1/media/uploads/complete", json={})
     get_resp = client.get("/api/v1/media/1/download-url")
+    del_resp = client.delete("/api/v1/media/assets/1")
 
     assert init_resp.status_code == 401
     assert complete_resp.status_code == 401
     assert get_resp.status_code == 401
+    assert del_resp.status_code == 401
 

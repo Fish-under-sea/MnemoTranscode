@@ -8,7 +8,7 @@ import os
 import tempfile
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile, Form
+from fastapi import APIRouter, Depends, File, UploadFile, Form, status
 from minio import Minio
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -17,11 +17,13 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.v1.auth import get_current_user
 from app.core.config import get_settings
+from app.core.object_storage_paths import member_roles_prefix, user_root_prefix
 from app.core.minio_object_response import streaming_response_for_object_key
 from app.core.minio_presign import minio_internal_connect_endpoint, minio_sdk_endpoint_for_presign
 from app.core.database import get_db
 from app.core.exceptions import DomainInternalError, DomainMediaError, DomainResourceError
 from app.models.media import MediaAsset, MediaUploadSession
+from app.models.memory import Archive, Member
 from app.models.user import User
 from app.services.avatar_image import AVATAR_MAX_RAW_BYTES
 from app.services.llm_service import LLMService
@@ -165,6 +167,47 @@ def _sniff_content_type(filename: str, reported: str) -> str:
     return r or "application/octet-stream"
 
 
+async def _resolve_media_upload_prefix(
+    db: AsyncSession,
+    user: User,
+    member_id: int | None,
+    archive_id: int | None,
+) -> str:
+    """
+    成员媒体：users/{用户 slug-id}/roles/{角色 slug}-{member_id}/...
+    仅 archive_id：users/.../archives/{archive_id}/...
+    其它：users/.../library/...
+    """
+    if member_id is not None:
+        stmt = (
+            select(Member)
+            .join(Archive, Member.archive_id == Archive.id)
+            .where(Member.id == member_id, Archive.owner_id == user.id)
+        )
+        if archive_id is not None:
+            stmt = stmt.where(Member.archive_id == archive_id)
+        res = await db.execute(stmt)
+        mem = res.scalar_one_or_none()
+        if not mem:
+            raise DomainMediaError(
+                "MEDIA_UPLOAD_MEMBER_FORBIDDEN",
+                "成员不存在或无权在该档案下上传",
+            )
+        return member_roles_prefix(user, mem)
+    base = user_root_prefix(user)
+    if archive_id is not None:
+        ar = await db.execute(
+            select(Archive).where(Archive.id == archive_id, Archive.owner_id == user.id)
+        )
+        if not ar.scalar_one_or_none():
+            raise DomainMediaError(
+                "MEDIA_UPLOAD_ARCHIVE_FORBIDDEN",
+                "档案不存在或无权访问",
+            )
+        return f"{base}/archives/{archive_id}"
+    return f"{base}/library"
+
+
 @router.post("/uploads/direct")
 @router.post("/uploads/commit")
 async def upload_direct(
@@ -219,7 +262,8 @@ async def upload_direct(
         _validate_upload_request(pseudo)
 
         upload_id = str(uuid.uuid4())
-        object_key = f"{current_user.id}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{raw_name}"
+        prefix = await _resolve_media_upload_prefix(db, current_user, member_id, archive_id)
+        object_key = f"{prefix}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{raw_name}"
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=3600)
         now = datetime.now(timezone.utc)
 
@@ -296,7 +340,10 @@ async def init_upload(
         raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_FILENAME", "文件名不能为空")
 
     upload_id = str(uuid.uuid4())
-    object_key = f"{current_user.id}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{safe_filename}"
+    prefix = await _resolve_media_upload_prefix(
+        db, current_user, payload.member_id, payload.archive_id
+    )
+    object_key = f"{prefix}/{datetime.now(timezone.utc):%Y/%m}/{upload_id}-{safe_filename}"
     expires_in = 3600
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
@@ -494,6 +541,31 @@ async def get_media_file_stream(
     return streaming_response_for_object_key(asset.object_key, bucket=asset.bucket)
 
 
+@router.delete("/assets/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_media_asset(
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除媒体资产并移除 MinIO 对象（对象已不存在时仍删除库内记录）。"""
+    result = await db.execute(select(MediaAsset).where(MediaAsset.id == media_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise DomainResourceError("MEDIA_NOT_FOUND", "媒体资源不存在")
+    if asset.owner_id != current_user.id:
+        raise DomainMediaError("MEDIA_FORBIDDEN", "无权限删除该媒体资源")
+
+    bucket = settings.minio_bucket
+    try:
+        client = _minio_client_internal()
+        await asyncio.to_thread(client.remove_object, bucket, asset.object_key)
+    except Exception:
+        pass
+
+    await db.delete(asset)
+    await db.commit()
+
+
 # 旧直传接口保留一个兼容周期，后续由 B/C 前端切换完成后删除
 @router.post("/upload")
 async def upload_file(
@@ -504,7 +576,7 @@ async def upload_file(
     if len(content) <= 0:
         raise DomainMediaError("MEDIA_UPLOAD_INIT_INVALID_SIZE", "文件大小不合法")
     content_type = file.content_type or "application/octet-stream"
-    object_name = f"{current_user.id}/{uuid.uuid4()}"
+    object_name = f"{user_root_prefix(current_user)}/legacy/{uuid.uuid4()}"
     try:
         client = _minio_client_internal()
         bucket_name = settings.minio_bucket

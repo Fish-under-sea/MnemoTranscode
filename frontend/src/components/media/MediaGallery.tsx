@@ -61,7 +61,7 @@ export default function MediaGallery({ memberId, memberName }: MediaGalleryProps
               photoList.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   {photoList.map((p) => (
-                    <MediaItem key={p.id} media={p} onOpen={() => setLightbox(p)} />
+                    <MediaItem key={p.id} memberId={memberId} media={p} onOpen={() => setLightbox(p)} />
                   ))}
                 </div>
               ) : (
@@ -75,7 +75,7 @@ export default function MediaGallery({ memberId, memberName }: MediaGalleryProps
               videoList.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {videoList.map((v) => (
-                    <MediaItem key={v.id} media={v} />
+                    <MediaItem key={v.id} memberId={memberId} media={v} />
                   ))}
                 </div>
               ) : (
@@ -89,7 +89,7 @@ export default function MediaGallery({ memberId, memberName }: MediaGalleryProps
               audioList.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {audioList.map((a) => (
-                    <MediaItem key={a.id} media={a} />
+                    <MediaItem key={a.id} memberId={memberId} media={a} />
                   ))}
                 </div>
               ) : (
@@ -103,7 +103,7 @@ export default function MediaGallery({ memberId, memberName }: MediaGalleryProps
               stickerList.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   {stickerList.map((s) => (
-                    <MediaItem key={s.id} media={s} onOpen={() => setLightbox(s)} />
+                    <MediaItem key={s.id} memberId={memberId} media={s} onOpen={() => setLightbox(s)} />
                   ))}
                 </div>
               ) : (

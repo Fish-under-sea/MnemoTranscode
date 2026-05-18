@@ -2,6 +2,7 @@
 档案管理 API 路由
 """
 
+import asyncio
 import io
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import DomainAuthError, DomainResourceError
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.core.minio_presign import minio_internal_connect_endpoint
+from app.core.object_storage_paths import member_roles_prefix
 from app.core.avatar_public_url import (
     build_member_avatar_display_url,
     parse_object_key_from_stored_url,
@@ -893,7 +894,9 @@ async def upload_member_avatar(
         content, content_type, file_ext = pack_avatar_for_storage(raw, file.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    object_name = f"avatars/members/{member_id}/{uuid.uuid4()}.{file_ext}"
+    object_name = (
+        f"{member_roles_prefix(current_user, member)}/avatar/{uuid.uuid4()}.{file_ext}"
+    )
 
     try:
         from minio import Minio
@@ -950,6 +953,24 @@ async def delete_member_avatar(
     member = result.scalar_one_or_none()
     if not member:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="成员不存在")
+
+    if member.avatar_url:
+        key = parse_object_key_from_stored_url(member.avatar_url)
+        if key:
+            try:
+                from minio import Minio
+
+                client = Minio(
+                    minio_internal_connect_endpoint(),
+                    access_key=settings.minio_access_key,
+                    secret_key=settings.minio_secret_key,
+                    secure=settings.minio_secure,
+                    region="us-east-1",
+                )
+                bucket_name = settings.minio_bucket
+                await asyncio.to_thread(client.remove_object, bucket_name, key)
+            except Exception:
+                pass
 
     member.avatar_url = None
     await db.commit()
