@@ -6,21 +6,15 @@ NLP 情绪标注模块
 
 import httpx
 from app.core.config import get_settings
+from app.lib.emotion_taxonomy import (
+    VALID_EMOTION_VALUES,
+    emotion_prompt_choices_line,
+    normalize_emotion_label,
+)
 
 settings = get_settings()
 
-EMOTION_LABELS = [
-    "joy",       # 喜悦
-    "love",      # 爱
-    "anger",     # 愤怒
-    "sadness",   # 悲伤
-    "fear",      # 恐惧
-    "surprise",  # 惊讶
-    "nostalgia", # 怀念
-    "gratitude", # 感恩
-    "regret",    # 遗憾
-    "peaceful",  # 平静
-]
+EMOTION_LABELS = sorted(VALID_EMOTION_VALUES)
 
 
 class EmotionService:
@@ -40,9 +34,9 @@ class EmotionService:
 
 文本：{text}
 
-可选情感标签：{', '.join(EMOTION_LABELS)}
+可选情感标签（仅返回 value，不要中文）：{emotion_prompt_choices_line()}
 
-只返回一个标签，不要其他文字："""
+只返回一个 value，不要其他文字："""
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -58,11 +52,14 @@ class EmotionService:
                 )
                 result = response.json()
                 emotion = result["choices"][0]["message"]["content"].strip().lower()
-                if emotion not in EMOTION_LABELS:
-                    emotion = "peaceful"
-                return emotion
+                normalized = normalize_emotion_label(emotion)
+                if normalized:
+                    return normalized
+                if emotion in EMOTION_LABELS:
+                    return emotion
+                return "joy_serenity"
         except Exception:
-            return "peaceful"
+            return "joy_serenity"
 
     async def analyze_emotions_batch(self, texts: list[str]) -> list[str]:
         """批量分析文本情感"""

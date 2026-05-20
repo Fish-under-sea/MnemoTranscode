@@ -10,7 +10,7 @@ import { lazy, Suspense, useState, useRef, useEffect, useMemo } from 'react'
 import { archiveApi, memoryApi, mediaApi } from '@/services/api'
 import MediaGallery from '@/components/media/MediaGallery'
 import MediaUploader from '@/components/media/MediaUploader'
-import { EMOTION_LABELS, RADIX_SELECT_NONE } from '@/lib/utils'
+import EmotionWheelPicker from '@/components/memory/EmotionWheelPicker'
 import MemoryCard from '@/components/memory/MemoryCard'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
 import type { Memory } from '@/services/memoryTypes'
@@ -212,15 +212,6 @@ export default function MemberDetailPage() {
     toast.success('正在进入 AI 导入进度页，请保持页面直至完成')
     navigate(`${path}?${q.toString()}`)
   }
-
-  const EMOTION_OPTIONS = [
-    { value: RADIX_SELECT_NONE, label: '（无）' },
-    ...EMOTION_LABELS.map((e) => ({ value: e.value, label: `● ${e.label}` })),
-  ]
-
-  const emotionSelectValue =
-    newMemory.emotion_label === '' ? RADIX_SELECT_NONE : newMemory.emotion_label
-
 
   const { data: member, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['member', archiveId, memberId],
@@ -799,17 +790,9 @@ export default function MemberDetailPage() {
               fullWidth
             />
           </div>
-          <Select
-            label="情感基调（可选）"
-            options={EMOTION_OPTIONS}
-            value={emotionSelectValue}
-            onValueChange={(v) =>
-              setNewMemory({
-                ...newMemory,
-                emotion_label: v === RADIX_SELECT_NONE ? '' : v,
-              })
-            }
-            fullWidth
+          <EmotionWheelPicker
+            value={newMemory.emotion_label}
+            onChange={(v) => setNewMemory({ ...newMemory, emotion_label: v })}
           />
           <div className="flex gap-3 pt-2">
             <Button

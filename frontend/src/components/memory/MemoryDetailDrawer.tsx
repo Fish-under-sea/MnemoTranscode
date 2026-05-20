@@ -5,7 +5,7 @@ import Drawer from '@/components/ui/Drawer'
 import Button from '@/components/ui/Button'
 import MediaGallery from '@/components/media/MediaGallery'
 import { Edit, Trash, MapPin, Calendar } from 'lucide-react'
-import { formatMemoryTimestamp, EMOTION_LABELS } from '@/lib/utils'
+import { formatMemoryTimestamp, emotionDisplay } from '@/lib/utils'
 import type { Memory } from '@/services/memoryTypes'
 
 export interface MemoryDetailDrawerProps {
@@ -24,7 +24,7 @@ export default function MemoryDetailDrawer({
   onDelete,
 }: MemoryDetailDrawerProps) {
   if (!memory) return null
-  const emotionInfo = EMOTION_LABELS.find((e) => e.value === memory.emotion_label)
+  const emotionInfo = emotionDisplay(memory.emotion_label)
 
   return (
     <Drawer

@@ -18,6 +18,7 @@ from app.schemas.client_llm import ClientLlmOverride
 from app.services.chat_import_parser import ChatMemoryDraft, parse_chat_import
 from app.services.llm_service import LLMService
 from app.core.config import get_settings
+from app.lib.emotion_taxonomy import emotion_prompt_instruction, normalize_emotion_label
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +96,13 @@ async def _llm_refine_batch(batch: list[ChatMemoryDraft], llm: LLMService) -> li
 请提炼为 1～{max_out} 条**可独立保存的记忆**（具体事件、约定、情感时刻、分歧与和解等），输出 **仅 JSON**：
 {{
   "memories": [
-    {{"title": "短语标题", "content_text": "第三人称客观叙述，可含时间地点", "emotion_label": "温暖|感伤|快乐|平静|自豪|感激|怀念|愧疚|安心|坚韧|空字符串"}}
+    {{"title": "短语标题", "content_text": "第三人称客观叙述，可含时间地点", "emotion_label": "普卢奇克情绪轮 value 或空字符串"}}
   ]
 }}
 要求：
 - 不要虚构片段里没有的信息；可合并高度相关的相邻语境为一条。
 - 勿捏造真实姓名；可用「对方」「用户」指称。
-- emotion_label 无把握时填空字符串。
+{emotion_prompt_instruction()}
 
 聊天记录片段：
 {transcript}
@@ -137,7 +138,7 @@ async def _llm_refine_batch(batch: list[ChatMemoryDraft], llm: LLMService) -> li
         if len(title) < 1 or len(body) < 2:
             continue
         emo_raw = str(item.get("emotion_label", "")).strip()
-        emo = emo_raw if emo_raw else None
+        emo = normalize_emotion_label(emo_raw) if emo_raw else None
         out.append(
             {
                 "title": title[:200],

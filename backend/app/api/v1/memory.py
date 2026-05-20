@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.lib.emotion_taxonomy import normalize_emotion_label
 from app.core.exceptions import DomainAuthError, DomainInternalError, DomainResourceError
 from app.models.user import User
 from app.models.memory import Memory, Member, Archive
@@ -48,6 +49,16 @@ from app.services.mnemo_graph_query import list_pruned_engrams_for_member
 router = APIRouter(prefix="/memories", tags=["记忆"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _coerce_emotion_label(raw: str | None) -> str | None:
+    """仅存轮上标准 value；无法映射则视为未标注，避免脏标签污染筛选与关系网。"""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    return normalize_emotion_label(s)
 
 # 返回 MemoryResponse 时需带出档案名、角色名
 _MEMORY_MEMBER_ARCHIVE = selectinload(Memory.member).selectinload(Member.archive)
@@ -360,7 +371,7 @@ async def create_memory(
         member_id=memory_data.member_id,
         timestamp=memory_data.timestamp or datetime.now(timezone.utc),
         location=memory_data.location,
-        emotion_label=memory_data.emotion_label,
+        emotion_label=_coerce_emotion_label(memory_data.emotion_label),
     )
     db.add(memory)
     await db.commit()
@@ -493,7 +504,10 @@ async def update_memory(
     if not memory:
         raise DomainResourceError(error_code="RESOURCE_NOT_FOUND", message="记忆不存在")
 
-    for field, value in update_data.model_dump(exclude_unset=True).items():
+    patch = update_data.model_dump(exclude_unset=True)
+    if "emotion_label" in patch:
+        patch["emotion_label"] = _coerce_emotion_label(patch.get("emotion_label"))
+    for field, value in patch.items():
         setattr(memory, field, value)
 
     memory.updated_at = datetime.now(timezone.utc)

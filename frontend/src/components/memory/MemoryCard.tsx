@@ -4,7 +4,7 @@
 import { Calendar, MapPin } from 'lucide-react'
 import { motion } from 'motion/react'
 import Card from '@/components/ui/Card'
-import { formatMemoryTimestamp, EMOTION_LABELS } from '@/lib/utils'
+import { formatMemoryTimestamp, emotionDisplay } from '@/lib/utils'
 import { motionPresets } from '@/lib/motion'
 
 export interface MemoryCardData {
@@ -40,7 +40,7 @@ export default function MemoryCard({
   mediaPreview,
   variant = 'grid',
 }: MemoryCardProps) {
-  const emotionInfo = EMOTION_LABELS.find((e) => e.value === emotion_label)
+  const emotionInfo = emotionDisplay(emotion_label)
   const lineClamp = variant === 'list' ? 'line-clamp-3' : 'line-clamp-2'
 
   const body = (

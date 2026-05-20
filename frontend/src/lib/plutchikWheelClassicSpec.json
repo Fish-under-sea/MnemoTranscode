@@ -1,0 +1,17 @@
+{
+  "viewWidth": 1026,
+  "viewHeight": 983,
+  "center": [532, 491],
+  "rHole": 34,
+  "r1": 112,
+  "r2": 210,
+  "r3": 305,
+  "rTip": 474,
+  "ringSlit": 2.5,
+  "petalGapDeg": 2.2,
+  "innerHalf": 5.6,
+  "midHalf": 10.2,
+  "outerHalf": 14.2,
+  "outerBulge": 1.035,
+  "imageSrc": "/emotion-wheel.png"
+}

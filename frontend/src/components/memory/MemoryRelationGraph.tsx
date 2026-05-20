@@ -24,7 +24,9 @@ import ForceGraph2D, {
 } from 'react-force-graph-2d'
 import Button from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { emotionColorFromGraphLabel } from '@/lib/plutchikEmotions'
 import { Focus, Maximize2, Minimize2, MousePointer2, Sparkles } from 'lucide-react'
+import EmotionWheelReferenceButton from '@/components/memory/EmotionWheelReferenceButton'
 
 type GraphNode = { id: string; node_type: string; label: string; memory_id?: number | null }
 type GraphEdge = { from_id: string; to_id: string; edge_type: string; weight: number }
@@ -329,12 +331,18 @@ const MemoryRelationGraph = forwardRef<MemoryRelationGraphHandle, MemoryRelation
       if (selectedId && activeNodeIds.has(n.id)) {
         if (n.node_type === 'Person') return '#fde68a'
         if (n.node_type === 'Event') return '#5eead4'
-        if (n.node_type === 'Emotion') return '#f9a8d4'
+        if (n.node_type === 'Emotion') {
+          return emotionColorFromGraphLabel(n.label) ?? '#f9a8d4'
+        }
         return '#6ee7b7'
       }
       if (n.node_type === 'Person') return isDark ? '#a89a7a' : '#fef3c7'
       if (n.node_type === 'Event') return isDark ? '#5e8070' : '#ccfbf1'
-      if (n.node_type === 'Emotion') return isDark ? '#7a5e6a' : '#fce7f3'
+      if (n.node_type === 'Emotion') {
+        const c = emotionColorFromGraphLabel(n.label)
+        if (c) return c + (isDark ? 'cc' : '')
+        return isDark ? '#7a5e6a' : '#fce7f3'
+      }
       return dim
     },
     [selectedId, activeNodeIds, isDark],
@@ -702,20 +710,22 @@ const MemoryRelationGraph = forwardRef<MemoryRelationGraphHandle, MemoryRelation
               type="button"
               size="sm"
               variant="secondary"
-              leftIcon={<Focus size={16} />}
-              onClick={() => fgRef.current?.zoomToFit?.(400, 24)}
-            >
-              适配画布
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
               leftIcon={fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               onClick={() => void toggleFullscreen()}
             >
               {fullscreen ? '退出全屏' : '全屏'}
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              leftIcon={<Focus size={16} />}
+              onClick={() => fgRef.current?.zoomToFit?.(400, 24)}
+            >
+              适配画布
+            </Button>
+
+            <EmotionWheelReferenceButton />
 
             <div
               className={cn(

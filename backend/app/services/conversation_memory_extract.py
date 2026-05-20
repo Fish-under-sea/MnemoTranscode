@@ -15,6 +15,7 @@ from app.mnemo.chain_enricher import (
     llm_enrich_cross_links,
     sort_memories_by_time,
 )
+from app.lib.emotion_taxonomy import emotion_prompt_instruction, normalize_emotion_label
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -92,13 +93,13 @@ async def extract_and_save_memories(
     prompt = f"""你是关系档案助手。从下列对话中提炼 1～8 条**可独立保存的记忆**（具体事件、约定、情感时刻、共同回忆），JSON：
 {{
   "memories": [
-    {{"title": "短语标题", "content_text": "第三人称客观叙述，可含时间地点", "emotion_label": "温暖|感伤|快乐|平静|自豪|感激|怀念|愧疚|安心|坚韧|空字符串"}}
+    {{"title": "短语标题", "content_text": "第三人称客观叙述，可含时间地点", "emotion_label": "普卢奇克情绪轮 value 或空字符串"}}
   ],
   "links": [{{"from": 0, "to": 1, "relation": "RELATED_TO"}}]
 }}
 要求：
 - 不要虚构对话里没有的信息；可合并同类表述为一条。
-- emotion_label 没有把握时填空字符串。
+{emotion_prompt_instruction()}
 - links 可选，表示所提炼条目之间的关联；relation 取 RELATED_TO | CAUSED_BY | EMOTIONALLY_LINKED 之一。
 - from/to 为 memories 数组下标。
 
@@ -129,7 +130,8 @@ async def extract_and_save_memories(
         body = str(item.get("content_text", "")).strip()
         if len(title) < 1 or len(body) < 2:
             continue
-        emo = str(item.get("emotion_label", "")).strip() or None
+        emo_raw = str(item.get("emotion_label", "")).strip()
+        emo = normalize_emotion_label(emo_raw) if emo_raw else None
         memory = Memory(
             title=title[:200],
             content_text=body[:20000],

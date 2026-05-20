@@ -101,7 +101,11 @@ async def ensure_memory_engram(
 
     title = memory.title or ""
     body = memory.content_text or ""
-    emotion = memory.emotion_label or ""
+    from app.lib.emotion_taxonomy import emotion_display_label, normalize_emotion_label
+
+    emotion_raw = memory.emotion_label or ""
+    emotion_key = normalize_emotion_label(emotion_raw) or emotion_raw
+    emotion = emotion_display_label(emotion_key) or emotion_key
     content = f"{title}\n{body}".strip()[:8000]
     ev_id = await graph.create_node(
         "Event",

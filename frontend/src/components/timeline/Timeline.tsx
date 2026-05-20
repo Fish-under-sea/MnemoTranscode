@@ -4,7 +4,7 @@
 import { motion } from 'motion/react'
 import { staggerContainer, fadeUp } from '@/lib/motion'
 import ScrollReveal from '@/components/ui/ScrollReveal'
-import { EMOTION_LABELS } from '@/lib/utils'
+import { emotionDisplay } from '@/lib/utils'
 import type { TimelineGroup } from '@/lib/timelineUtils'
 import type { Memory } from '@/services/memoryTypes'
 
@@ -40,7 +40,7 @@ export default function Timeline({ groups, onItemClick }: TimelineProps) {
                 className="flex flex-col gap-4"
               >
                 {group.items.map((m) => {
-                  const emotion = EMOTION_LABELS.find((e) => e.value === m.emotion_label)
+                  const emotion = emotionDisplay(m.emotion_label)
                   const nodeColor = emotion?.color ?? '#059669'
                   return (
                     <motion.div

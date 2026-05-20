@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.memory import Memory
 from app.models.engram import EngramNode, EngramEdge
 from app.mnemo.graph_sql import SqlAlchemyGraphManager
+from app.lib.emotion_taxonomy import emotion_display_label, normalize_emotion_label
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,10 @@ async def llm_enrich_cross_links(
     for idx in idxs:
         m = memories[idx]
         snippet = (m.content_text or "")[:320].replace("\n", " ")
-        lines.append(f"[{idx}] {m.title}: {snippet}")
+        emo_key = normalize_emotion_label(m.emotion_label) if m.emotion_label else None
+        emo_zh = emotion_display_label(emo_key or m.emotion_label) if (emo_key or m.emotion_label) else ""
+        emo_part = f" [情绪:{emo_zh}]" if emo_zh else ""
+        lines.append(f"[{idx}] {m.title}{emo_part}: {snippet}")
     catalog = "\n".join(lines)
     upper = n - 1
     prompt = f"""以下是同一人物（关系档案中的 Ta）的多条记忆摘要；方括号内数字为**全局下标**（0..{upper}），列表为抽样展示但关联可涉及任意下标。
@@ -110,6 +114,7 @@ async def llm_enrich_cross_links(
 }}
 要求：
 - 至少 0 条、最多 {max_pairs} 条；只输出确有依据的关联，禁编造事实。
+- 情绪相近或同一情感弧线的条目优先用 EMOTIONALLY_LINKED；因果用 CAUSED_BY。
 - relation 必须是以下之一：RELATED_TO, CAUSED_BY, EMOTIONALLY_LINKED, SUPPORTS
 - from_index 与 to_index 必须在 0..{upper} 之间，且 from_index != to_index
 

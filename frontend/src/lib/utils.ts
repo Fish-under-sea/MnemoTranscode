@@ -52,15 +52,5 @@ export const ARCHIVE_TYPE_OPTIONS = [
   { value: 'nation', label: '国家历史', icon: '🏛️' },
 ] as const
 
-export const EMOTION_LABELS = [
-  { value: 'joy', label: '喜悦', color: '#FFD700' },
-  { value: 'love', label: '爱', color: '#FF69B4' },
-  { value: 'anger', label: '愤怒', color: '#FF4500' },
-  { value: 'sadness', label: '悲伤', color: '#4682B4' },
-  { value: 'fear', label: '恐惧', color: '#8B4513' },
-  { value: 'surprise', label: '惊讶', color: '#9370DB' },
-  { value: 'nostalgia', label: '怀念', color: '#DEB887' },
-  { value: 'gratitude', label: '感恩', color: '#90EE90' },
-  { value: 'regret', label: '遗憾', color: '#C0C0C0' },
-  { value: 'peaceful', label: '平静', color: '#87CEEB' },
-] as const
+/** 普卢奇克情绪轮（32 项）；定义见 plutchikEmotions.ts */
+export { EMOTION_LABELS, EMOTION_GROUPS, emotionDisplay, normalizeEmotionValue, resolveEmotion } from '@/lib/plutchikEmotions'

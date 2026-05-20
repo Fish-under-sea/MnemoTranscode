@@ -14,7 +14,7 @@ import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui'
 import MemoryDetailDrawer from '@/components/memory/MemoryDetailDrawer'
-import { EMOTION_LABELS, RADIX_SELECT_ALL } from '@/lib/utils'
+import { EMOTION_LABELS, RADIX_SELECT_ALL, normalizeEmotionValue } from '@/lib/utils'
 import { useApiError } from '@/hooks/useApiError'
 
 const LIMIT = 100
@@ -72,7 +72,10 @@ export default function TimelinePage() {
     return list.filter((m) => {
       if (memberFilter !== RADIX_SELECT_ALL && m.member_id !== Number(memberFilter))
         return false
-      if (emotionFilter !== RADIX_SELECT_ALL && m.emotion_label !== emotionFilter) return false
+      if (emotionFilter !== RADIX_SELECT_ALL) {
+        const memEmo = normalizeEmotionValue(m.emotion_label) ?? m.emotion_label
+        if (memEmo !== emotionFilter) return false
+      }
       if (dateFrom) {
         if (!m.timestamp) return false
         const t = new Date(m.timestamp)
