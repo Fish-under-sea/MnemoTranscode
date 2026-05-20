@@ -16,7 +16,7 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 
 用 AI 技术将记忆（声音、照片、文字、情感）进行数字化存档、智能化整理和多模态还原，让每一段值得的关系都留有迹可循。
 
-**当前阶段**：Web 全栈与基础设施已跑通；在档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊之上，持续迭代 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、成员头像与受控上传等能力。**桌面级客户端应用** 列为下一步方向。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
+**当前阶段**：Web 全栈与基础设施已跑通；在档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊之上，持续迭代 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、**普卢奇克情绪轮（32 项 taxonomy + 贴图参考）**、成员头像与受控上传等能力。**桌面级客户端应用** 列为下一步方向。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
 
 LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架构总览见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)、规格摘要见 [docs/SPEC.md](./docs/SPEC.md)、REST 摘录见 [docs/API.md](./docs/API.md)。**用量、订阅档位、对话页打字机与前端缓存** 的维护说明见 **[docs/USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**。
 
@@ -27,9 +27,10 @@ LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架
 | 功能模块 | 说明 |
 |---------|------|
 | **关系档案库** | 创建恋人、挚友、至亲、家族、伟人等多类型档案，管理档案内成员信息 |
-| **记忆管理** | 为每位成员记录记忆条目，支持情感标签、时间、地点等元数据 |
+| **记忆管理** | 为每位成员记录记忆条目，支持时间、地点等元数据；**情感标签**对齐普卢奇克轮 **32 项**（8 族 × 3 强度 + 8 复合情绪），创建/更新与 LLM 提取时由后端 `normalize_emotion_label` 归一化 |
+| **普卢奇克情绪轮** | 参考图 `frontend/public/emotion-wheel.png` + SVG 标定热区（`PlutchikWheelClassic`）；成员详情可选情绪、关系网工具栏「情绪轮」对照；卡片 / 时间线 / 关系网结点按族着色 |
 | **媒体存档** | 照片、视频、音频两阶段预签名上传，私有桶安全存储（MinIO） |
-| **Mnemo / 记忆图谱** | 后端 `app/mnemo/`：对话巩固、Engram 关系、有意识召回（conscious recall）等；前端成员详情 **记忆关系图**（`MemoryRelationGraph` + `react-force-graph-2d`）。**技术说明**： [docs/memory-relation-network.md](./docs/memory-relation-network.md)（含图谱 API、`client_llm` 流式导入衔接、力导向开启后停表锚点对齐） |
+| **Mnemo / 记忆图谱** | 后端 `app/mnemo/`：对话巩固、Engram 关系、有意识召回（conscious recall）等；巩固摘要可带 `[情绪:xxx]`；前端成员详情 **记忆关系图**（`MemoryRelationGraph` + `react-force-graph-2d`，工具栏：全屏 → 适配画布 → 情绪轮 → 力导向）。**技术说明**： [docs/memory-relation-network.md](./docs/memory-relation-network.md)（含图谱 API、`client_llm` 流式导入衔接、力导向开启后停表锚点对齐） |
 | **成员头像 / 国家记忆实体封面** | 成员图存 MinIO，库内为对象 URL；列表与 `GET` 响应中的 `avatar_url` 为**同源可展示地址**（`/api/v1/archives/.../members/.../avatar-file?exp&sig` 或 `APP_PUBLIC_ORIGIN` 前缀），由后端从 MinIO **流式回源**，浏览器无需直连对象存储。关系成员用设计系统 `Avatar`；**国家记忆**档案下实体列表与详情顶栏封面用原生 `<img>` + 失败回落（避免 Radix Avatar 与固定占位争层）。实现见 `backend/app/core/avatar_public_url.py` |
 | **AI 对话** | 与档案成员角色对话；服务端一次返回完整 `reply`，前端打字机为本地模拟。**对话列表** `GET /dialogue/messages` 在窗口聚焦等场景会 refetch，与打字机状态需协调（见 **[USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**） |
 | **故事书生成** | 基于记忆条目 AI 自动生成生命故事，支持怀旧温情、文学风格等四种写作风格，可导出 PDF |
@@ -242,6 +243,7 @@ MTC/
 │   │   ├── mnemo/             # Mnemo 管线（巩固、召回、Engram 同步等）
 │   │   ├── api/v1/            # API 路由（auth / archive / memory / media /
 │   │   │                      #           dialogue / storybook / capsule / ...）
+│   │   ├── lib/               # 共享库（如 emotion_taxonomy 普卢奇克 32 项）
 │   │   ├── core/              # 配置、数据库、依赖注入
 │   │   ├── models/            # SQLAlchemy ORM 模型
 │   │   ├── schemas/           # Pydantic 请求 / 响应 Schema
@@ -258,7 +260,7 @@ MTC/
 │   │   │   ├── ui/            # A 基座设计系统组件
 │   │   │   ├── dialogue/      # 对话气泡 / 打字机
 │   │   │   ├── member/        # 成员档案组件
-│   │   │   ├── memory/        # 记忆卡片 / 详情抽屉 / 关系图谱
+│   │   │   ├── memory/        # 记忆卡片 / 详情抽屉 / 关系图谱 / 情绪轮（EmotionWheel*、PlutchikWheelClassic）
 │   │   │   ├── media/         # 媒体上传 / 相册 / 灯箱
 │   │   │   ├── timeline/      # 时间线可视化
 │   │   │   ├── storybook/     # 故事书预览
@@ -267,8 +269,10 @@ MTC/
 │   │   │                      #       故事书、记忆胶囊、模型设置、个人中心等）
 │   │   ├── hooks/             # 认证、LLM 用户配置、业务 hooks 等
 │   │   ├── services/          # API 客户端（axios + 统一错误处理）
-│   │   ├── lib/               # 设计 token、时间线、LLM 预设、Mnemo 图谱布局与高亮等
+│   │   ├── lib/               # 设计 token、plutchikEmotions、情绪轮热区标定、Mnemo 图谱布局等
 │   │   └── providers/         # MotionProvider / ThemeProvider
+│   ├── public/
+│   │   └── emotion-wheel.png  # 普卢奇克情绪轮参考图（静态资源，贴图展示）
 │   ├── package.json
 │   ├── Dockerfile
 │   ├── default.conf.template  # 容器内 Nginx 主模板
@@ -336,6 +340,16 @@ npm run build        # 生产构建
 
 **补充**：`axios` 遇到 **401** 会 **`clearAuth()`** 并交由路由层跳转，**不**再强制 `window.location` 整页刷新。用量/存储卡片与 **`GET /usage/stats`** 对齐，TanStack Query 键为 **`['dashboard', 'usage']`**；详见 [docs/USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)。
 
+### 普卢奇克情绪轮（维护说明）
+
+| 项 | 路径 / 说明 |
+|----|-------------|
+| 参考图 | `frontend/public/emotion-wheel.png`（替换后需重建 Docker 前端或本机强刷） |
+| 热区标定 | `frontend/src/lib/plutchikWheelClassicSpec.json`（圆心、各环半径）；校准脚本 `scripts/calibrate_emotion_wheel_public.py` |
+| 前端展示 | `PlutchikWheelClassic`（`data-mtc-wheel="image"`）+ `EmotionWheelPanel` / `EmotionWheelPicker` / `EmotionWheelReferenceButton` |
+| 情绪枚举 | `frontend/src/lib/plutchikEmotions.ts`（须与后端 `backend/app/lib/emotion_taxonomy.py` 语义一致） |
+| API 归一化 | 记忆 `POST/PATCH`、聊天导入、对话提取、`emotion_service` 等调用 `normalize_emotion_label` |
+
 ---
 
 ## API 文档
@@ -371,7 +385,7 @@ npm run build        # 生产构建
  └── 档案 (Archive)  — 家族 / 恋人 / 挚友 / 至亲 / 伟人 / 历史
       └── 成员 (Member)
            ├── 成员状态：status（active / passed / distant / pet / other），可选 end_year（及旧版影子字段兼容）
-           ├── 记忆 (Memory)          — 情感标签 / 时间 / 地点
+           ├── 记忆 (Memory)          — `emotion_label`（普卢奇克 32 项之一）/ 时间 / 地点
            ├── 媒体资产 (MediaAsset)  — 照片 / 视频 / 音频
            ├── Engram（mnemo）       — 记忆关系 / 巩固图（随迁移与功能启用）
            └── 记忆胶囊 (MemoryCapsule) — 定时解封
