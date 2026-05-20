@@ -81,8 +81,6 @@ export default function DialoguePage() {
 
   const [extractMemoriesAfter, setExtractMemoriesAfter] = useState(false)
   const [selectedStickerIds, setSelectedStickerIds] = useState<number[]>([])
-  /** 「写入记忆」API 返回的 id，供侧栏神经网络浮窗优先聚焦 newborn 结点 */
-  const [mnemoHighlightMemoryIds, setMnemoHighlightMemoryIds] = useState<number[]>([])
 
   const needsMemberPicker = !hasChatContext
 
@@ -147,11 +145,6 @@ export default function DialoguePage() {
       toast.success(
         `已写入 ${data.created_count} 条记忆（时间链 ${data.graph_temporal_edges}，关联边 ${data.graph_llm_edges}）`,
       )
-      const ids = Array.isArray((data as { memory_ids?: number[] }).memory_ids)
-        ? (data as { memory_ids: number[] }).memory_ids
-        : []
-      setMnemoHighlightMemoryIds(ids)
-      window.setTimeout(() => setMnemoHighlightMemoryIds([]), 14_000)
       void queryClient.invalidateQueries({ queryKey: ['memories'] })
       void queryClient.invalidateQueries({ queryKey: ['mnemo-graph'] })
     },
@@ -190,10 +183,9 @@ export default function DialoguePage() {
     }
   }
 
-  /** 切换对话对象后清空待发表情与图谱高亮队列 */
+  /** 切换对话对象后清空待发表情 */
   useEffect(() => {
     setSelectedStickerIds([])
-    setMnemoHighlightMemoryIds([])
   }, [memberIdNum, archiveIdNum])
 
   /** 清空对话时同步清空待发表情（状态在页面层） */
@@ -387,14 +379,13 @@ export default function DialoguePage() {
               <Suspense
                 fallback={
                   <div
-                    className="h-[132px] rounded-xl border border-border-default bg-subtle"
+                    className="h-[200px] rounded-xl border border-border-default bg-subtle"
                     aria-hidden
                   />
                 }
               >
                 <DialogueMnemoFloatingPanel
                   memberId={memberIdNum}
-                  prioritizeMemoryIds={mnemoHighlightMemoryIds}
                   expandHostRef={mnemoOverlayMountRef}
                 />
               </Suspense>

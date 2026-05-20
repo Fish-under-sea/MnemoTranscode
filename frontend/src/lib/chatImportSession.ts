@@ -2,6 +2,7 @@
  * 跨路由传递聊天记录导入参数：localStorage + URL ?job=uuid（同页 navigate 与刷新均可读）。
  */
 import type { ClientLlmPayload } from '@/lib/buildClientLlmPayload'
+import { generateUuid } from '@/lib/uuid'
 
 export const CHAT_IMPORT_JOB_QUERY = 'job'
 
@@ -20,7 +21,7 @@ export type PendingChatImportPayload = {
 
 /** 写入本地并返回 jobId，供进度页 URL ?job= 使用 */
 export function savePendingChatImport(payload: PendingChatImportPayload): { jobId: string } {
-  const jobId = crypto.randomUUID()
+  const jobId = generateUuid()
   try {
     localStorage.setItem(LS_JOB_PREFIX + jobId, JSON.stringify(payload))
   } catch {

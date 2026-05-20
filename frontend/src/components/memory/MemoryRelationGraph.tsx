@@ -1,7 +1,17 @@
 /**
  * 成员记忆关系网：力导向 + 可拖拽 + 全屏 + 点击节点点亮链路动效（沿边粒子）
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { memoryApi } from '@/services/api'
 import { LoadingState } from '@/components/ui/state'
@@ -135,7 +145,45 @@ function useGraphDimensions(canPaint: boolean, fullscreen: boolean) {
 type FGNodeObj = NodeObject<FgNode>
 type FGLinkObj = LinkObject<FgNode, FgLink>
 
-export default function MemoryRelationGraph({ memberId }: { memberId: number }) {
+/** 供对话侧栏 imperative 调用（缩放 / 适配） */
+export type MemoryRelationGraphHandle = {
+  zoomIn: () => void
+  zoomOut: () => void
+  zoomToFit: () => void
+}
+
+export type MemoryRelationGraphProps = {
+  memberId: number
+  /** 对话侧栏等：隐藏边类型图例与底部说明，缩小画布下限 */
+  compact?: boolean
+  graphMinWidth?: number
+  graphMinHeight?: number
+  /** 关系网卡片（含工具栏）高度/弹性，默认 h-[min(540px,72vh)] */
+  cardHeightClassName?: string
+  /** 根容器额外类名（对话浮层内需 flex-1 min-h-0 撑满） */
+  rootClassName?: string
+  /** 对话浮层：隐藏卡片内工具栏，由侧栏遥控 */
+  hideToolbar?: boolean
+  /** 受控：力导向开关（与 onForceSimulationChange 成对用于对话侧栏） */
+  forceSimulationOn?: boolean
+  onForceSimulationChange?: (next: boolean) => void
+}
+
+const MemoryRelationGraph = forwardRef<MemoryRelationGraphHandle, MemoryRelationGraphProps>(
+  function MemoryRelationGraph(
+    {
+      memberId,
+      compact = false,
+      graphMinWidth,
+      graphMinHeight,
+      cardHeightClassName,
+      rootClassName,
+      hideToolbar = false,
+      forceSimulationOn: forceSimulationOnProp,
+      onForceSimulationChange,
+    },
+    ref,
+  ) {
   const { data, isLoading, isError, dataUpdatedAt } = useQuery({
     queryKey: ['mnemo-graph', memberId],
     queryFn: () => memoryApi.mnemoGraph(memberId) as Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }>,
@@ -154,8 +202,9 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
   const reduceMotionRef = useRef(false)
   const forceSimLabelId = useId()
   const [fullscreen, setFullscreen] = useState(false)
-  /** 关闭时冻结当前几何，仅保留拖拽改位；开启时 d3 持续施力并可在再次 reheat 后自动对准锚点 */
-  const [forceSimulationOn, setForceSimulationOn] = useState(true)
+  const [uncontrolledForceOn, setUncontrolledForceOn] = useState(true)
+  const forceSimulationOn =
+    forceSimulationOnProp !== undefined ? forceSimulationOnProp : uncontrolledForceOn
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const isDark = useIsDark()
 
@@ -191,6 +240,9 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
   }, [data])
 
   const canPaint = !isLoading && !isError && Boolean(data) && nodes.length > 0
+  const minCanvasW = graphMinWidth ?? 320
+  const minCanvasH = graphMinHeight ?? 280
+  const cardShellClass = cardHeightClassName ?? 'shadow-e1 h-[min(540px,72vh)]'
   const { outerRef, graphBoxRef, dims } = useGraphDimensions(canPaint, fullscreen)
 
   /** 关系网锚点：与后端 ensure Person 结点一致；无 Person 时退化为首个结点 */
@@ -495,18 +547,67 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
     }
   }, [forceSimulationOn, canPaint, pinAllNodesAtCurrent, releaseAllPinsAndReheat])
 
-  const onToggleForceSimulation = useCallback(
+  const commitForceSimulation = useCallback(
     (next: boolean) => {
       burstCancelRef.current?.()
       if (!next) {
         centerAnchorAfterSimRef.current = false
-        setForceSimulationOn(false)
+        if (forceSimulationOnProp !== undefined) {
+          onForceSimulationChange?.(false)
+        } else {
+          setUncontrolledForceOn(false)
+        }
         pinAllNodesAtCurrent()
         return
       }
-      setForceSimulationOn(true)
+      if (forceSimulationOnProp !== undefined) {
+        onForceSimulationChange?.(true)
+      } else {
+        setUncontrolledForceOn(true)
+      }
     },
-    [pinAllNodesAtCurrent],
+    [forceSimulationOnProp, onForceSimulationChange, pinAllNodesAtCurrent],
+  )
+
+  const onToggleForceSimulation = useCallback(
+    (next: boolean) => {
+      commitForceSimulation(next)
+    },
+    [commitForceSimulation],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      zoomIn: () => {
+        const fg = fgRef.current
+        if (!fg) return
+        try {
+          const z = typeof fg.zoom === 'function' ? (fg.zoom as () => number)() : NaN
+          if (typeof z === 'number' && Number.isFinite(z)) {
+            ;(fg.zoom as (k: number, ms?: number) => void)(Math.min(8, z * 1.18), 240)
+          }
+        } catch {
+          /* 忽略 zoom API 差异 */
+        }
+      },
+      zoomOut: () => {
+        const fg = fgRef.current
+        if (!fg) return
+        try {
+          const z = typeof fg.zoom === 'function' ? (fg.zoom as () => number)() : NaN
+          if (typeof z === 'number' && Number.isFinite(z)) {
+            ;(fg.zoom as (k: number, ms?: number) => void)(Math.max(0.35, z / 1.18), 240)
+          }
+        } catch {
+          /* 忽略 */
+        }
+      },
+      zoomToFit: () => {
+        fgRef.current?.zoomToFit?.(400, 48)
+      },
+    }),
+    [],
   )
 
   const onEngineStop = useCallback(() => {
@@ -560,7 +661,8 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
   }
 
   return (
-    <div className="space-y-3">
+    <div className={cn(compact ? 'flex min-h-0 flex-col' : 'space-y-3', rootClassName)}>
+      {!compact ? (
       <div className="flex flex-wrap gap-2 text-caption text-ink-secondary items-center">
         {(Object.keys(EDGE_COLORS) as string[])
           .filter((k) => k !== 'DEFAULT')
@@ -576,89 +678,105 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
           可拖拽节点（松手后固定） · 滚轮缩放 · 点击点亮链路
         </span>
       </div>
+      ) : null}
 
       <div
         ref={outerRef}
         className={cn(
           'relative flex flex-col rounded-xl border border-border-default overflow-hidden transition-shadow duration-300',
+          cardShellClass,
           fullscreen
             ? 'fixed inset-0 z-[200] h-dvh rounded-none border-0 shadow-none'
-            : 'shadow-e1 h-[min(540px,72vh)]',
+            : '',
         )}
         style={{ backgroundColor: bgColor }}
       >
-        <div
-          className={cn(
-            'flex flex-wrap items-center gap-2 px-2 py-2 shrink-0 border-b border-border-default/60 bg-subtle/40 backdrop-blur-sm',
-            fullscreen && 'px-4 py-3',
-          )}
-        >
-          <Button type="button" size="sm" variant="secondary" leftIcon={<Focus size={16} />} onClick={() => fgRef.current?.zoomToFit?.(400, 24)}>
-            适配画布
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            leftIcon={fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            onClick={() => void toggleFullscreen()}
-          >
-            {fullscreen ? '退出全屏' : '全屏'}
-          </Button>
-
+        {!hideToolbar ? (
           <div
             className={cn(
-              'inline-flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1',
-              'border-default bg-surface dark:bg-surface/80',
+              'flex flex-wrap items-center gap-2 px-2 py-2 shrink-0 border-b border-border-default/60 bg-subtle/40 backdrop-blur-sm',
+              fullscreen && 'px-4 py-3',
             )}
           >
-            <span id={forceSimLabelId} className="text-caption text-brand dark:text-brand-accent whitespace-nowrap">
-              力导向
-            </span>
-            <button
+            <Button
               type="button"
-              role="switch"
-              aria-checked={forceSimulationOn}
-              aria-labelledby={forceSimLabelId}
-              title={
-                forceSimulationOn
-                  ? '关闭后冻结当前布局，仅拖拽结点微调位置'
-                  : '开启后结点受链路/电荷等力自动平衡，可随时再关回纯拖拽整理'
-              }
-              className={cn(
-                'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ease-out',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
-                forceSimulationOn ? 'bg-brand dark:bg-brand' : 'bg-muted dark:bg-muted',
-              )}
-              onClick={() => onToggleForceSimulation(!forceSimulationOn)}
+              size="sm"
+              variant="secondary"
+              leftIcon={<Focus size={16} />}
+              onClick={() => fgRef.current?.zoomToFit?.(400, 24)}
             >
-              <span
-                aria-hidden
-                className={cn(
-                  'absolute top-1 left-1 block h-4 w-4 rounded-full bg-surface shadow-e1 ring-1 ring-black/10 dark:ring-white/15 transition-transform duration-200 ease-out',
-                  forceSimulationOn ? 'translate-x-[1.25rem]' : 'translate-x-0',
-                )}
-              />
-            </button>
-          </div>
-
-          {selectedId ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedId(null)} leftIcon={<Sparkles size={16} />}>
-              清除高亮
+              适配画布
             </Button>
-          ) : null}
-          <span className="text-caption text-ink-muted ml-auto hidden sm:inline">
-            共 {nodes.length} 结点 · {edges.length} 联结
-          </span>
-        </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              leftIcon={fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              onClick={() => void toggleFullscreen()}
+            >
+              {fullscreen ? '退出全屏' : '全屏'}
+            </Button>
+
+            <div
+              className={cn(
+                'inline-flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1',
+                'border-default bg-surface dark:bg-surface/80',
+              )}
+            >
+              <span id={forceSimLabelId} className="text-caption text-brand dark:text-brand-accent whitespace-nowrap">
+                力导向
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={forceSimulationOn}
+                aria-labelledby={forceSimLabelId}
+                title={
+                  forceSimulationOn
+                    ? '关闭后冻结当前布局，仅拖拽结点微调位置'
+                    : '开启后结点受链路/电荷等力自动平衡，可随时再关回纯拖拽整理'
+                }
+                className={cn(
+                  'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ease-out',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                  forceSimulationOn ? 'bg-brand dark:bg-brand' : 'bg-muted dark:bg-muted',
+                )}
+                onClick={() => onToggleForceSimulation(!forceSimulationOn)}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'absolute top-1 left-1 block h-4 w-4 rounded-full bg-surface shadow-e1 ring-1 ring-black/10 dark:ring-white/15 transition-transform duration-200 ease-out',
+                    forceSimulationOn ? 'translate-x-[1.25rem]' : 'translate-x-0',
+                  )}
+                />
+              </button>
+            </div>
+
+            {selectedId ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedId(null)}
+                leftIcon={<Sparkles size={16} />}
+              >
+                清除高亮
+              </Button>
+            ) : null}
+            <span className="text-caption text-ink-muted ml-auto hidden sm:inline">
+              共 {nodes.length} 结点 · {edges.length} 联结
+            </span>
+          </div>
+        ) : null}
 
         <div ref={graphBoxRef} className="flex-1 min-h-0 min-w-0 w-full">
           <ForceGraph2D<FgNode, FgLink>
             key={`mnemo-${memberId}-${dataUpdatedAt}`}
             ref={fgRef}
             graphData={graphData}
-            width={Math.max(320, dims.w)}
-            height={Math.max(280, dims.h)}
+            width={Math.max(minCanvasW, dims.w)}
+            height={Math.max(minCanvasH, dims.h)}
             autoPauseRedraw={false}
             backgroundColor={bgColor}
             nodeLabel={(n) => `${n.node_type}: ${n.label}`}
@@ -692,11 +810,17 @@ export default function MemoryRelationGraph({ memberId }: { memberId: number }) 
         </div>
       </div>
 
+      {!compact ? (
       <p className="text-caption text-ink-muted">
         导入聊天记录时系统会调用 AI 与时间链共同绘制联结。点击任一结点可点亮时间链与关联边；拖动结点松手后会固定在该位置。
         工具栏<strong className="text-ink-secondary">「力导向」</strong>
         关闭时冻结当前排布（仍可用拖拽微调）；开启时恢复斥力与链路拉力，重新平衡后视图会多拍对准人物锚点。另有「适配画布」与全屏便于细看。
       </p>
+      ) : null}
     </div>
   )
-}
+})
+
+MemoryRelationGraph.displayName = 'MemoryRelationGraph'
+
+export default MemoryRelationGraph
