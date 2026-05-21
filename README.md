@@ -13,9 +13,9 @@
 
 ## 项目状态
 
-> **本仓库为技能节（Cursor Agent Skills）比赛参赛作品，目前已停止维护。**
+> **本仓库为 [技能节](https://github.com/magymeng/skill-festival-submissions) 参赛作品（小组 **MnemoTranscode**），目前已停止维护。**
 >
-> 代码与文档保留作展示与参考，**不再接受功能迭代、Bug 修复或 Issue 响应**。若需本地运行，请自行 fork 后维护；依赖版本、API Key 与基础设施配置需自行跟进。
+> 官方作品收集仓库：[magymeng/skill-festival-submissions](https://github.com/magymeng/skill-festival-submissions)（`MnemoTranscode/` 目录）。代码与文档保留作展示与参考，**不再接受功能迭代、Bug 修复或 Issue 响应**。若需本地运行，请自行 fork 后维护；依赖版本、API Key 与基础设施配置需自行跟进。
 
 ---
 
@@ -432,4 +432,4 @@ npm run build        # 生产构建
 
 ---
 
-*MTC — 用 AI 守护每一段值得的关系 · 技能节比赛项目 · 已归档*
+*MTC — 用 AI 守护每一段值得的关系 · [技能节](https://github.com/magymeng/skill-festival-submissions) 参赛作品 · 已归档*
