@@ -4,9 +4,18 @@
 [![Python: 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React: 18](https://img.shields.io/badge/react-18-61dafb.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.109-009688.svg)](https://fastapi.tiangolo.com/)
+[![Status: Archived](https://img.shields.io/badge/status-已停止维护-lightgrey.svg)](#项目状态)
 
 > 人的记忆是一种不讲道理的存储介质。这个项目存在的意义，就是把这些失衡的记忆碎片提取出来，完成从生物硬盘到数字硬盘的格式转换。  
 > 项目宣言全文见 [docs/MnemoTranscode.txt](./docs/MnemoTranscode.txt)。
+
+---
+
+## 项目状态
+
+> **本仓库为技能节（Cursor Agent Skills）比赛参赛作品，目前已停止维护。**
+>
+> 代码与文档保留作展示与参考，**不再接受功能迭代、Bug 修复或 Issue 响应**。若需本地运行，请自行 fork 后维护；依赖版本、API Key 与基础设施配置需自行跟进。
 
 ---
 
@@ -16,7 +25,7 @@ MTC（MnemoTranscode — Memory To Code，仓库名 [MnemoTranscode](https://git
 
 用 AI 技术将记忆（声音、照片、文字、情感）进行数字化存档、智能化整理和多模态还原，让每一段值得的关系都留有迹可循。
 
-**当前阶段**：Web 全栈与基础设施已跑通；在档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊之上，持续迭代 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、**普卢奇克情绪轮（32 项 taxonomy + 贴图参考）**、成员头像与受控上传等能力。**桌面级客户端应用** 列为下一步方向。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
+**交付快照（维护已结束）**：Web 全栈与基础设施已跑通；已实现档案 / 记忆 / 媒体 / 对话 / 时间线 / 故事书 / 胶囊，以及 **Mnemo（Engram 记忆图谱、对话巩固与 Celery 异步任务）**、**普卢奇克情绪轮（32 项 taxonomy + 贴图参考）**、成员头像与受控上传等能力。成员详情 **记忆关系网**（画布、力导向、与 Engram API 对齐）详见专题文档 **[docs/memory-relation-network.md](./docs/memory-relation-network.md)**。
 
 LLM 厂商预设与可探测模型列表见 [docs/LLM.txt](./docs/LLM.txt)；架构总览见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)、规格摘要见 [docs/SPEC.md](./docs/SPEC.md)、REST 摘录见 [docs/API.md](./docs/API.md)。**用量、订阅档位、对话页打字机与前端缓存** 的维护说明见 **[docs/USAGE_AND_SUBSCRIPTION.md](./docs/USAGE_AND_SUBSCRIPTION.md)**。
 
@@ -423,4 +432,4 @@ npm run build        # 生产构建
 
 ---
 
-*MTC — 用 AI 守护每一段值得的关系*
+*MTC — 用 AI 守护每一段值得的关系 · 技能节比赛项目 · 已归档*
