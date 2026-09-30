@@ -220,7 +220,7 @@ MnemoTranscode/
 
 | 项 | 说明 |
 |----|------|
-| **无 License 文件** | 根目录**没有** `LICENSE`。请勿视为开源可自由使用/分发 |
+| **许可** | 已添加 **MIT LICENSE**（根目录 `LICENSE`），版权归 `Fish-under-sea` |
 | **文档内部有矛盾** | 组件库（「自研 A 基座」vs「shadcn/ui」，实测用 Radix 原语）、后端目录（`app/workers/` vs `app/tasks/`）在不同文档中说法不一 —— **以代码实测为准** |
 | **`make deploy` 悬空** | 引用的 `docker-compose.prod.yml` 不存在 |
 | **明文弱密码** | compose 中的数据库/对象存储密码为开发用弱口令，`CORS_ALLOW_PRIVATE_LAN=true` —— **仅限本地开发，勿直接用于公网** |
