@@ -1,3 +1,6 @@
+> **⏸️ 暂停维护** · 最近提交：2026-05-21（约 4 个月前）
+>
+> 技能节参赛作品，赛事结束后冻结功能迭代；代码与文档保留作展示与参考。
 # MTC — Memory To Code
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
